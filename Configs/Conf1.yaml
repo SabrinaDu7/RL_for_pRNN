@@ -1,0 +1,77 @@
+defaults:
+    - rl/ppo # Choose algorithm subconfig
+    - _self_  
+    - override hydra/hydra_logging: disabled  
+    - override hydra/job_logging: disabled
+
+hydra:  
+  output_subdir: null
+  sweep:
+    dir: .
+    subdir: .
+  run:  
+    dir: .
+
+exp:
+    env_name: MiniGrid-DonutLava-Long-neg05-v0 # Name of the environment to train on [MiniGrid-FakeLava-5x5-3x4-neg02-v0, MiniGrid-DonutLava-17x17-neg02-v0]
+    # wrapper: 
+    #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
+    input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
+    exp_name: test_Intrinsic
+    seed: 2 # Random seed
+    pRNN: True # Wether to use pRNN for spatial input
+    PC: False # Wether to use fake place cells for spatial input
+    CANN: False # Wether to use CANN for spatial input
+    recurrence: 1 # Wether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
+    with_obs: True # Wether to include visual input (in case of recurrency the one that would bypass RNN)
+    with_HD: True
+    rgb: True # Is visual input RGB?
+    intrinsic: True # Use intrinsic rewards?
+
+hardware:
+    use_gpu: True
+    which_gpu: 0 # GPU device code, not used now
+
+
+rl:
+    steps: 5e6
+    discount: 0.98
+    lr: 0.0007
+    gae_lambda: 0.95 # Lambda coefficient in GAE formula (1 means no gae)
+    entropy_coef: 0.01
+    value_loss_coef: 0.5
+    max_grad_norm: 0.5
+    optim_eps: 1e-8 # Adam and RMSprop optimizer epsilon
+    optim_alpha: 0.99 # RMSprop optimizer alpha
+    pc_sd: 4
+    pc_norm: True
+    cann_input_width: 100
+    k_int: 1 # Coefficient for intrinsic reward
+
+predNet:
+    path: nets/hyperparm_panel_lava_k1_midsparse/thRNN_1win-12-s1000.pkl
+    hiddensize: 500
+    pRNNtype: thRNN_1win #AutoencoderPred_LN
+    action_encoding: SpeedHD #Onehot
+    cell: LayerNormRNNCell
+    lr: 2e-3
+    bptttrunc: 1e8
+    weight_decay: 3e-3
+    ntimescale: 2
+    dropout: 0.15
+    noisemean: 0
+    noisestd: 0.05
+    sparsity: 0.5
+    train: False # Train pRNN simultaneously with RL?
+
+logging:
+    video_log_freq: 500 # Number of steps between video logs (0: no videos)
+    log_interval: 1 # Number of updates between two logs
+    analysis_interval: 25 # Number of updates between analysis events (0: no analysis)
+    save_interval: 120 # Number of updates between two saves (0: don't save)
+    save_params: true # Should the parameters given to the script be saved? (Always...)
+    focus: False #'rl.k_int' # Which parameter to include in the group name or False
+    project: test # ['Place field width', 'PO-FO-PC-CANN-comparison']
+    logdir: "/network/scratch/a/aleksei.efremov/RLstorage"
+    load_acmodel: False #'/network/scratch/a/aleksei.efremov/RLstorage/Donut_long_neg05_shortbptt/PO+Rec_seed10_24-01-22-15-46-34' # False or the path to the model
+    load_worldmodel: True

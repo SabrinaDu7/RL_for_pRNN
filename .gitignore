@@ -1,0 +1,7 @@
+Figures/*
+.vscode/*
+LabNotebook/*
+nets/*
+RLvideos/*
+*.sh
+test*

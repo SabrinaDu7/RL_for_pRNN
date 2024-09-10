@@ -1,0 +1,9 @@
+input_type: 'pRNN+PO'
+exp_name: pRNN+PO
+pRNN: True # Wether to use pRNN for spatial input
+PC: False # Wether to use fake place cells for spatial input
+CANN: False # Wether to use CANN for spatial input
+recurrence: 1 # Wether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
+with_obs: True # Wether to include visual input (in case of recurrency the one that would bypass RNN)
+rgb: True # Is visual input RGB?
+intrinsic: False
