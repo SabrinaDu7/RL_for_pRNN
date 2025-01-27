@@ -89,7 +89,7 @@ class EnvironmentFeaturesAnalysis:
     """
     Class for analyzing the features of the environment learned or used by RL agent.
     """
-    def __init__(self, env, agent, rl_model, prnn_model = None, timesteps = 10000):
+    def __init__(self, env, agent, rl_model = None, prnn_model = None, timesteps = 10000):
         self.env = env
         self.agent = agent # agent to collect observations
         self.rl_model = rl_model
@@ -98,7 +98,8 @@ class EnvironmentFeaturesAnalysis:
         _, self.preprocess_obss = get_obss_preprocessor(self.env.observation_space)
 
         self.data = self.collect_data()
-        self.act_probs, self.values = self.get_values_actions()
+        if rl_model:
+            self.act_probs, self.values = self.get_values_actions()
 
     def collect_data(self):
         """
@@ -215,7 +216,7 @@ class EnvironmentFeaturesAnalysis:
         fig.show()
         return fig
     
-    def error_map(self, zmin=None, zmax=None, HDs=True, scale='viridis'):
+    def error_map(self, xref=7, yref=7, zmin=None, zmax=None, HDs=True, scale='viridis'):
         """
         Plot the heatmap of h_{ref} errors.
         """
@@ -224,7 +225,7 @@ class EnvironmentFeaturesAnalysis:
         
         ref_ts=[]
         for t,pos in enumerate(self.data['state']['agent_pos']):
-            if pos[0] == 7 and pos[1] == 7:
+            if pos[0] == xref and pos[1] == yref:
                 ref_ts.append(t)
 
         h_ref = np.zeros_like(self.data['h'][0,0].to('cpu').numpy())

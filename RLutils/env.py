@@ -56,12 +56,13 @@ def make_env(
         env = RecordVideo(env, video_folder=vid_folder, episode_trigger=lambda x: x%vid_n_episodes == 0)
     
     env.reset(seed=seed)
+    env = FaramaMinigridShell(env, act_enc, env_key)
 
-    if 'pRNN' in input_type or 'CANN' in input_type:
-        env = FaramaMinigridShell(env, act_enc, env_key)
-    else:
-        env = ResetWrapper(env)
-        env.reset(seed=seed)
+    # if 'pRNN' in input_type or 'CANN' in input_type or 'Intrinsic' in input_type:
+    #     env = FaramaMinigridShell(env, act_enc, env_key)
+    # else:
+    #     env = ResetWrapper(env)
+    #     env.reset(seed=seed)
 
     return env
 

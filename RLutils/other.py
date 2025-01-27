@@ -25,6 +25,7 @@ def synthesize(array, signs=False, abs=False):
         array = np.array(array)
         d["pos"] = np.sum(np.sign(array)[array>0])
         d["neg"] = np.sum(np.abs(np.sign(array)[array<0]))
+        d["ratio"] = d["pos"]/d["neg"]
     if abs:
         d["abs_mean"] = np.mean(np.abs(array))
     return d

@@ -12,8 +12,8 @@ import wandb
 
 import RLutils
 from RLutils.other import device
-from RLutils.model import ACModel, RecACModel, ACModelSR
-from RLutils.algo import PredictivePPOAlgo
+from RLutils.model import ACModel, RecACModel, ACModelSR, ACModelTheta, ACModelThetaShared, ACModelThetaSingle
+from RLutils.algo import PredictivePPOAlgo, thetaPPOalgo, SingleThetaPPOalgo
 from RLutils.pc import FakePlaceCells
 from RLutils.analysis import EnvironmentFeaturesAnalysis, OnPolicyAnalysis
 from prnn.utils.predictiveNet import PredictiveNet
@@ -136,6 +136,7 @@ class RL_Trainer(object):
                 print("pRNN model initialized\n")
             args.predNet.hiddensize = predictiveNet.hidden_size
             # predictiveNet.pRNN.to(device)
+            predictiveNet.env_shell.hd_trans = np.array([-1,1,0,0]) # TODO: remove later
         else:
             predictiveNet = None
 
@@ -148,6 +149,20 @@ class RL_Trainer(object):
                                  args.exp.with_obs,
                                  args.exp.rgb,
                                  args.exp.with_HD)
+            
+        elif args.exp.theta:
+            if args.exp.single_theta:
+                acmodel = ACModelThetaSingle(obs_space, env.action_space,
+                                             args.predNet.hiddensize,
+                                             predictiveNet.pRNN.k, args.rl.value_type)
+            elif args.exp.shared_weights:
+                acmodel = ACModelThetaShared(obs_space, env.action_space,
+                                             args.predNet.hiddensize,
+                                             predictiveNet.pRNN.k, args.rl.value_type)
+            else:
+                acmodel = ACModelTheta(obs_space, env.action_space,
+                                    args.predNet.hiddensize, args.exp.with_obs,
+                                    args.exp.rgb, predictiveNet.pRNN.k, args.rl.value_type)
             
         elif args.exp.PC or args.exp.CANN or args.exp.pRNN:
             acmodel = ACModelSR(obs_space, env.action_space,
@@ -179,15 +194,34 @@ class RL_Trainer(object):
             
 
         # Load algo
-
-        algo = PredictivePPOAlgo(
-                                 env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
-                                 args.rl.lr, args.rl.gae_lambda, args.rl.entropy_coef, args.rl.value_loss_coef,
-                                 args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
-                                 args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
-                                 args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
-                                 args.rl.k_int
-                                 )
+        if args.exp.single_theta:
+            algo = SingleThetaPPOalgo(
+                                env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
+                                args.rl.lr, args.rl.gae_lambda, args.rl.entropy_coef, args.rl.value_loss_coef,
+                                args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
+                                args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
+                                args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
+                                args.rl.k_int, args.rl.past_SR, args.rl.eval_type, args.rl.value_type
+                                )
+        
+        elif args.exp.theta:
+            algo = thetaPPOalgo(
+                                env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
+                                args.rl.lr, args.rl.gae_lambda, args.rl.entropy_coef, args.rl.value_loss_coef,
+                                args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
+                                args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
+                                args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
+                                args.rl.k_int, args.rl.past_SR, args.rl.eval_type, args.rl.value_type
+                                )
+        else:
+            algo = PredictivePPOAlgo(
+                                     env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
+                                     args.rl.lr, args.rl.gae_lambda, args.rl.entropy_coef, args.rl.value_loss_coef,
+                                     args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
+                                     args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
+                                     args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
+                                     args.rl.k_int, args.rl.past_SR
+                                     )
 
 
         if "optimizer_state" in status:
@@ -234,14 +268,18 @@ class RL_Trainer(object):
                     header = ["return_" + key for key in return_per_episode.keys()]
                     header += ["int_reward_" + key for key in int_rewards.keys()]
                     header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
-                    header += ["entropy", "value", "policy_loss", "value_loss", "grad_norm"]
+                    header += ["entropy", "value", "policy_loss",
+                               "value_loss", "grad_norm",
+                               "loc_entropy", "loc_entropy_5"]
                     header += ["frames", "FPS", "duration", "episodes"]
 
                 data = []
                 data += return_per_episode.values()
                 data += int_rewards.values()
                 data += num_frames_per_episode.values()
-                data += [logs["entropy"], logs["value"], logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
+                data += [logs["entropy"], logs["value"], logs["policy_loss"],
+                         logs["value_loss"], logs["grad_norm"],
+                         logs["loc_entropy"], logs["loc_entropy_5"]]
                 data += [num_frames, fps, duration, logs["num_episodes"]]
 
                 wandb.log(dict(zip(header, data)))
@@ -279,11 +317,11 @@ class RL_Trainer(object):
                 #                   paper_bgcolor='rgba(0, 0, 0, 0)')
                 # fig.write_image(self.model_dir+"/"+str(update)+"_deltas.png")
 
-
-            if return_per_episode['mean']>0.9 and return_per_episode['std']<0.05:
-                n_performance += 1
-                if n_performance == 25:
-                    break
+            if args.logging.early_stop:
+                if return_per_episode['mean']>0.9 and return_per_episode['std']<0.05:
+                    n_performance += 1
+                    if n_performance == 25:
+                        break
 
             # Save status
 

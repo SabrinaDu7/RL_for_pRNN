@@ -3,5 +3,6 @@ Figures/*
 LabNotebook/*
 nets/*
 RLvideos/*
+RLutils/__pycache__/*
 *.sh
 test*

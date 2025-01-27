@@ -1,0 +1,184 @@
+hydra:
+  run:
+    dir: .
+  sweep:
+    dir: .
+    subdir: .
+  launcher:
+    _target_: hydra._internal.core_plugins.basic_launcher.BasicLauncher
+  sweeper:
+    _target_: hydra._internal.core_plugins.basic_sweeper.BasicSweeper
+    max_batch_size: null
+  help:
+    app_name: ${hydra.job.name}
+    header: '${hydra.help.app_name} is powered by Hydra.
+
+      '
+    footer: 'Powered by Hydra (https://hydra.cc)
+
+      Use --hydra-help to view Hydra specific help
+
+      '
+    template: '${hydra.help.header}
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (group=option)
+
+
+      $APP_CONFIG_GROUPS
+
+
+      == Config ==
+
+      Override anything in the config (foo.bar=value)
+
+
+      $CONFIG
+
+
+      ${hydra.help.footer}
+
+      '
+  hydra_help:
+    template: 'Hydra (${hydra.runtime.version})
+
+      See https://hydra.cc for more info.
+
+
+      == Flags ==
+
+      $FLAGS_HELP
+
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (For example, append hydra/job_logging=disabled
+      to command line)
+
+
+      $HYDRA_CONFIG_GROUPS
+
+
+      Use ''--cfg hydra'' to Show the Hydra config.
+
+      '
+    hydra_help: ???
+  hydra_logging:
+    version: 1
+    root:
+      level: ERROR
+    disable_existing_loggers: true
+  job_logging:
+    version: 1
+    root:
+      level: ERROR
+    disable_existing_loggers: true
+  env: {}
+  searchpath: []
+  callbacks: {}
+  output_subdir: null
+  overrides:
+    hydra: []
+    task:
+    - +exp=pRNN_PO_Intrinsic
+    - exp.seed=10,20,30,40,50
+  job:
+    name: trainRL
+    override_dirname: +exp=pRNN_PO_Intrinsic,exp.seed=10,20,30,40,50
+    id: ???
+    num: ???
+    config_name: Conf1
+    env_set: {}
+    env_copy: []
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: ','
+        exclude_keys: []
+  runtime:
+    version: 1.1.1
+    cwd: /home/mila/a/aleksei.efremov/pRNN-RL
+    config_sources:
+    - path: hydra.conf
+      schema: pkg
+      provider: hydra
+    - path: /home/mila/a/aleksei.efremov/pRNN-RL/Configs
+      schema: file
+      provider: main
+    - path: ''
+      schema: structured
+      provider: schema
+    choices:
+      exp: pRNN_PO_Intrinsic
+      hydra/env: default
+      hydra/callbacks: null
+      hydra/job_logging: disabled
+      hydra/hydra_logging: disabled
+      hydra/hydra_help: default
+      hydra/help: default
+      hydra/sweeper: basic
+      hydra/launcher: basic
+      hydra/output: default
+  verbose: false
+rl:
+  algo: ppo
+  ppo_epochs: 4
+  ppo_batch_size: 256
+  ppo_clip_eps: 0.2
+  frames: 2048
+  steps: 5000000.0
+  discount: 0.98
+  lr: 0.0007
+  gae_lambda: 0.95
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
+  max_grad_norm: 0.5
+  optim_eps: 1.0e-08
+  optim_alpha: 0.99
+  pc_sd: 4
+  pc_norm: true
+  cann_input_width: 100
+  k_int: 1
+exp:
+  env_name: MiniGrid-DonutLava-Long-neg05-v0
+  input_type: pRNN+PO
+  exp_name: pRNN+PO+Intrinsic
+  seed: 2
+  pRNN: true
+  PC: false
+  CANN: false
+  recurrence: 1
+  with_obs: true
+  with_HD: true
+  rgb: true
+  intrinsic: true
+hardware:
+  use_gpu: true
+  which_gpu: 0
+predNet:
+  path: nets/hyperparm_panel_lava_k1_midsparse/thRNN_1win-12-s1000.pkl
+  hiddensize: 500
+  pRNNtype: thRNN_1win
+  action_encoding: SpeedHD
+  cell: LayerNormRNNCell
+  lr: 0.002
+  bptttrunc: 100000000.0
+  weight_decay: 0.003
+  ntimescale: 2
+  dropout: 0.15
+  noisemean: 0
+  noisestd: 0.05
+  sparsity: 0.5
+  train: false
+logging:
+  video_log_freq: 500
+  log_interval: 1
+  analysis_interval: 25
+  save_interval: 120
+  save_params: true
+  focus: false
+  project: Donut_long_neg05
+  logdir: /network/scratch/a/aleksei.efremov/RLstorage
+  load_acmodel: false
+  load_worldmodel: false

@@ -100,7 +100,13 @@ class ACModel(nn.Module, torch_ac.ACModel):
         super().__init__()
         self.with_HD = with_HD
         self.rgb = rgb
+        self.act_dim = action_space.n
+        self.define_model(obs_space)
 
+        # Initialize parameters correctly
+        self.apply(init_params)
+
+    def define_model(self, obs_space):
         # Define image embedding
         self.CV(obs_space)
 
@@ -108,7 +114,7 @@ class ACModel(nn.Module, torch_ac.ACModel):
         self.actor = nn.Sequential(
             nn.Linear(self.embedding_size, 64),
             nn.Tanh(),
-            nn.Linear(64, action_space.n)
+            nn.Linear(64, self.act_dim)
         )
 
         # Define critic's model
@@ -117,9 +123,6 @@ class ACModel(nn.Module, torch_ac.ACModel):
             nn.Tanh(),
             nn.Linear(64, 1)
         )
-
-        # Initialize parameters correctly
-        self.apply(init_params)
 
     @property
     def embedding_size(self):
@@ -166,9 +169,13 @@ class ACModel(nn.Module, torch_ac.ACModel):
 class ACModelSR(ACModel):
     def __init__(self, obs_space, action_space, SR_size=-1, with_CV=True, rgb=True):
         self.with_CV = with_CV
-        self.SR_size = SR_size + 1 # if SRs are not used, the arg should be -1
+        self.SR_single = SR_size # if SRs are not used, the arg should be -1
         self.rgb = rgb
         super(ACModelSR, self).__init__(obs_space, action_space)
+
+    @property
+    def SR_size(self):
+        return self.SR_single + 1
 
     @property
     def embedding_size(self):
@@ -213,4 +220,201 @@ class ACModelSR(ACModel):
         value = x.squeeze(1)
 
         return dist, value
+
+
+class ACModelTheta(ACModelSR):
+    def __init__(self, obs_space, action_space, SR_size=-1, with_CV=True, rgb=True,
+                 k=1, V='single'):
+        assert V in ['single', 'double', 'multi']
+        self.V = V
+        self.seq_length = k+1
+        super(ACModelTheta, self).__init__(obs_space, action_space, SR_size, with_CV, rgb)
+        
+
+    def define_model(self, obs_space):
+        # Define image embedding
+        self.CV(obs_space)
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, self.act_dim * self.seq_length)
+        )
+
+        # Define critic's model
+        if self.V == 'single':
+            self.V_size = 1
+        else:
+            self.V_size = self.seq_length
+        self.critic = nn.Sequential(
+            nn.Linear(self.embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, self.V_size)
+        )
+
+    @property
+    def SR_size(self):
+        return self.SR_single * self.seq_length
+
+    @property
+    def embedding_size(self):
+        return self.image_embedding_size + self.SR_size + 3 * self.seq_length
+
+    def forward(self, obs, SR, HDs, acts, values=None, **kwargs):
+        SR = SR.reshape(-1, self.SR_size)
+        if values==None:
+            values = torch.zeros(HDs.shape)
+
+        if self.with_CV:
+            x = obs.image.transpose(1, 3).transpose(2, 3)
+            if self.rgb:
+                x /= 255
+            x = self.image_conv(x)
+            x = x.reshape(x.shape[0], -1)
+
+        if self.with_CV:
+            embedding = torch.cat((x, SR, HDs, acts, values), dim=1)
+        else:
+            embedding = torch.cat((SR, HDs, acts, values), dim=1)
+        
+
+        x = self.actor(embedding).reshape(-1, self.seq_length, self.act_dim)
+        dist = Categorical(logits=F.log_softmax(x, dim=-1))
+
+        x = self.critic(embedding)
+        value = x.squeeze(1)
+
+        return dist, value
+
+
+class ACModelThetaShared(ACModelTheta):
+    def __init__(self, obs_space, action_space, SR_size=-1, k=1, V='single'):
+        super(ACModelThetaShared, self).__init__(obs_space, action_space, SR_size,
+                                                 with_CV=False, rgb=False, k=k, V=V) # No visual input (yet)
+        
+
+    def define_model(self, obs_space):
+        # Define actor's model
+        self.actor1 = nn.Sequential(
+            nn.Linear(self.embedding_size, 64),
+            nn.Tanh(),
+        )
+        self.actor2 = nn.Linear(64 * self.seq_length, self.act_dim * self.seq_length)
+
+        # Define critic's model
+        if self.V == 'single':
+            self.V_size = 1
+        else:
+            self.V_size = self.seq_length
+
+        self.critic1 = nn.Sequential(
+            nn.Linear(self.embedding_size, 64),
+            nn.Tanh(),
+        )
+
+        self.critic2 = nn.Linear(64 * self.seq_length, self.V_size)
+
+    @property
+    def SR_size(self):
+        return self.SR_single
+
+    @property
+    def embedding_size(self):
+        return self.SR_size + 3
+
+    def forward(self, obs, SR, HDs, acts, values=None, **kwargs):
+        if values==None:
+            values = torch.zeros(HDs.shape)
+
+        embedding = torch.cat((SR,
+                               HDs[:,:,None],
+                               acts[:,:,None],
+                               values[:,:,None]), dim=-1)
+        
+
+        x = self.actor1(embedding).reshape(-1, 64 * self.seq_length)
+        x = self.actor2(x).reshape(-1, self.seq_length, self.act_dim)
+        dist = Categorical(logits=F.log_softmax(x, dim=-1))
+
+        x = self.critic1(embedding).reshape(-1, 64 * self.seq_length)
+        x = self.critic2(x)
+        value = x.squeeze(1)
+
+        return dist, value
+
+
+class ACModelThetaSingle(ACModelTheta):
+    def __init__(self, obs_space, action_space, SR_size=-1, k=1, V='single'):
+        super(ACModelThetaSingle, self).__init__(obs_space, action_space, SR_size,
+                                                 with_CV=False, rgb=False, k=k, V=V)
+        
+
+    def define_model(self, obs_space):
+        # # Define actor's model
+        # self.actor1 = nn.Sequential(
+        #     nn.Linear(self.embedding_size, 64),
+        #     nn.Tanh(),
+        #     nn.Linear(64, 8),
+        #     nn.Tanh()
+        # )
+        # self.actor2 = nn.Linear(8, self.act_dim)
+
+        # self.critic1 = nn.Sequential(
+        #     nn.Linear(self.embedding_size, 64),
+        #     nn.Tanh(),
+        #     nn.Linear(64, 8),
+        #     nn.Tanh()
+        # )
+
+        # self.critic2 = nn.Linear(8, 1)
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, self.act_dim)
+        )
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(self.embedding_size, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
+    @property
+    def SR_size(self):
+        return self.SR_single
+
+    @property
+    def embedding_size(self):
+        return self.SR_size + 3
+
+    def forward(self, obs, SR, HDs, acts, values=None, **kwargs):
+        if values==None:
+            values = torch.zeros(HDs.shape)
+
+        embedding = torch.cat((SR,
+                               HDs[:,:,None],
+                               acts[:,:,None],
+                               values[:,:,None]), dim=-1)
+
+        x = self.actor(embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+
+        x = self.critic(embedding)[:,0,:]
+        value = x.squeeze(1)
+        
+
+        # x = self.actor1(embedding)
+        # x = self.actor2(x)
+        # dist = Categorical(logits=F.log_softmax(x, dim=-1))
+
+        # x = self.critic1(embedding)
+        # x = self.critic2(x[:,0,:])
+        # value = x.squeeze(1)
+
+        return dist, value
+
 
