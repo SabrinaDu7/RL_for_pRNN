@@ -48,7 +48,6 @@ rl:
     pc_norm: True
     cann_input_width: 100
     k_int: 1 # Coefficient for intrinsic reward
-    past_SR: True
     eval_type: rewards
     value_type: single
 

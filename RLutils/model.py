@@ -127,7 +127,7 @@ class ACModel(nn.Module, torch_ac.ACModel):
     @property
     def embedding_size(self):
         if self.with_HD:
-            return self.image_embedding_size + 1
+            return self.image_embedding_size + 4
         else:
             return self.image_embedding_size
     
@@ -153,7 +153,8 @@ class ACModel(nn.Module, torch_ac.ACModel):
         x = x.reshape(x.shape[0], -1)
 
         if self.with_HD:
-            embedding = torch.cat((x, obs.direction.unsqueeze(dim=1)), dim=1)
+            onehot_HD = torch.nn.functional.one_hot(obs.direction.long(), num_classes=4).float()
+            embedding = torch.cat((x, onehot_HD), dim=1)
         else:
             embedding = x
 
@@ -175,7 +176,7 @@ class ACModelSR(ACModel):
 
     @property
     def SR_size(self):
-        return self.SR_single + 1
+        return self.SR_single + 4
 
     @property
     def embedding_size(self):
@@ -206,10 +207,12 @@ class ACModelSR(ACModel):
             x = self.image_conv(x)
             x = x.reshape(x.shape[0], -1)
 
+
+        onehot_HD = torch.nn.functional.one_hot(obs.direction.long(), num_classes=4).float()
         if self.with_CV and self.SR_size:
-            embedding = torch.cat((x, SR, obs.direction.unsqueeze(dim=1)), dim=1)
+            embedding = torch.cat((x, SR, onehot_HD), dim=1)
         elif self.SR_size:
-            embedding = torch.cat((SR, obs.direction.unsqueeze(dim=1)), dim=1)
+            embedding = torch.cat((SR, onehot_HD), dim=1)
         else:
             embedding = x
 
@@ -228,6 +231,12 @@ class ACModelTheta(ACModelSR):
         assert V in ['single', 'double', 'multi']
         self.V = V
         self.seq_length = k+1
+
+        if V == 'single':
+            self.V_size = 1
+        else:
+            self.V_size = self.seq_length
+
         super(ACModelTheta, self).__init__(obs_space, action_space, SR_size, with_CV, rgb)
         
 
@@ -259,7 +268,8 @@ class ACModelTheta(ACModelSR):
 
     @property
     def embedding_size(self):
-        return self.image_embedding_size + self.SR_size + 3 * self.seq_length
+        return self.image_embedding_size + self.SR_size + \
+            (4 + self.act_dim + self.V_size) * self.seq_length
 
     def forward(self, obs, SR, HDs, acts, values=None, **kwargs):
         SR = SR.reshape(-1, self.SR_size)
@@ -272,6 +282,8 @@ class ACModelTheta(ACModelSR):
                 x /= 255
             x = self.image_conv(x)
             x = x.reshape(x.shape[0], -1)
+
+        HDs = torch.nn.functional.one_hot(HDs.long(), num_classes=4).float()
 
         if self.with_CV:
             embedding = torch.cat((x, SR, HDs, acts, values), dim=1)
@@ -305,15 +317,18 @@ class ACModelThetaShared(ACModelTheta):
         # Define critic's model
         if self.V == 'single':
             self.V_size = 1
+            self.critic = nn.Sequential(
+                                        nn.Linear(self.embedding_size, 64),
+                                        nn.Tanh(),
+                                        nn.Linear(64, 1)
+                                        )
         else:
             self.V_size = self.seq_length
-
-        self.critic1 = nn.Sequential(
-            nn.Linear(self.embedding_size, 64),
-            nn.Tanh(),
-        )
-
-        self.critic2 = nn.Linear(64 * self.seq_length, self.V_size)
+            self.critic1 = nn.Sequential(
+                nn.Linear(self.embedding_size, 64),
+                nn.Tanh(),
+            )
+            self.critic2 = nn.Linear(64 * self.seq_length, self.V_size)
 
     @property
     def SR_size(self):
@@ -321,15 +336,18 @@ class ACModelThetaShared(ACModelTheta):
 
     @property
     def embedding_size(self):
-        return self.SR_size + 3
+        return self.SR_size + 4 + self.act_dim + self.V_size
 
     def forward(self, obs, SR, HDs, acts, values=None, **kwargs):
         if values==None:
             values = torch.zeros(HDs.shape)
 
+        HDs = torch.nn.functional.one_hot(HDs.long(), num_classes=4).float()
+        acts = torch.nn.functional.one_hot(acts.long(), num_classes=self.act_dim).float()
+
         embedding = torch.cat((SR,
-                               HDs[:,:,None],
-                               acts[:,:,None],
+                               HDs,
+                               acts,
                                values[:,:,None]), dim=-1)
         
 
@@ -337,9 +355,13 @@ class ACModelThetaShared(ACModelTheta):
         x = self.actor2(x).reshape(-1, self.seq_length, self.act_dim)
         dist = Categorical(logits=F.log_softmax(x, dim=-1))
 
-        x = self.critic1(embedding).reshape(-1, 64 * self.seq_length)
-        x = self.critic2(x)
-        value = x.squeeze(1)
+        if self.V == 'single':
+            x = self.critic(embedding)
+            value = x.mean(1)
+        else:
+            x = self.critic1(embedding).reshape(-1, 64 * self.seq_length)
+            x = self.critic2(x)
+            value = x.squeeze(1)
 
         return dist, value
 
@@ -394,7 +416,7 @@ class ACModelThetaSingle(ACModelTheta):
     def forward(self, obs, SR, HDs, acts, values=None, **kwargs):
         if values==None:
             values = torch.zeros(HDs.shape)
-
+        HDs = torch.nn.functional.one_hot(HDs.long(), num_classes=4).float()
         embedding = torch.cat((SR,
                                HDs[:,:,None],
                                acts[:,:,None],

@@ -2,12 +2,17 @@
 
 
 import torch
-import numpy
+import numpy as np
 
 from scipy.stats import entropy
 from torch_ac.format import default_preprocess_obss
 from torch_ac.utils import DictList
 from scipy.spatial.distance import cosine
+from scipy.linalg import toeplitz
+
+def compare_trajs(traj1, traj2):
+    delta = (traj1 == traj2).cumprod()
+    return delta.sum()/len(delta)
 
 
 class PredictivePPOAlgo:
@@ -113,7 +118,7 @@ class PredictivePPOAlgo:
 
         # Initialize intrinsic rewards
         if self.intrinsic:
-            self.ref = torch.zeros((1,self.SR.shape[1]), device=self.device)
+            self.ref = torch.zeros((1,self.SR.shape[-1]), device=self.device)
             self.nrefs = 0
             self.int_rewards = torch.zeros(self.num_frames, device=self.device)
 
@@ -264,8 +269,8 @@ class PredictivePPOAlgo:
         
         self.loc_history.pop(0)
         self.loc_history.append(self.loc_visits)
-        loc_entropy_5 = entropy(numpy.sum(self.loc_history, axis=0))
-        self.loc_visits = numpy.zeros([self.env.env.grid.width, self.env.env.grid.height])
+        loc_entropy_5 = entropy(np.sum(self.loc_history, axis=0))
+        self.loc_visits = np.zeros([self.env.env.grid.width, self.env.env.grid.height])
 
         # Preprocess experiences
 
@@ -396,11 +401,11 @@ class PredictivePPOAlgo:
         # Log some values
 
         logs = {
-            "entropy": numpy.mean(log_entropies),
-            "value": numpy.mean(log_values),
-            "policy_loss": numpy.mean(log_policy_losses),
-            "value_loss": numpy.mean(log_value_losses),
-            "grad_norm": numpy.mean(log_grad_norms)
+            "entropy": np.mean(log_entropies),
+            "value": np.mean(log_values),
+            "policy_loss": np.mean(log_policy_losses),
+            "value_loss": np.mean(log_value_losses),
+            "grad_norm": np.mean(log_grad_norms)
         }
 
         return logs
@@ -420,8 +425,8 @@ class PredictivePPOAlgo:
             the indexes of the experiences to be used at first for each batch
         """
 
-        indexes = numpy.arange(0, self.num_frames, self.recurrence)
-        indexes = numpy.random.permutation(indexes)
+        indexes = np.arange(0, self.num_frames, self.recurrence)
+        indexes = np.random.permutation(indexes)
 
         # Shift starting indexes by self.recurrence//2 half the time
         if self.batch_num % 2 == 1:
@@ -492,7 +497,7 @@ class PredictivePPOAlgo:
             if self.pastSR:
                 SR = torch.zeros((1,self.pN.hidden_size), device=self.device)
             else:
-                obs_pN, act_pN = self.pN.env_shell.env2pred([self.obs,self.obs], numpy.array([0]))
+                obs_pN, act_pN = self.pN.env_shell.env2pred([self.obs,self.obs], np.array([0]))
                 act_pN = torch.zeros_like(act_pN)
                 obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
                 with torch.no_grad():
@@ -523,8 +528,8 @@ class PredictivePPOAlgo:
         print('Advantages done')
         self.log_probs = torch.zeros(self.num_frames, device=self.device)
         self.int_rewards = torch.zeros(self.num_frames, device=self.device)
-        self.loc_visits = numpy.zeros([self.env.width, self.env.height])
-        self.loc_history = [numpy.zeros(numpy.sum(self.loc_mask))] * 5
+        self.loc_visits = np.zeros([self.env.width, self.env.height])
+        self.loc_history = [np.zeros(np.sum(self.loc_mask))] * 5
 
     def init_log(self):
         print('Initialize log values')
@@ -604,18 +609,23 @@ class thetaPPOalgo(PredictivePPOAlgo):
                 self.HDs[i] = self.hd
 
             # Update intrinsic rewards
-            if self.intrinsic and any(self.ref):
+            if self.intrinsic:
                 self.evals[i] = self.eval
-                SRs = torch.cat((self.SR[0][None], SR), dim=0).cpu()
-                # Calculate cosine similarity between SRs and reference SR
-                errors = torch.tensor([cosine(SR, self.ref.squeeze().cpu()) for SR in SRs], device=self.device)
-                # Calculate intrinsic rewards
-                int_rewards = errors[:-1] - errors[1:]
+                if any(self.ref[0]):
+                    SRs = torch.cat((self.SR[:,0], SR[0]), dim=0).cpu()
+                    # Calculate cosine similarity between SRs and reference SR
+                    errors = torch.tensor([cosine(SR, self.ref.squeeze().cpu()) for SR in SRs],
+                                          device=self.device,
+                                          dtype=torch.float)
+                    # Calculate intrinsic rewards
+                    int_rewards = errors[:-1] - errors[1:]
 
-                if self.eval_type == 'errors':
-                    self.eval = errors[1:]
-                else:
-                    self.eval = int_rewards
+                    if self.eval_type == 'errors':
+                        self.eval = errors[1:]
+                    else:
+                        self.eval = int_rewards
+                    
+                    self.eval = self.eval.unsqueeze(dim=0)
             
             self.SR = SR
 
@@ -643,7 +653,7 @@ class thetaPPOalgo(PredictivePPOAlgo):
                     if self.pastSR:
                         _,_,_,det_action = self.next_experience()
                         SR,_ = self.next_SR(det_action, self.obs)
-                    self.update_ref(SR[0])
+                    self.update_ref(SR[0,0])
                 self.log_done_counter += 1
                 self.log_return.append(self.log_episode_return)
                 self.log_reshaped_return.append(self.log_episode_reshaped_return)
@@ -704,8 +714,16 @@ class thetaPPOalgo(PredictivePPOAlgo):
         
         self.loc_history.pop(0)
         self.loc_history.append(self.loc_visits)
-        loc_entropy_5 = entropy(numpy.sum(self.loc_history, axis=0))
-        self.loc_visits = numpy.zeros([self.env.env.grid.width, self.env.env.grid.height])
+        loc_entropy_5 = entropy(np.sum(self.loc_history, axis=0))
+        self.loc_visits = np.zeros([self.env.env.grid.width, self.env.env.grid.height])
+
+        # Calculate projected similarity
+        act = self.actions.cpu().numpy()
+        stop = act.shape[0]-act.shape[1]
+        idx = np.flip(toeplitz(np.arange(act.shape[1]),
+                               np.arange(act.shape[0])),
+                      0)[:,act.shape[1]-1:].T
+        sim = ((act[:,0][idx]==act[:stop+1]).cumprod(1)[:,1:].sum(1)/5).mean()
 
         # Preprocess experiences
 
@@ -725,7 +743,8 @@ class thetaPPOalgo(PredictivePPOAlgo):
             "num_episodes": self.log_done_counter,
             "intrinsic_rewards": self.int_rewards.tolist(),
             "loc_entropy": loc_entropy,
-            "loc_entropy_5": loc_entropy_5
+            "loc_entropy_5": loc_entropy_5,
+            'proj_sim': sim
         }
 
         self.log_return = []
@@ -821,11 +840,11 @@ class thetaPPOalgo(PredictivePPOAlgo):
         # Log some values
 
         logs = {
-            "entropy": numpy.mean(log_entropies),
-            "value": numpy.mean(log_values),
-            "policy_loss": numpy.mean(log_policy_losses),
-            "value_loss": numpy.mean(log_value_losses),
-            "grad_norm": numpy.mean(log_grad_norms)
+            "entropy": np.mean(log_entropies),
+            "value": np.mean(log_values),
+            "policy_loss": np.mean(log_policy_losses),
+            "value_loss": np.mean(log_value_losses),
+            "grad_norm": np.mean(log_grad_norms)
         }
 
         return logs
@@ -852,7 +871,10 @@ class thetaPPOalgo(PredictivePPOAlgo):
         obs_pN, act_pN, hd = obs_pN.to(self.device), act_pN.to(self.device), hd.to(self.device)[None,:-1]
         with torch.no_grad(): # calculate SR for step t based on obs and action from step t-1
             _,_,SR = self.pN.predict(obs_pN, act_pN)
-        SR = SR.permute(1,0,2)
+        if self.pastSR:
+            SR = SR.permute(1,0,2)
+        else:
+            SR = SR.permute(1,0,2)[1][None]
         return SR, hd
     
 
@@ -860,12 +882,15 @@ class thetaPPOalgo(PredictivePPOAlgo):
         if self.pastSR:
             SR = torch.zeros((1,self.theta_k,self.pN.hidden_size), device=self.device)
         else:
-            obs_pN, act_pN = self.pN.env_shell.env2pred([self.obs]*(self.theta_k+1), numpy.zeros(self.theta_k))
+            obs_pN, act_pN = self.pN.env_shell.env2pred([self.obs]*(self.theta_k+1), np.zeros(self.theta_k))
             act_pN = torch.zeros_like(act_pN)
             obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
             with torch.no_grad():
                 _,_,SR = self.pN.predict(obs_pN, act_pN)
-            SR = SR.permute(1,0,2)
+            if self.pastSR:
+                SR = SR.permute(1,0,2)
+            else:
+                SR = SR.permute(1,0,2)[1][None]
         
         self.SR = SR
 
@@ -885,8 +910,8 @@ class thetaPPOalgo(PredictivePPOAlgo):
         print('Advantages done')
         self.log_probs = torch.zeros(self.num_frames, self.theta_k, device=self.device)
         self.int_rewards = torch.zeros(self.num_frames, device=self.device)
-        self.loc_visits = numpy.zeros([self.env.width, self.env.height])
-        self.loc_history = [numpy.zeros(numpy.sum(self.loc_mask))] * 5
+        self.loc_visits = np.zeros([self.env.width, self.env.height])
+        self.loc_history = [np.zeros(np.sum(self.loc_mask))] * 5
 
 
 class SingleThetaPPOalgo(PredictivePPOAlgo):
@@ -1042,8 +1067,8 @@ class SingleThetaPPOalgo(PredictivePPOAlgo):
         
         self.loc_history.pop(0)
         self.loc_history.append(self.loc_visits)
-        loc_entropy_5 = entropy(numpy.sum(self.loc_history, axis=0))
-        self.loc_visits = numpy.zeros([self.env.env.grid.width, self.env.env.grid.height])
+        loc_entropy_5 = entropy(np.sum(self.loc_history, axis=0))
+        self.loc_visits = np.zeros([self.env.env.grid.width, self.env.env.grid.height])
 
         # Preprocess experiences
 
@@ -1157,11 +1182,11 @@ class SingleThetaPPOalgo(PredictivePPOAlgo):
         # Log some values
 
         logs = {
-            "entropy": numpy.mean(log_entropies),
-            "value": numpy.mean(log_values),
-            "policy_loss": numpy.mean(log_policy_losses),
-            "value_loss": numpy.mean(log_value_losses),
-            "grad_norm": numpy.mean(log_grad_norms)
+            "entropy": np.mean(log_entropies),
+            "value": np.mean(log_values),
+            "policy_loss": np.mean(log_policy_losses),
+            "value_loss": np.mean(log_value_losses),
+            "grad_norm": np.mean(log_grad_norms)
         }
 
         return logs
@@ -1196,7 +1221,7 @@ class SingleThetaPPOalgo(PredictivePPOAlgo):
         if self.pastSR:
             SR = torch.zeros((1,self.theta_k,self.pN.hidden_size), device=self.device)
         else:
-            obs_pN, act_pN = self.pN.env_shell.env2pred([self.obs]*(self.theta_k+1), numpy.zeros(self.theta_k))
+            obs_pN, act_pN = self.pN.env_shell.env2pred([self.obs]*(self.theta_k+1), np.zeros(self.theta_k))
             act_pN = torch.zeros_like(act_pN)
             obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
             with torch.no_grad():
@@ -1221,5 +1246,5 @@ class SingleThetaPPOalgo(PredictivePPOAlgo):
         print('Advantages done')
         self.log_probs = torch.zeros(self.num_frames, self.theta_k, device=self.device)
         self.int_rewards = torch.zeros(self.num_frames, device=self.device)
-        self.loc_visits = numpy.zeros([self.env.width, self.env.height])
-        self.loc_history = [numpy.zeros(numpy.sum(self.loc_mask))] * 5
+        self.loc_visits = np.zeros([self.env.width, self.env.height])
+        self.loc_history = [np.zeros(np.sum(self.loc_mask))] * 5

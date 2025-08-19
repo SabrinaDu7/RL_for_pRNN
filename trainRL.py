@@ -117,6 +117,8 @@ class RL_Trainer(object):
                 predictiveNet = PredictiveNet.loadNet(args.predNet.path)
                 if not hasattr(predictiveNet.pRNN, 'hidden_size'):
                     predictiveNet.pRNN.hidden_size = predictiveNet.pRNN.rnn.cell.hidden_size
+                predictiveNet.env_shell.env = env.env
+                env = predictiveNet.env_shell
                 print("pRNN model loaded\n")
             elif args.logging.load_acmodel:
                 predictiveNet = PredictiveNet.loadNet(RLutils.get_pN(self.model_dir))
@@ -194,6 +196,7 @@ class RL_Trainer(object):
             
 
         # Load algo
+        pastSR = not('prevAct' in str(predictiveNet.pRNN))
         if args.exp.single_theta:
             algo = SingleThetaPPOalgo(
                                 env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
@@ -201,7 +204,7 @@ class RL_Trainer(object):
                                 args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
                                 args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
                                 args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
-                                args.rl.k_int, args.rl.past_SR, args.rl.eval_type, args.rl.value_type
+                                args.rl.k_int, pastSR, args.rl.eval_type, args.rl.value_type
                                 )
         
         elif args.exp.theta:
@@ -211,7 +214,7 @@ class RL_Trainer(object):
                                 args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
                                 args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
                                 args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
-                                args.rl.k_int, args.rl.past_SR, args.rl.eval_type, args.rl.value_type
+                                args.rl.k_int, pastSR, args.rl.eval_type, args.rl.value_type
                                 )
         else:
             algo = PredictivePPOAlgo(
@@ -220,7 +223,7 @@ class RL_Trainer(object):
                                      args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
                                      args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
                                      args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
-                                     args.rl.k_int, args.rl.past_SR
+                                     args.rl.k_int, pastSR
                                      )
 
 
@@ -270,7 +273,7 @@ class RL_Trainer(object):
                     header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
                     header += ["entropy", "value", "policy_loss",
                                "value_loss", "grad_norm",
-                               "loc_entropy", "loc_entropy_5"]
+                               "loc_entropy", "loc_entropy_5", "projection similarity"]
                     header += ["frames", "FPS", "duration", "episodes"]
 
                 data = []
@@ -279,7 +282,8 @@ class RL_Trainer(object):
                 data += num_frames_per_episode.values()
                 data += [logs["entropy"], logs["value"], logs["policy_loss"],
                          logs["value_loss"], logs["grad_norm"],
-                         logs["loc_entropy"], logs["loc_entropy_5"]]
+                         logs["loc_entropy"], logs["loc_entropy_5"],
+                         logs["proj_sim"]]
                 data += [num_frames, fps, duration, logs["num_episodes"]]
 
                 wandb.log(dict(zip(header, data)))
