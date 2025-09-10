@@ -13,9 +13,10 @@ import wandb
 import RLutils
 from RLutils.other import device
 from RLutils.model import ACModel, RecACModel, ACModelSR, ACModelTheta, ACModelThetaShared, ACModelThetaSingle
+from RLutils.agent import ActorCriticAgent
 from RLutils.algo import PredictivePPOAlgo, thetaPPOalgo, SingleThetaPPOalgo
 from RLutils.pc import FakePlaceCells
-from RLutils.analysis import EnvironmentFeaturesAnalysis, OnPolicyAnalysis
+from RLutils.analysis import EnvironmentFeaturesAnalysis, OnPolicyAnalysis, mutual_info_policy
 from prnn.utils.predictiveNet import PredictiveNet
 from prnn.utils.CANNNet import CANNnet
 from prnn.utils.thetaRNN import LayerNormRNNCell, RNNCell
@@ -58,7 +59,7 @@ class RL_Trainer(object):
             self.model_dir = RLutils.get_model_dir(self.model_name)
             RLutils.create_folders_if_necessary(self.model_dir)
         
-        self.video_dir = RLutils.get_video_dir(self.model_name)
+        self.video_dir = RLutils.get_video_dir(self.model_name) if params.logging.video_log_freq!=0 else ''
         RLutils.create_folders_if_necessary(self.video_dir)
 
         print("\n\n\nLOGGING TO: ", self.model_dir, "\n\n\n")
@@ -134,13 +135,15 @@ class RL_Trainer(object):
                                               dropp = args.predNet.dropout,
                                               trainNoiseMeanStd = (args.predNet.noisemean,
                                                                   args.predNet.noisestd),
-                                              f = args.predNet.sparsity)
+                                              f = args.predNet.sparsity,
+                                              wandb_log=True)
                 print("pRNN model initialized\n")
             args.predNet.hiddensize = predictiveNet.hidden_size
             # predictiveNet.pRNN.to(device)
             predictiveNet.env_shell.hd_trans = np.array([-1,1,0,0]) # TODO: remove later
         else:
             predictiveNet = None
+        prnn_eval_bool = args.exp.offpolicy_prnn_eval or args.exp.onpolicy_prnn_eval
 
         # Load models
         if args.exp.recurrence-1:
@@ -193,7 +196,11 @@ class RL_Trainer(object):
                            mapsize = [env.width, env.height])
         else:
             CANN = None
-            
+        
+        if args.predNet.train:
+            assert args.predNet.seqdur > 0, "Set an appropriate seqdur"
+        else:
+            args.predNet.seqdur = 0
 
         # Load algo
         pastSR = not('prevAct' in str(predictiveNet.pRNN))
@@ -222,8 +229,8 @@ class RL_Trainer(object):
                                      args.rl.lr, args.rl.gae_lambda, args.rl.entropy_coef, args.rl.value_loss_coef,
                                      args.rl.max_grad_norm, args.exp.recurrence, args.rl.optim_eps, args.rl.ppo_clip_eps,
                                      args.rl.ppo_epochs, args.rl.ppo_batch_size, preprocess_obss, PC, CANN,
-                                     args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.exp.intrinsic,
-                                     args.rl.k_int, pastSR
+                                     args.predNet.train, args.predNet.noisemean, args.predNet.noisestd, args.predNet.seqdur,
+                                     args.exp.intrinsic, args.rl.k_int, pastSR, args.exp.curious_agent, args.rl.k_curious
                                      )
 
 
@@ -250,9 +257,14 @@ class RL_Trainer(object):
         while num_frames < args.rl.steps:
             # Update model parameters
             update_start_time = time.time()
-            exps, logs1 = algo.collect_experiences()
-            logs2 = algo.update_parameters(exps)
-            logs = {**logs1, **logs2}
+
+            if args.exp.random_action_agent:
+                logs = algo.randomAgent_collect_exp_and_update(randomagent)
+            else:
+                exps, logs1 = algo.collect_experiences()
+                logs2 = algo.update_parameters(exps, update_params=not args.exp.random_init_control)
+                logs = {**logs1, **logs2}
+        
             update_end_time = time.time()
 
             num_frames += logs["num_frames"]
@@ -263,28 +275,35 @@ class RL_Trainer(object):
             if update % args.logging.log_interval == 0:
                 fps = logs["num_frames"] / (update_end_time - update_start_time)
                 duration = int(time.time() - start_time)
-                return_per_episode = RLutils.synthesize(logs["return_per_episode"], signs=True)
                 num_frames_per_episode = RLutils.synthesize(logs["num_frames_per_episode"])
-                int_rewards = RLutils.synthesize(logs["intrinsic_rewards"], abs=True)
 
                 if not header:
-                    header = ["return_" + key for key in return_per_episode.keys()]
-                    header += ["int_reward_" + key for key in int_rewards.keys()]
-                    header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
-                    header += ["entropy", "value", "policy_loss",
-                               "value_loss", "grad_norm",
-                               "loc_entropy", "loc_entropy_5", "projection similarity"]
-                    header += ["frames", "FPS", "duration", "episodes"]
+                    header = ["steps_per_trial_" + key for key in num_frames_per_episode.keys()]
+                    header += ["num_episodes", "policy_entropy", "loc_entropy", "loc_entropy_5",
+                               "frames", "FPS", "duration"]
+                    if not args.exp.random_action_agent:
+                        return_per_episode = RLutils.synthesize(logs["return_per_episode"], signs=True)
+                        int_rewards = RLutils.synthesize(logs["intrinsic_rewards"], abs=True)
+                        cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
+                        advantages = RLutils.synthesize(logs["advantages"])
+                        header += ["return_" + key for key in return_per_episode.keys()]
+                        header += ["int_reward_" + key for key in int_rewards.keys()]
+                        header += ["cur_reward_" + key for key in cur_rewards.keys()]
+                        header += ["advantages_" + key for key in advantages]
+                        header += ["value_mean", "policy_loss", "value_loss", "grad_norm",
+                                   "MI_policy"]
 
                 data = []
-                data += return_per_episode.values()
-                data += int_rewards.values()
                 data += num_frames_per_episode.values()
-                data += [logs["entropy"], logs["value"], logs["policy_loss"],
-                         logs["value_loss"], logs["grad_norm"],
-                         logs["loc_entropy"], logs["loc_entropy_5"],
-                         logs["proj_sim"]]
-                data += [num_frames, fps, duration, logs["num_episodes"]]
+                data += [logs["num_episodes"], logs["entropy"], logs["loc_entropy"],
+                         logs["loc_entropy_5"], num_frames, fps, duration]
+                if not args.exp.random_action_agent:
+                    data += return_per_episode.values()
+                    data += int_rewards.values()
+                    data += cur_rewards.values()
+                    data += advantages.values()
+                    data += [logs["value"], logs["policy_loss"],logs["value_loss"], logs["grad_norm"]]
+                    data += [mutual_info_policy(logs["joint_dist"])]
 
                 wandb.log(dict(zip(header, data)))
 
@@ -321,6 +340,38 @@ class RL_Trainer(object):
                 #                   paper_bgcolor='rgba(0, 0, 0, 0)')
                 # fig.write_image(self.model_dir+"/"+str(update)+"_deltas.png")
 
+                if prnn_eval_bool and not args.exp.CANN:
+                    if args.exp.onpolicy_prnn_eval:
+                        
+                        analysisagent = randomagent if args.exp.random_action_agent else ActorCriticAgent(env.action_space, 
+                                                                                                          acmodel, 
+                                                                                                          predictiveNet, 
+                                                                                                          device)
+                        
+                        _, _, _ = predictiveNet.calculateSpatialRepresentation(env, analysisagent,
+                                                                trainDecoder=True, trainHDDecoder = False,
+                                                                saveTrainingData=False, bitsec= False,
+                                                                calculatesRSA = True, sleepstd=0.03,
+                                                                wandb_nameext='_onPolicy')  
+
+                    if args.exp.offpolicy_prnn_eval:
+                        
+                        analysisagent = ActorCriticAgent(env.action_space, 
+                                                         acmodel, 
+                                                         predictiveNet, 
+                                                         device) if args.exp.random_action_agent else randomagent
+
+                        _, _, _ = predictiveNet.calculateSpatialRepresentation(env, analysisagent,
+                                                                trainDecoder=True, trainHDDecoder = False,
+                                                                saveTrainingData=False, bitsec= False,
+                                                                calculatesRSA = True, sleepstd=0.03,
+                                                                wandb_nameext='_offPolicy')  
+                
+                if args.exp.analyze_agent_behav:
+                    opa = OnPolicyAnalysis(algo, timesteps=20000)
+                    wandb.log({"MI_policy_eval": opa.mi})
+                    RLutils.save_analysis_of_agent_behav(opa, self.mode_dir, update)
+
             if args.logging.early_stop:
                 if return_per_episode['mean']>0.9 and return_per_episode['std']<0.05:
                     n_performance += 1
@@ -331,7 +382,8 @@ class RL_Trainer(object):
 
             if args.logging.save_interval > 0 and update % args.logging.save_interval == 0:
                 status = {"num_frames": num_frames, "update": update,
-                        "model_state": acmodel.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
+                        "model_state": acmodel.state_dict() if not args.exp.random_action_agent else None, 
+                        "optimizer_state": algo.optimizer.state_dict() if not args.exp.random_action_agent else None}
                 # if hasattr(preprocess_obss, "vocab"):
                 #     status["vocab"] = preprocess_obss.vocab.vocab
                 RLutils.save_status(status, self.model_dir)

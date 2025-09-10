@@ -4,6 +4,7 @@ import plotly
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from scipy.spatial.distance import cosine
+from scipy.stats import entropy
 
 from RLutils.model import ACModelSR
 from RLutils.format import get_obss_preprocessor
@@ -12,6 +13,29 @@ from RLutils.algo import PredictivePPOAlgo
 
 SCALES = {'viridis': plotly.colors.sequential.Viridis,
           'default': plotly.colors.sequential.Plasma,}
+
+def mutual_info_policy(joint_dist):
+    """
+    Compute I(S;A) from the un-normalized joint_probs array
+    S is state, and A is action
+    
+    Input is (hd,x,y,a)
+    """
+    _,_,_,A = joint_dist.shape
+    new_joint = joint_dist.copy().reshape(-1, A)
+    mask = new_joint.sum(axis=1) > 0
+    new_joint = new_joint[mask]
+
+    p_sa = new_joint / new_joint.sum() # normalise
+    p_s  = p_sa.sum(axis=1)
+    p_a  = p_sa.sum(axis=0)
+
+    H_s = entropy(p_s, base=2)
+    H_a = entropy(p_a, base=2)
+    H_sa = entropy(p_sa.flatten(), base=2)
+    mi = H_s + H_a - H_sa
+
+    return mi
 
 def plot_heatmaps(feature, title='', zmin=None, zmax=None, HDs=True, scale='default'):
         """
@@ -252,37 +276,56 @@ class OnPolicyAnalysis:
     """
     Class for analyzing the on-policy representations of the environment learned or used by RL agent.
     """
-    def __init__(self, PPOalgo = None, timesteps = 10000, **kwargs):
+    def __init__(self, PPOalgo=None, timesteps=10000, **kwargs):
         self.timesteps = timesteps
-
-        assert PPOalgo is not None or all([
-                                          kwargs['env'],
-                                          kwargs['acmodel'],
-                                          kwargs['predictiveNet'],
-                                          kwargs['device'],
-                                          kwargs['discount'],
-                                          kwargs['gae_lambda'],
-                                          kwargs['preprocess_obss'],
-                                          kwargs['intrinsic'],
-                                          kwargs['k_int']
-                                          ]), 'PPOalgo or its arguments are required'
-        if PPOalgo:
+    # def __init__(self, env, acmodel, predictiveNet=None, device=None, num_frames=None, discount=0.99, lr=0.001,
+    #              gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=1,
+    #              adam_eps=1e-8, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None, place_cells=None,
+    #              cann=None, train_pN=False, noise_mu=0, noise_std=0.03, prnn_seqdur=0, intrinsic=False, k_int=1,
+    #              pastSR=False, curious_agent=False, k_curious=1):
+        if PPOalgo is not None:
+            # Build a new algo with same params, just shorter timesteps
             self.algo = PredictivePPOAlgo(
-                                          env=PPOalgo.env,
-                                          acmodel=PPOalgo.acmodel,
-                                          predictiveNet=PPOalgo.pN,
-                                          device=PPOalgo.device,
-                                          num_frames=timesteps,
-                                          discount=PPOalgo.discount,
-                                          gae_lambda=PPOalgo.gae_lambda,
-                                          preprocess_obss=PPOalgo.preprocess_obss,
-                                          intrinsic=PPOalgo.intrinsic,
-                                          k_int=PPOalgo.k_int
-                                          )
+                env=PPOalgo.env,
+                acmodel=PPOalgo.acmodel,
+                predictiveNet=PPOalgo.pN,
+                device=PPOalgo.device,
+                num_frames=timesteps,
+                discount=PPOalgo.discount,
+                lr=PPOalgo.lr,
+                gae_lambda=PPOalgo.gae_lambda,
+                entropy_coef=PPOalgo.entropy_coef,
+                value_loss_coef=PPOalgo.value_loss_coef,
+                max_grad_norm=PPOalgo.max_grad_norm,
+                recurrence=PPOalgo.recurrence,
+                preprocess_obss=PPOalgo.preprocess_obss,
+                place_cells=PPOalgo.PC,
+                cann=PPOalgo.CANN,
+                train_pN=PPOalgo.train_pN,
+                noise_mu=PPOalgo.noise_mu,
+                noise_std=PPOalgo.noise_std,
+                prnn_seqdur=PPOalgo.prnn_seqdur,
+                intrinsic=PPOalgo.intrinsic,
+                k_int=PPOalgo.k_int,
+                pastSR=PPOalgo.pastSR,
+                curious_agent=PPOalgo.curious_agent,
+                k_curious=PPOalgo.k_curious
+            )
         else:
+            required_keys = [
+                'env', 'acmodel', 'predictiveNet', 'device', 
+                'discount', 'gae_lambda', 'prnn_seqdur',
+                'preprocess_obss', 'intrinsic', 'k_int',
+                'pastSR', 'curious_agent', 'k_curious'
+            ]
+            for key in required_keys:
+                if key not in kwargs:
+                    raise ValueError(f"Missing required argument: {key}")
             self.algo = PredictivePPOAlgo(num_frames=timesteps, **kwargs)
         
-        self.algo.collect_experiences()
+        _, logs = self.algo.collect_experiences()
+        self.joint_probs = logs["joint_dist"]
+        self.mi = mutual_info_policy(self.joint_probs)
         self.deltas = (self.algo.advantages[:-1] - self.algo.discount * \
                       self.algo.gae_lambda * self.algo.advantages[1:] * self.algo.masks[1:]).cpu().numpy()
         self.deltas = np.append(self.deltas, self.algo.advantages[-1].cpu().numpy())
@@ -302,7 +345,7 @@ class OnPolicyAnalysis:
                           self.algo.locs[t][0]-1,
                           self.algo.locs[t][1]-1] += 1
         
-        adv_map /= instances_map
+        adv_map /= np.maximum(instances_map, 1e-6) 
 
         return plot_heatmaps(adv_map, 'Advantages', zmin, zmax, HDs, scale)
 
@@ -311,9 +354,9 @@ class OnPolicyAnalysis:
         Plot the heatmaps of advantage deltas.
         """
         instances_map = np.zeros((4, self.algo.env.width-2, self.algo.env.height-2))
-        adv_map = np.zeros((4, self.algo.env.width-2, self.algo.env.height-2))
+        delta_map = np.zeros((4, self.algo.env.width-2, self.algo.env.height-2))
         for t in range(self.timesteps):
-            adv_map[self.algo.obss[t]['direction'],
+            delta_map[self.algo.obss[t]['direction'],
                     self.algo.locs[t][0]-1,
                     self.algo.locs[t][1]-1] += self.deltas[t]
             
@@ -321,9 +364,123 @@ class OnPolicyAnalysis:
                           self.algo.locs[t][0]-1,
                           self.algo.locs[t][1]-1] += 1
         
-        adv_map /= instances_map
+        delta_map /= np.maximum(instances_map, 1e-6) 
 
-        return plot_heatmaps(adv_map, 'Deltas', zmin, zmax, HDs, scale)
+        return plot_heatmaps(delta_map, 'Deltas', zmin, zmax, HDs, scale)
+    
+    def plot_values(self, zmin=None, zmax=None, HDs=True, scale='default'):
+        """
+        Plot the heatmaps of values.
+        """
+        instances_map = np.zeros((4, self.algo.env.width-2, self.algo.env.height-2))
+        values_map = np.zeros((4, self.algo.env.width-2, self.algo.env.height-2))
+        for t in range(self.timesteps):
+            values_map[self.algo.obss[t]['direction'],
+                       self.algo.locs[t][0]-1,
+                       self.algo.locs[t][1]-1] += self.algo.values[t].cpu().numpy()
+            
+            instances_map[self.algo.obss[t]['direction'],
+                          self.algo.locs[t][0]-1,
+                          self.algo.locs[t][1]-1] += 1
+        
+        values_map /= np.maximum(instances_map, 1e-6) 
+
+        return plot_heatmaps(values_map, 'Values', zmin, zmax, HDs, scale)
+    
+    def plot_policy_heatmaps(self, scale='default'):
+        """
+        Visualise π(a|s). A 4×4 grid:
+            Rows = head-direction  (↑, →, ↓, ←)
+            Cols = actions         (↺, ↻, ↑, ·)
+        """
+        A = self.algo.acmodel.act_dim
+        assert A == 4, "Only supports 4 actions for now"
+
+        # Arrow labels
+        hd_labels  = ['↑', '→', '↓', '←']   # rows (rotated layout)
+        act_labels = ['↺', '↻', '↑', '·']   # columns
+
+        joint  = self.joint_probs.copy()
+        denom  = joint.sum(axis=3, keepdims=True)
+        denom[denom == 0] = 1.0
+        policy = joint / denom  # [hd, x, y, a]
+
+        fig = make_subplots(
+            rows=4, cols=4,
+            specs=[[{}]*4]*4,
+            horizontal_spacing=0.02,
+            vertical_spacing=0.02,
+            row_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)],
+            column_titles=[f"A {i}: {lbl}" for i, lbl in enumerate(act_labels)]
+        )
+
+        for hd in range(4):
+            for a in range(4):
+                z = policy[hd, :, :, a].T
+                fig.add_trace(
+                    go.Heatmap(z=z, showscale=False, colorscale=SCALES[scale]),
+                    row=hd+1, col=a+1
+                )
+
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False, autorange="reversed")
+        fig.update_layout(
+            height=900,
+            width=900,
+            title="Policy π(a|s)  (rows = HD, cols = action)",
+            title_x=0.5,
+            font_family="Courier New"
+        )
+
+        # Manually set font for subplot labels (row/col titles)
+        for i in range(len(fig.layout.annotations)):
+            fig.layout.annotations[i].font = dict(size=24, family='Courier New', color='black')
+
+        fig.show()
+        return fig
+
+    def plot_occupancy(self, scale='viridis'):
+        """
+        Show state-occupancy counts (no action dimension).
+        1×4 layout – one heat-map per head-direction.
+        """
+        hd_labels = ['→', '↓', '←', '↑']
+
+        occ = np.zeros((4, self.algo.env.width-2, self.algo.env.height-2))
+        for t in range(self.timesteps):
+            hd = self.algo.obss[t]['direction']
+            x, y = self.algo.locs[t][0]-1, self.algo.locs[t][1]-1
+            occ[hd, x, y] += 1
+
+        fig = make_subplots(
+            rows=1, cols=4,
+            specs=[[{}]*4],
+            horizontal_spacing=0.03,
+            column_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)]
+        )
+
+        for hd in range(4):
+            fig.add_trace(
+                go.Heatmap(z=occ[hd].T, showscale=False, colorscale=SCALES[scale]),
+                row=1, col=hd+1
+            )
+
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False, autorange="reversed")
+        fig.update_layout(
+            height=280,
+            width=900,
+            title="State-occupancy per head-direction",
+            title_x=0.5,
+            font_family="Courier New"
+        )
+
+        # Make HD labels bigger + bold
+        for i in range(len(fig.layout.annotations)):
+            fig.layout.annotations[i].font = dict(size=24, family='Courier New', color='black')
+
+        fig.show()
+        return fig
 
     
 
