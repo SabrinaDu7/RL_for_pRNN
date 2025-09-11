@@ -29,6 +29,7 @@ exp:
     rgb: True # Is visual input RGB?
     intrinsic: True # Use intrinsic rewards?
     theta: False
+    single_theta: False
     random_action_agent: False # If True, overrides all PPO algorithms and chooses actions randomly. Used as control
     curious_agent: False # Use pRNN loss as reward ?
     random_init_control: False # If True, never update parameters i.e. test randomly initalized agent, usually as a control
