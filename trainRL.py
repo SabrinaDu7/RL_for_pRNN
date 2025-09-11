@@ -313,21 +313,21 @@ class RL_Trainer(object):
             # Do analysis
 
             if args.logging.analysis_interval > 0 and update % args.logging.analysis_interval == 0:
-                EFS = EnvironmentFeaturesAnalysis(env, randomagent, acmodel, predictiveNet, 20000)
-                if not error_map:
-                    error_map = EFS.error_map(HDs=False)
-                    error_map.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
-                                    paper_bgcolor='rgba(0, 0, 0, 0)')
-                    error_map.write_image(self.model_dir+"/"+str(update)+"_errors.png")
+                # EFS = EnvironmentFeaturesAnalysis(env, randomagent, acmodel, predictiveNet, 20000)
+                # if not error_map:
+                #     error_map = EFS.error_map(HDs=False)
+                #     error_map.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
+                #                     paper_bgcolor='rgba(0, 0, 0, 0)')
+                #     error_map.write_image(self.model_dir+"/"+str(update)+"_errors.png")
 
-                fig = EFS.policy_map()
-                fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
-                                  paper_bgcolor='rgba(0, 0, 0, 0)')
-                fig.write_image(self.model_dir+"/"+str(update)+"_policy.png")
-                fig = EFS.values_map(HDs=False)
-                fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
-                                  paper_bgcolor='rgba(0, 0, 0, 0)')
-                fig.write_image(self.model_dir+"/"+str(update)+"_values.png")
+                # fig = EFS.policy_map()
+                # fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
+                #                   paper_bgcolor='rgba(0, 0, 0, 0)')
+                # fig.write_image(self.model_dir+"/"+str(update)+"_policy.png")
+                # fig = EFS.values_map(HDs=False)
+                # fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
+                #                   paper_bgcolor='rgba(0, 0, 0, 0)')
+                # fig.write_image(self.model_dir+"/"+str(update)+"_values.png")
 
                 # OPA = OnPolicyAnalysis(algo, 20000)
                 # fig = OPA.plot_advantages()
