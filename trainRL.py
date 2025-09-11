@@ -285,12 +285,14 @@ class RL_Trainer(object):
                         return_per_episode = RLutils.synthesize(logs["return_per_episode"], signs=True)
                         int_rewards = RLutils.synthesize(logs["intrinsic_rewards"], abs=True)
                         cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
+                        values = RLutils.synthesize(logs["values"])
                         advantages = RLutils.synthesize(logs["advantages"])
                         header += ["return_" + key for key in return_per_episode.keys()]
                         header += ["int_reward_" + key for key in int_rewards.keys()]
                         header += ["cur_reward_" + key for key in cur_rewards.keys()]
+                        header += ["values_" + key for key in values]
                         header += ["advantages_" + key for key in advantages]
-                        header += ["value_mean", "policy_loss", "value_loss", "grad_norm",
+                        header += ["policy_loss", "value_loss", "grad_norm",
                                    "MI_policy"]
 
                 data = []
@@ -301,8 +303,9 @@ class RL_Trainer(object):
                     data += return_per_episode.values()
                     data += int_rewards.values()
                     data += cur_rewards.values()
+                    data += values.values()
                     data += advantages.values()
-                    data += [logs["value"], logs["policy_loss"],logs["value_loss"], logs["grad_norm"]]
+                    data += [logs["policy_loss"],logs["value_loss"], logs["grad_norm"]]
                     data += [mutual_info_policy(logs["joint_dist"])]
 
                 wandb.log(dict(zip(header, data)))

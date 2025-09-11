@@ -337,6 +337,7 @@ class PredictivePPOAlgo:
             "num_episodes": self.log_done_counter,
             "intrinsic_rewards": self.int_rewards.tolist(),
             "curious_rewards": self.curious_rewards.tolist(),
+            "values": self.values.tolist(),
             "advantages": self.advantages.tolist(),
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
