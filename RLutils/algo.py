@@ -496,7 +496,7 @@ class PredictivePPOAlgo:
 
 
     def randomAgent_collect_exp_and_update(self, agent):
-        assert self.train_pN, "The only reason to have random actions is to train the pRNN geinus..."
+        assert self.train_pN, "The only reason to have random actions in algo is to train the pRNN geinus..."
         self.pN.pRNN.to(self.device)
         numtrials = math.ceil(self.num_frames / self.prnn_seqdur)
 
