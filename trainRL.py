@@ -74,7 +74,7 @@ class RL_Trainer(object):
                                 dir = self.model_dir,
                                 resume='allow',
                                 # track hyperparameters and run metadata
-                                config = params
+                                config = OmegaConf.to_container(params, resolve=True)
                                 )
 
     def run_training_loop(self):
