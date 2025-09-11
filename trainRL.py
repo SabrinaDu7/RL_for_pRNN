@@ -371,9 +371,9 @@ class RL_Trainer(object):
                                                                 wandb_nameext='_offPolicy')  
                 
                 if args.exp.analyze_agent_behav:
-                    opa = OnPolicyAnalysis(algo, timesteps=20000)
+                    opa = OnPolicyAnalysis(algo, timesteps=25000)
                     wandb.log({"MI_policy_eval": opa.mi})
-                    RLutils.save_analysis_of_agent_behav(opa, self.mode_dir, update)
+                    RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
 
             if args.logging.early_stop:
                 if return_per_episode['mean']>0.9 and return_per_episode['std']<0.05:
