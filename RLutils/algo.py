@@ -85,9 +85,11 @@ class PredictivePPOAlgo:
             self.loc_mask = self.env.loc_mask
         else:
             self.loc_mask = [x==None or x.can_overlap() for x in env.grid.grid]
-        if 'thcyc' in str(self.pN.pRNN):
+        if self.pN and 'thcyc' in str(self.pN.pRNN):
             self.theta = True
             self.k = self.pN.pRNN.k + 1
+        else:
+            self.theta = False
 
         # Control parameters
         print('Control parameters')

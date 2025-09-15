@@ -108,13 +108,17 @@ class EnvironmentFeaturesAnalysis:
         data = {}
 
         if self.prnn:
+            print('Collecting pRNN observations...')
             prnn_obs, prnn_act, data['state'], _, data['obs'] = \
                 self.env.collectObservationSequence(self.agent, self.timesteps, save_env=True)
             with torch.no_grad():
                 _, _, data['h'] = self.prnn.predict(prnn_obs.to(device), prnn_act.to(device))
 
         else:
+            print('Collecting environment observations...')
             data['obs'], _, data['state'], _ = self.agent.getObservations(self.env, self.timesteps)
+
+        print('Collected {} steps for analysis'.format(len(data['obs'])-1))
 
         return data
     

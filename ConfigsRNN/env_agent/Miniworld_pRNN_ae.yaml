@@ -1,0 +1,4 @@
+env_key: MiniWorld-LRoom-v1 # Name of the environment
+env_package: miniworld_prnn_ae # Environment package
+agent_key: MiniworldRandomAgent # [RandomActionAgent, RatInABoxAgent, MiniworldRandomAgent]
+actenc: ContSpeedOnehotHDMiniworld # Action encoding method [SpeedHD, ContSpeedOnehotHDRiaB, ContSpeedOnehotHDMiniworld]

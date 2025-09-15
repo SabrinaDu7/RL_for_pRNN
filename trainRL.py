@@ -114,7 +114,7 @@ class RL_Trainer(object):
         # Load pRNN
         if args.exp.pRNN:
             if args.logging.load_worldmodel:
-                predictiveNet = PredictiveNet.loadNet(args.predNet.path)
+                predictiveNet = PredictiveNet.loadNet(args.predNet.path, args.predNet.folder)
                 if not hasattr(predictiveNet.pRNN, 'hidden_size'):
                     predictiveNet.pRNN.hidden_size = predictiveNet.pRNN.rnn.cell.hidden_size
                 predictiveNet.env_shell.env = env.env
@@ -196,7 +196,7 @@ class RL_Trainer(object):
             
 
         # Load algo
-        pastSR = not('prevAct' in str(predictiveNet.pRNN))
+        pastSR = predictiveNet==None or not('prevAct' in str(predictiveNet.pRNN))
         if args.exp.single_theta:
             algo = SingleThetaPPOalgo(
                                 env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
@@ -273,7 +273,9 @@ class RL_Trainer(object):
                     header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
                     header += ["entropy", "value", "policy_loss",
                                "value_loss", "grad_norm",
-                               "loc_entropy", "loc_entropy_5", "projection similarity"]
+                               "loc_entropy", "loc_entropy_5"]
+                    if args.exp.theta:
+                        header += ["projection similarity"]
                     header += ["frames", "FPS", "duration", "episodes"]
 
                 data = []
@@ -282,8 +284,9 @@ class RL_Trainer(object):
                 data += num_frames_per_episode.values()
                 data += [logs["entropy"], logs["value"], logs["policy_loss"],
                          logs["value_loss"], logs["grad_norm"],
-                         logs["loc_entropy"], logs["loc_entropy_5"],
-                         logs["proj_sim"]]
+                         logs["loc_entropy"], logs["loc_entropy_5"]]
+                if args.exp.theta:
+                    data += [logs["proj_sim"]]
                 data += [num_frames, fps, duration, logs["num_episodes"]]
 
                 wandb.log(dict(zip(header, data)))
@@ -291,21 +294,26 @@ class RL_Trainer(object):
             # Do analysis
 
             if args.logging.analysis_interval > 0 and update % args.logging.analysis_interval == 0:
+                print('Starting analysis at step {}'.format(update))
                 EFS = EnvironmentFeaturesAnalysis(env, randomagent, acmodel, predictiveNet, 20000)
-                if not error_map:
+                if args.exp.intrinsic and not error_map:
                     error_map = EFS.error_map(HDs=False)
                     error_map.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
                                     paper_bgcolor='rgba(0, 0, 0, 0)')
                     error_map.write_image(self.model_dir+"/"+str(update)+"_errors.png")
+                    print('Error map generated at step {}'.format(update))
 
                 fig = EFS.policy_map()
                 fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
                                   paper_bgcolor='rgba(0, 0, 0, 0)')
                 fig.write_image(self.model_dir+"/"+str(update)+"_policy.png")
+                print('Policy map generated at step {}'.format(update))
+
                 fig = EFS.values_map(HDs=False)
                 fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
                                   paper_bgcolor='rgba(0, 0, 0, 0)')
                 fig.write_image(self.model_dir+"/"+str(update)+"_values.png")
+                print('Values map generated at step {}'.format(update))
 
                 # OPA = OnPolicyAnalysis(algo, 20000)
                 # fig = OPA.plot_advantages()
