@@ -115,7 +115,7 @@ class RL_Trainer(object):
         # Load pRNN
         if args.exp.pRNN:
             if args.logging.load_worldmodel:
-                predictiveNet = PredictiveNet.loadNet(args.predNet.path)
+                predictiveNet = PredictiveNet.loadNet(args.predNet.path, args.predNet.folder)
                 if not hasattr(predictiveNet.pRNN, 'hidden_size'):
                     predictiveNet.pRNN.hidden_size = predictiveNet.pRNN.rnn.cell.hidden_size
                 predictiveNet.env_shell.env = env.env
@@ -169,7 +169,7 @@ class RL_Trainer(object):
                                     args.predNet.hiddensize, args.exp.with_obs,
                                     args.exp.rgb, predictiveNet.pRNN.k, args.rl.value_type)
             
-        elif args.exp.PC or args.exp.CANN or args.exp.pRNN:
+        elif args.exp.spatial:
             acmodel = ACModelSR(obs_space, env.action_space,
                                 args.predNet.hiddensize, args.exp.with_obs,
                                 args.exp.rgb)
@@ -203,7 +203,7 @@ class RL_Trainer(object):
             args.predNet.seqdur = 0
 
         # Load algo
-        pastSR = not('prevAct' in str(predictiveNet.pRNN))
+        pastSR = predictiveNet==None or not('prevAct' in str(predictiveNet.pRNN))
         if args.exp.single_theta:
             algo = SingleThetaPPOalgo(
                                 env, acmodel, predictiveNet, device, args.rl.frames, args.rl.discount,
@@ -294,6 +294,8 @@ class RL_Trainer(object):
                         header += ["advantages_" + key for key in advantages]
                         header += ["policy_loss", "value_loss", "grad_norm",
                                    "MI_policy"]
+                        if args.exp.theta:
+                            header += ["projection similarity"]
 
                 data = []
                 data += num_frames_per_episode.values()
@@ -307,27 +309,34 @@ class RL_Trainer(object):
                     data += advantages.values()
                     data += [logs["policy_loss"],logs["value_loss"], logs["grad_norm"]]
                     data += [mutual_info_policy(logs["joint_dist"])]
+                    if args.exp.theta:
+                        data += [logs["proj_sim"]]
 
                 wandb.log(dict(zip(header, data)))
 
             # Do analysis
 
             if args.logging.analysis_interval > 0 and update % args.logging.analysis_interval == 0:
-                # EFS = EnvironmentFeaturesAnalysis(env, randomagent, acmodel, predictiveNet, 20000)
-                # if not error_map:
-                #     error_map = EFS.error_map(HDs=False)
-                #     error_map.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
-                #                     paper_bgcolor='rgba(0, 0, 0, 0)')
-                #     error_map.write_image(self.model_dir+"/"+str(update)+"_errors.png")
+                print('Starting analysis at step {}'.format(update))
+                EFS = EnvironmentFeaturesAnalysis(env, randomagent, acmodel, predictiveNet, 20000)
+                if args.exp.intrinsic and not error_map:
+                    error_map = EFS.error_map(*env.env.target_pos, HDs=False)
+                    error_map.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
+                                    paper_bgcolor='rgba(0, 0, 0, 0)')
+                    error_map.write_image(self.model_dir+"/"+str(update)+"_errors.png")
+                    print('Error map generated at step {}'.format(update))
 
-                # fig = EFS.policy_map()
-                # fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
-                #                   paper_bgcolor='rgba(0, 0, 0, 0)')
-                # fig.write_image(self.model_dir+"/"+str(update)+"_policy.png")
-                # fig = EFS.values_map(HDs=False)
-                # fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
-                #                   paper_bgcolor='rgba(0, 0, 0, 0)')
-                # fig.write_image(self.model_dir+"/"+str(update)+"_values.png")
+                fig = EFS.policy_map()
+                fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
+                                  paper_bgcolor='rgba(0, 0, 0, 0)')
+                fig.write_image(self.model_dir+"/"+str(update)+"_policy.png")
+                print('Policy map generated at step {}'.format(update))
+
+                fig = EFS.values_map(HDs=False)
+                fig.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
+                                  paper_bgcolor='rgba(0, 0, 0, 0)')
+                fig.write_image(self.model_dir+"/"+str(update)+"_values.png")
+                print('Values map generated at step {}'.format(update))
 
                 # OPA = OnPolicyAnalysis(algo, 20000)
                 # fig = OPA.plot_advantages()
@@ -376,7 +385,7 @@ class RL_Trainer(object):
                     RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
 
             if args.logging.early_stop:
-                if return_per_episode['mean']>0.9 and return_per_episode['std']<0.05:
+                if return_per_episode['mean']>args.exp.opt_return and return_per_episode['std']<0.05:
                     n_performance += 1
                     if n_performance == 25:
                         break

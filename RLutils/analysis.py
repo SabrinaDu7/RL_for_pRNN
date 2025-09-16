@@ -132,13 +132,17 @@ class EnvironmentFeaturesAnalysis:
         data = {}
 
         if self.prnn:
+            print('Collecting pRNN observations...')
             prnn_obs, prnn_act, data['state'], _, data['obs'] = \
                 self.env.collectObservationSequence(self.agent, self.timesteps, save_env=True)
             with torch.no_grad():
                 _, _, data['h'] = self.prnn.predict(prnn_obs.to(device), prnn_act.to(device))
 
         else:
+            print('Collecting environment observations...')
             data['obs'], _, data['state'], _ = self.agent.getObservations(self.env, self.timesteps)
+
+        print('Collected {} steps for analysis'.format(len(data['obs'])-1))
 
         return data
     
@@ -212,12 +216,8 @@ class EnvironmentFeaturesAnalysis:
         probs_map = np.argmax(probs_map[:,:,:,2], axis=0)
         probs_map = probs_map.astype(float)
 
-        probs_map[4,4] = np.nan
-        probs_map[4,8] = np.nan
-        probs_map[8,4] = np.nan
-        probs_map[8,8] = np.nan
-        probs_map[12,4] = np.nan
-        probs_map[12,8] = np.nan
+        instances_map = instances_map.sum(axis=(0,3))
+        probs_map[instances_map == 0] = np.nan
 
         act_map = np.zeros((self.env.width-2, self.env.height-2), dtype=str)
         act_map[probs_map == 0] = '→'

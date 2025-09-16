@@ -13,22 +13,24 @@ hydra:
     dir: .
 
 exp:
-    env_name: MiniGrid-DonutLava-Long-neg05-v2 # Name of the environment to train on [MiniGrid-FakeLava-5x5-3x4-neg02-v0, MiniGrid-DonutLava-17x17-neg02-v0]
-    opt_return: 0.85 # Optimal return for the environment
+    env_name: MiniGrid-Lava-Corners-neg05-v2 # Name of the environment to train on [MiniGrid-DonutLava-Long-neg05-v2]
+    opt_return: 0.89 # Optimal return for the environment
     # wrapper: 
     #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
-    input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
-    exp_name: test_Intrinsic
+    input_type: 'FO' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
+    exp_name: test
     seed: 2 # Random seed
-    pRNN: True # Wether to use pRNN for spatial input
-    PC: False # Wether to use fake place cells for spatial input
-    CANN: False # Wether to use CANN for spatial input
-    recurrence: 1 # Wether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
-    with_obs: True # Wether to include visual input (in case of recurrency the one that would bypass RNN)
-    with_HD: True
-    rgb: True # Is visual input RGB?
-    intrinsic: True # Use intrinsic rewards?
+    spatial: False # Whether AC uses spatial input
+    pRNN: False # Whether to use pRNN for spatial input
+    PC: False # Whether to use fake place cells for spatial input
+    CANN: False # Whether to use CANN for spatial input
+    recurrence: 1 # Whether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
+    with_obs: False # Whether to include visual input (in case of recurrency the one that would bypass RNN)
+    with_HD: False
+    rgb: False # Is visual input RGB?
+    intrinsic: False # Use intrinsic rewards?
     theta: False
+    shared_weights: False
     single_theta: False
     random_action_agent: False # If True, overrides all PPO algorithms and chooses actions randomly. Used as control
     curious_agent: False # Use pRNN loss as reward ?
@@ -43,7 +45,7 @@ hardware:
 
 
 rl:
-    steps: 5e6
+    steps: 5e5
     discount: 0.98
     lr: 0.0007
     gae_lambda: 0.95 # Lambda coefficient in GAE formula (1 means no gae)
@@ -62,6 +64,7 @@ rl:
 
 predNet:
     path: example_nets_donut_long_theta/thcycRNN_5win_full-theta-s8 #example_nets_donut_long_prev_action/thRNN_5win_prevAct-PrevAct-s8
+    folder: '/home/mila/a/aleksei.efremov/pRNN-RL/LabNotebook/20250912_LavaCorners_pRNNs/'
     hiddensize: 500
     pRNNtype: thRNN_1win #AutoencoderPred_LN
     action_encoding: SpeedHD #Onehot
@@ -85,7 +88,7 @@ logging:
     early_stop: True # Should the training stop when the environment is solved?
     save_params: True # Should the parameters given to the script be saved? (Always...)
     focus: False #'rl.k_int' # Which parameter to include in the group name or False
-    project: Donut_long_neg05 # ['Place field width', 'PO-FO-PC-CANN-comparison']
+    project: test # ['Place field width', 'PO-FO-PC-CANN-comparison']
     logdir: "/network/scratch/a/aleksei.efremov/RLstorage"
     load_acmodel: False #'/network/scratch/a/aleksei.efremov/RLstorage/Donut_long_neg05_shortbptt/PO+Rec_seed10_24-01-22-15-46-34' # False or the path to the model
     load_worldmodel: True #True
