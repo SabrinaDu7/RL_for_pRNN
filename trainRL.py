@@ -166,7 +166,7 @@ class RL_Trainer(object):
                                     args.predNet.hiddensize, args.exp.with_obs,
                                     args.exp.rgb, predictiveNet.pRNN.k, args.rl.value_type)
             
-        elif args.exp.PC or args.exp.CANN or args.exp.pRNN:
+        elif args.exp.spatial:
             acmodel = ACModelSR(obs_space, env.action_space,
                                 args.predNet.hiddensize, args.exp.with_obs,
                                 args.exp.rgb)
@@ -297,7 +297,7 @@ class RL_Trainer(object):
                 print('Starting analysis at step {}'.format(update))
                 EFS = EnvironmentFeaturesAnalysis(env, randomagent, acmodel, predictiveNet, 20000)
                 if args.exp.intrinsic and not error_map:
-                    error_map = EFS.error_map(HDs=False)
+                    error_map = EFS.error_map(*env.env.target_pos, HDs=False)
                     error_map.update_layout(plot_bgcolor='rgba(0, 0, 0, 0)',
                                     paper_bgcolor='rgba(0, 0, 0, 0)')
                     error_map.write_image(self.model_dir+"/"+str(update)+"_errors.png")
@@ -330,7 +330,7 @@ class RL_Trainer(object):
                 # fig.write_image(self.model_dir+"/"+str(update)+"_deltas.png")
 
             if args.logging.early_stop:
-                if return_per_episode['mean']>0.9 and return_per_episode['std']<0.05:
+                if return_per_episode['mean']>args.exp.opt_return and return_per_episode['std']<0.05:
                     n_performance += 1
                     if n_performance == 25:
                         break

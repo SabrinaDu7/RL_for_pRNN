@@ -14,20 +14,21 @@ hydra:
 
 exp:
     env_name: MiniGrid-Lava-Corners-neg05-v2 # Name of the environment to train on [MiniGrid-DonutLava-Long-neg05-v2]
-    opt_return: 0.85 # Optimal return for the environment
+    opt_return: 0.89 # Optimal return for the environment
     # wrapper: 
     #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
-    input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
-    exp_name: test_Intrinsic
+    input_type: 'FO' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
+    exp_name: test
     seed: 2 # Random seed
-    pRNN: True # Wether to use pRNN for spatial input
-    PC: False # Wether to use fake place cells for spatial input
-    CANN: False # Wether to use CANN for spatial input
-    recurrence: 1 # Wether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
-    with_obs: True # Wether to include visual input (in case of recurrency the one that would bypass RNN)
-    with_HD: True
-    rgb: True # Is visual input RGB?
-    intrinsic: True # Use intrinsic rewards?
+    spatial: False # Whether AC uses spatial input
+    pRNN: False # Whether to use pRNN for spatial input
+    PC: False # Whether to use fake place cells for spatial input
+    CANN: False # Whether to use CANN for spatial input
+    recurrence: 1 # Whether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
+    with_obs: False # Whether to include visual input (in case of recurrency the one that would bypass RNN)
+    with_HD: False
+    rgb: False # Is visual input RGB?
+    intrinsic: False # Use intrinsic rewards?
     theta: False
     shared_weights: False
     single_theta: False
