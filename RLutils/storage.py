@@ -9,6 +9,8 @@ from .other import device
 
 
 def create_folders_if_necessary(path):
+    if path == '':
+        return
     dirname = os.path.dirname(path)
     if not os.path.isdir(dirname):
         os.makedirs(dirname)
@@ -58,6 +60,21 @@ def save_status(status, model_dir):
     RLutils.create_folders_if_necessary(path)
     torch.save(status, path)
 
+def save_analysis_of_agent_behav(onpolicyAnalysis, model_dir, update_step):
+    figs = {
+    "advantages.png":            onpolicyAnalysis.plot_advantages(),
+    "policy_heatmaps.png":       onpolicyAnalysis.plot_policy_heatmaps(),
+    "occupancy.png":             onpolicyAnalysis.plot_occupancy(),
+    "values.png":                onpolicyAnalysis.plot_values()}
+
+    outdir = os.path.join(model_dir, "onpolicy_analysis", str(update_step))
+    os.makedirs(outdir, exist_ok=True)
+
+    for fname, fig in figs.items():
+        savename = os.path.join(outdir, fname)
+        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)',
+                            paper_bgcolor='rgba(0,0,0,0)')
+        fig.write_image(savename)
 
 # def get_vocab(model_dir):
 #     return get_status(model_dir)["vocab"]

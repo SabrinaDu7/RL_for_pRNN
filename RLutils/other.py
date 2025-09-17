@@ -17,15 +17,17 @@ def seed(seed):
 
 def synthesize(array, signs=False, abs=False):
     d = collections.OrderedDict()
-    d["mean"] = np.mean(array)
-    d["std"] = np.std(array)
-    d["min"] = np.amin(array)
-    d["max"] = np.amax(array)
+    d["mean"] = np.nanmean(array)
+    d["std"] = np.nanstd(array)
+    d["min"] = np.nanmin(array)
+    d["max"] = np.nanmax(array)
     if signs:
+        valid_idxs = ~np.isnan(array)
+        array = array[valid_idxs]
         array = np.array(array)
         d["pos"] = np.sum(np.sign(array)[array>0])
         d["neg"] = np.sum(np.abs(np.sign(array)[array<0]))
-        d["ratio"] = d["pos"]/d["neg"]
+        d["ratio"] = d["pos"]/d["neg"] if d["neg"]!=0 else np.nan
     if abs:
-        d["abs_mean"] = np.mean(np.abs(array))
+        d["abs_mean"] = np.nanmean(np.abs(array))
     return d
