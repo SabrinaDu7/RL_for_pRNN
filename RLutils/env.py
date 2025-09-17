@@ -3,6 +3,7 @@ from gymnasium import spaces
 from gymnasium.core import ObservationWrapper, Wrapper
 from gymnasium.wrappers import RecordVideo
 from minigrid.wrappers import *
+from functools import partial
 
 from prnn.utils.CANNNet import CANNnet
 from prnn.utils.Shell import FaramaMinigridShell
@@ -23,6 +24,10 @@ wrappers = {
     "DirectionObsWrapper": DirectionObsWrapper,
     "SymbolicObsWrapper": SymbolicObsWrapper         
 }
+
+#replace lambda function so i can pickle pNet
+def episode_video_trigger(episode, vid_n_episodes):
+    return episode % vid_n_episodes == 0
 
 def make_env(
              env_key,
@@ -52,8 +57,11 @@ def make_env(
     if wrapper:
         env = wrappers[wrapper](env, **kwargs)
 
+    #Below I replaced the lambda function. This allows me to pickle pNet without errors
     if vid_n_episodes:
-        env = RecordVideo(env, video_folder=vid_folder, episode_trigger=lambda x: x%vid_n_episodes == 0)
+        #env = RecordVideo(env, video_folder=vid_folder, episode_trigger=lambda x: x%vid_n_episodes == 0)
+        trigger_func = partial(episode_video_trigger, vid_n_episodes=vid_n_episodes)
+        env = RecordVideo(env, vid_folder=vid_folder, episode_trigger=trigger_func)
     
     env.reset(seed=seed)
     env = FaramaMinigridShell(env, act_enc, env_key)

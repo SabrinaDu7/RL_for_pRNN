@@ -32,6 +32,12 @@ exp:
     theta: False
     shared_weights: False
     single_theta: False
+    random_action_agent: False # If True, overrides all PPO algorithms and chooses actions randomly. Used as control
+    curious_agent: False # Use pRNN loss as reward ?
+    random_init_control: False # If True, never update parameters i.e. test randomly initalized agent, usually as a control
+    offpolicy_prnn_eval: True # If true, action output is off policy (so if PPO is being done, then actions random. Vice versa if random_action_agent)
+    onpolicy_prnn_eval: False # If True, actions chosen at prnn eval (SI, decoding, etc) are chosen on policy. 
+    analyze_agent_behav: False # If true, analyze agent policy (plot policy,state distribution,and more, and calculate mutual info between state and action)
 
 hardware:
     use_gpu: True
@@ -51,7 +57,8 @@ rl:
     pc_sd: 4
     pc_norm: True
     cann_input_width: 100
-    k_int: 1 # Coefficient for intrinsic reward
+    k_int: 1 # Coefficient for intrinsic reward. Only relevant if exp.intrinsic is True
+    k_curious: 1 # Coeffecient for curious reward. Only relevant if exp.curious_agent is True
     eval_type: rewards
     value_type: single
 
@@ -71,6 +78,7 @@ predNet:
     noisestd: 0.05
     sparsity: 0.5
     train: False # Train pRNN simultaneously with RL?
+    seqdur: 0 # Only relevant if train is on
 
 logging:
     video_log_freq: 500 # Number of episodes between video logs (0: no videos)
