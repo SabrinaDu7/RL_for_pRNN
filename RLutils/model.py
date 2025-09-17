@@ -168,15 +168,19 @@ class ACModel(nn.Module, torch_ac.ACModel):
 
 
 class ACModelSR(ACModel):
-    def __init__(self, obs_space, action_space, SR_size=-1, with_CV=True, rgb=True):
+    def __init__(self, obs_space, action_space, SR_size=-1, with_CV=True, 
+                 rgb=True, with_HD=True):
         self.with_CV = with_CV
         self.SR_single = SR_size # if SRs are not used, the arg should be -1
-        self.rgb = rgb
-        super(ACModelSR, self).__init__(obs_space, action_space)
+        super(ACModelSR, self).__init__(obs_space, action_space, 
+                                        with_HD=with_HD, rgb=rgb)
 
     @property
     def SR_size(self):
-        return self.SR_single + 4
+        if self.with_HD:
+            return self.SR_single + 4
+        else:
+            return self.SR_single
 
     @property
     def embedding_size(self):
@@ -209,12 +213,17 @@ class ACModelSR(ACModel):
 
 
         onehot_HD = torch.nn.functional.one_hot(obs.direction.long(), num_classes=4).float()
-        if self.with_CV and self.SR_size:
-            embedding = torch.cat((x, SR, onehot_HD), dim=1)
-        elif self.SR_size:
-            embedding = torch.cat((SR, onehot_HD), dim=1)
+
+        if self.with_HD:
+            if self.with_CV:
+                embedding = torch.cat((x, SR, onehot_HD), dim=1)
+            else:
+                embedding = torch.cat((SR, onehot_HD), dim=1)
         else:
-            embedding = x
+            if self.with_CV:
+                embedding = torch.cat((x, SR), dim=1)
+            else:
+                embedding = SR
 
         x = self.actor(embedding)
         dist = Categorical(logits=F.log_softmax(x, dim=1))
