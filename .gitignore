@@ -8,3 +8,5 @@ RLutils/__pycache__/*
 *.pyc
 *.ipynb
 test*
+
+trainRL.py
