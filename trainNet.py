@@ -7,10 +7,6 @@ Created on Tue Jun 14 22:07:04 2022
 """
 
 
-
-
-
-#%%
 from prnn.utils.predictiveNet import PredictiveNet
 from prnn.utils.agent import create_agent
 from prnn.utils.data import create_dataloader
