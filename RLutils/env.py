@@ -22,34 +22,36 @@ wrappers = {
     "FlatObsWrapper": FlatObsWrapper,
     "ViewSizeWrapper": ViewSizeWrapper,
     "DirectionObsWrapper": DirectionObsWrapper,
-    "SymbolicObsWrapper": SymbolicObsWrapper         
+    "SymbolicObsWrapper": SymbolicObsWrapper,
 }
 
-#replace lambda function so i can pickle pNet
+
+# replace lambda function so i can pickle pNet
 def episode_video_trigger(episode, vid_n_episodes):
     return episode % vid_n_episodes == 0
 
+
 def make_env(
-             env_key,
-             input_type,
-             seed=0,
-             vid_folder='',
-             vid_n_episodes=0,
-             wrapper=None,
-             render_mode='rgb_array',
-             act_enc=None,
-             **kwargs
-             ):
+    env_key,
+    input_type,
+    seed=0,
+    vid_folder="",
+    vid_n_episodes=0,
+    wrapper=None,
+    render_mode="rgb_array",
+    act_enc=None,
+    **kwargs,
+):
     env = gym.make(env_key, render_mode=render_mode)
 
-    if input_type == 'Visual_FO':
+    if input_type == "Visual_FO":
         # Not RGB one here because we want RL agent to have as much info as possible
         env = FullyObsWrapper(env)
 
-    elif 'pRNN' in input_type or 'PO' in input_type:
+    elif "pRNN" in input_type or "PO" in input_type:
         # The same RGB wrapper is used for comparability whenever partial observation is needed
         env = RGBImgPartialObsWrapper_HD(env, tile_size=1)
-    
+
     else:
         # For the cases without any visual input
         env = HDObsWrapper(env)
@@ -57,12 +59,12 @@ def make_env(
     if wrapper:
         env = wrappers[wrapper](env, **kwargs)
 
-    #Below I replaced the lambda function. This allows me to pickle pNet without errors
+    # Below I replaced the lambda function. This allows me to pickle pNet without errors
     if vid_n_episodes:
-        #env = RecordVideo(env, video_folder=vid_folder, episode_trigger=lambda x: x%vid_n_episodes == 0)
+        # env = RecordVideo(env, video_folder=vid_folder, episode_trigger=lambda x: x%vid_n_episodes == 0)
         trigger_func = partial(episode_video_trigger, vid_n_episodes=vid_n_episodes)
         env = RecordVideo(env, vid_folder=vid_folder, episode_trigger=trigger_func)
-    
+
     env.reset(seed=seed)
     env = FaramaMinigridShell(env, act_enc, env_key)
 
@@ -85,7 +87,7 @@ class ResetWrapper(Wrapper):
 
     def reset(self, **kwargs):
         return self.env.reset(**kwargs)[0]
-    
+
 
 class HDObsWrapper(ObservationWrapper):
     """
@@ -101,10 +103,5 @@ class HDObsWrapper(ObservationWrapper):
             {**self.observation_space.spaces, "HD": HD_space}
         )
 
-            
     def observation(self, obs):
-
-        return {
-            'mission': obs['mission'],
-            'HD': obs['direction']
-        }
+        return {"mission": obs["mission"], "HD": obs["direction"]}

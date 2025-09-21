@@ -13,39 +13,52 @@ def get_obss_preprocessor(obs_space):
         obs_space = {"image": obs_space.shape}
 
         def preprocess_obss(obss, device=None):
-            return torch_ac.DictList({
-                "image": preprocess_images(obss, device=device)
-            })
+            return torch_ac.DictList({"image": preprocess_images(obss, device=device)})
 
     # Check if it is a MiniGrid observation space with HD
     elif isinstance(obs_space, gym.spaces.Dict) and "HD" in obs_space.spaces.keys():
-        obs_space = {"direction": 1,
-                     "text": 100}
+        obs_space = {"direction": 1, "text": 100}
 
         vocab = Vocabulary(obs_space["text"])
 
         def preprocess_obss(obss, device=None):
-            return torch_ac.DictList({
-                "direction": preprocess_int([obs["HD"] for obs in obss], device=device),
-                "text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device)
-            })
+            return torch_ac.DictList(
+                {
+                    "direction": preprocess_int(
+                        [obs["HD"] for obs in obss], device=device
+                    ),
+                    "text": preprocess_texts(
+                        [obs["mission"] for obs in obss], vocab, device=device
+                    ),
+                }
+            )
 
         preprocess_obss.vocab = vocab
 
     # Check if it is a MiniGrid observation space with images
     elif isinstance(obs_space, gym.spaces.Dict) and "image" in obs_space.spaces.keys():
-        obs_space = {"image": obs_space.spaces["image"].shape,
-                     "direction": 1,
-                     "text": 100}
+        obs_space = {
+            "image": obs_space.spaces["image"].shape,
+            "direction": 1,
+            "text": 100,
+        }
 
         vocab = Vocabulary(obs_space["text"])
 
         def preprocess_obss(obss, device=None):
-            return torch_ac.DictList({
-                "image": preprocess_images([obs["image"] for obs in obss], device=device),
-                "direction": preprocess_int([obs["direction"] for obs in obss], device=device),
-                "text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device)
-            })
+            return torch_ac.DictList(
+                {
+                    "image": preprocess_images(
+                        [obs["image"] for obs in obss], device=device
+                    ),
+                    "direction": preprocess_int(
+                        [obs["direction"] for obs in obss], device=device
+                    ),
+                    "text": preprocess_texts(
+                        [obs["mission"] for obs in obss], vocab, device=device
+                    ),
+                }
+            )
 
         preprocess_obss.vocab = vocab
 
@@ -60,9 +73,11 @@ def preprocess_images(images, device=None):
     images = numpy.array(images)
     return torch.tensor(images, device=device, dtype=torch.float)
 
+
 def preprocess_int(integer, device=None):
     integer = numpy.array(integer)
     return torch.tensor(integer, device=device, dtype=torch.uint8)
+
 
 def preprocess_texts(texts, vocab, device=None):
     var_indexed_texts = []
@@ -77,7 +92,7 @@ def preprocess_texts(texts, vocab, device=None):
     indexed_texts = numpy.zeros((len(texts), max_text_len))
 
     for i, indexed_text in enumerate(var_indexed_texts):
-        indexed_texts[i, :len(indexed_text)] = indexed_text
+        indexed_texts[i, : len(indexed_text)] = indexed_text
 
     return torch.tensor(indexed_texts, device=device, dtype=torch.long)
 

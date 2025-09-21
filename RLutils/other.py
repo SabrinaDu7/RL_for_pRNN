@@ -25,9 +25,9 @@ def synthesize(array, signs=False, abs=False):
         valid_idxs = ~np.isnan(array)
         array = array[valid_idxs]
         array = np.array(array)
-        d["pos"] = np.sum(np.sign(array)[array>0])
-        d["neg"] = np.sum(np.abs(np.sign(array)[array<0]))
-        d["ratio"] = d["pos"]/d["neg"] if d["neg"]!=0 else np.nan
+        d["pos"] = np.sum(np.sign(array)[array > 0])
+        d["neg"] = np.sum(np.abs(np.sign(array)[array < 0]))
+        d["ratio"] = d["pos"] / d["neg"] if d["neg"] != 0 else np.nan
     if abs:
         d["abs_mean"] = np.nanmean(np.abs(array))
     return d

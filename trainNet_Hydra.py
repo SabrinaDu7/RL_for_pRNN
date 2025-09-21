@@ -8,19 +8,14 @@ Created on Tue Jul 28 11:07:04 2025
 
 
 
-
-
-#%%
 from prnn.utils.predictiveNet import PredictiveNet
-from prnn.utils.agent import RandomActionAgent
 from prnn.utils.env import make_env
 from prnn.utils.agent import create_agent
-from prnn.utils.data import generate_trajectories, create_dataloader, mergeDatasets
+from prnn.utils.data import create_dataloader
 from prnn.utils.figures import TrainingFigure
-from prnn.utils.figures import SpontTrajectoryFigure
-# from prnn.examples.Miniworld.VAE import VarAutoEncoder, VAE
+from prnn.examples.Miniworld.VAE import VarAutoEncoder, VAE
 
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 import hydra
 import wandb
@@ -118,6 +113,7 @@ def main(config: DictConfig):
                              env,
                              config['env_agent']['agent_key'],
                              config['env_agent']['agent_name'])
+        
         if config['fm']['use_dataloader']:
             tmpfolder = os.path.expandvars('${SLURM_TMPDIR}')
             create_dataloader(env=env, agent=agent, n_trajs=config['data']['datasetSize'],
@@ -158,13 +154,11 @@ def main(config: DictConfig):
                                     #   enc_loss_power= config['encoder']['loss_power'],
                                     #   latent_dim= config['prnn']['latent_dim'],
                                       wandb_log=True)
-        predictiveNet.seed = config['hparams']['seed']
-        predictiveNet.trainArgs = OmegaConf.to_container(config)
+
         predictiveNet.plotSampleTrajectory(env,agent,
                                         savename=savename+'exTrajectory_untrained',
                                         savefolder=figfolder)
-        predictiveNet.savefolder = config['fm']['savefolder']
-        predictiveNet.savename = savename
+
         print('Predictive Net Created')
 
 
@@ -174,7 +168,6 @@ def main(config: DictConfig):
     sequence_duration = config['env_agent']['seqdur']
     num_trials = config['data']['numtrials']
 
-    predictiveNet.trainingCompleted = False
     if predictiveNet.numTrainingTrials == -1:
         #Calculate initial spatial metrics etc
         print('Training Baseline')
@@ -218,7 +211,6 @@ def main(config: DictConfig):
         predictiveNet.saveNet(config['fm']['savefolder']+'/'+savename,
                               savefolder = config['fm']['netsfolder'])
 
-    predictiveNet.trainingCompleted = True
     TrainingFigure(predictiveNet,savename=savename,savefolder=figfolder)
 
     #If the user doesn't want to save all that training data, delete it except the last one
