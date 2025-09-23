@@ -1,8 +1,5 @@
 import torch
 import numpy as np
-from numpy.random import choice
-from prnn.utils.predictiveNet import PredictiveNet
-from collections import defaultdict
 
 import RLutils
 from .other import device

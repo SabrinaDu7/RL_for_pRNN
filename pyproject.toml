@@ -3,28 +3,29 @@ name = "rl-for-prnn"
 version = "0.1.0"
 description = "This package builds an RL agent for pRNN."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9, <=3.10.15"
 authors = [
     { name = "Daniel Levenstein", email = "daniel.levenstein@mila.quebec" },
     { name = "Sabrina Du", email = "sabrina.du@mila.quebec"},
 ]
 dependencies = [
     "hydra-core>=1.3.2",
-    "matplotlib>=3.10.6",
-    "numpy>=2.3.3",
-    "pandas>=2.3.2",
-    "scipy>=1.16.2",
-    "torch>=2.8.0",
-    "wandb>=0.22.0",
-    "pRNN @ file:../pRNN"
+    "matplotlib>=3.5.3",
+    "numpy>=1.22.4",
+    "pandas>=1.5.3",
+    "scipy>=1.12.0",
+    "torch>=2.7.1",
+    "wandb>=0.21.3",
+    "pRNN @ file:///Users/sabrinadu/Documents/Labs/PeyracheLab/projects/pRNN",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["rl-for-prnn"]
+# [tool.hatch.build.targets.wheel]
+# packages = ["rl-for-prnn"]
+# There needs to be a package/folder named rl-for-prnn for this to work
 
 [tool.hatch.metadata]
 allow-direct-references = true

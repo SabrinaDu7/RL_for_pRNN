@@ -246,7 +246,7 @@ random.seed(args.seed)
 np.random.seed(args.seed)
 
 if args.contin:
-    predictiveNet = PredictiveNet.loadNet(args.loadfolder + savename)
+    predictiveNet = PredictiveNet.loadNet(savename=(args.loadfolder + savename))
     if args.env == "":
         env = predictiveNet.loadEnvironment(args.load_env)
         predictiveNet.addEnvironment(env)
