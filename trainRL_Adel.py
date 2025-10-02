@@ -319,6 +319,7 @@ class RL_Trainer(object):
 
             if args.logging.analysis_interval > 0 and update % args.logging.analysis_interval == 0:
                 if prnn_eval_bool and not args.exp.CANN:
+                    predictiveNet.pRNN.to("cpu")
                     if args.exp.onpolicy_prnn_eval:
                         
                         analysisagent = randomagent if args.exp.random_action_agent else ActorCriticAgent(env.action_space, 
@@ -344,7 +345,8 @@ class RL_Trainer(object):
                                                                 saveTrainingData=False, bitsec= False,
                                                                 calculatesRSA = True, sleepstd=0.03,
                                                                 wandb_nameext='_offPolicy')  
-                
+
+                    predictiveNet.pRNN.to(device)
                 if args.exp.analyze_agent_behav:
                     opa = OnPolicyAnalysis(algo, timesteps=25000)
                     wandb.log({"MI_policy_eval": opa.mi})
