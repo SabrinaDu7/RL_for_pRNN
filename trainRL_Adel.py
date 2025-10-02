@@ -66,7 +66,7 @@ class RL_Trainer(object):
 
         self.run = wandb.init(
                                 # set the wandb project where this run will be logged
-                                entity = 'ahalawa-mcgill-university', #'adel-halawa-mila', #'ahalawa-mcgill-university',
+                                entity = 'sabrina-du-mila-mila',
                                 project = params.logging.project,
                                 group = self.group,
                                 # group = f"{params.exp.exp_name}_width{params.rl.pc_sd}",
@@ -278,16 +278,18 @@ class RL_Trainer(object):
                 duration = int(time.time() - start_time)
                 num_frames_per_episode = RLutils.synthesize(logs["num_frames_per_episode"])
 
+                if not args.exp.random_action_agent:
+                    return_per_episode = RLutils.synthesize(logs["return_per_episode"], signs=True)
+                    int_rewards = RLutils.synthesize(logs["intrinsic_rewards"], abs=True)
+                    cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
+                    values = RLutils.synthesize(logs["values"])
+                    advantages = RLutils.synthesize(logs["advantages"])
+
                 if not header:
                     header = ["steps_per_trial_" + key for key in num_frames_per_episode.keys()]
                     header += ["num_episodes", "policy_entropy", "loc_entropy", "loc_entropy_5",
                                "frames", "FPS", "duration"]
                     if not args.exp.random_action_agent:
-                        return_per_episode = RLutils.synthesize(logs["return_per_episode"], signs=True)
-                        int_rewards = RLutils.synthesize(logs["intrinsic_rewards"], abs=True)
-                        cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
-                        values = RLutils.synthesize(logs["values"])
-                        advantages = RLutils.synthesize(logs["advantages"])
                         header += ["return_" + key for key in return_per_episode.keys()]
                         header += ["int_reward_" + key for key in int_rewards.keys()]
                         header += ["cur_reward_" + key for key in cur_rewards.keys()]
