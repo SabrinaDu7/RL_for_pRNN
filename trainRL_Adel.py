@@ -286,7 +286,8 @@ class RL_Trainer(object):
                     advantages = RLutils.synthesize(logs["advantages"])
 
                 if not header:
-                    header = ["steps_per_trial_" + key for key in num_frames_per_episode.keys()]
+                    header = ["update"]
+                    header += ["steps_per_trial_" + key for key in num_frames_per_episode.keys()]
                     header += ["num_episodes", "policy_entropy", "loc_entropy", "loc_entropy_5",
                                "frames", "FPS", "duration"]
                     if not args.exp.random_action_agent:
@@ -299,6 +300,7 @@ class RL_Trainer(object):
                                    "MI_policy"]
 
                 data = []
+                data += [update]
                 data += num_frames_per_episode.values()
                 data += [logs["num_episodes"], logs["entropy"], logs["loc_entropy"],
                          logs["loc_entropy_5"], num_frames, fps, duration]
