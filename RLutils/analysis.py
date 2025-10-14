@@ -138,7 +138,7 @@ def plot_heatmaps(feature, title="", zmin=None, zmax=None, HDs=True, scale="defa
             showarrow=False,
         )
 
-    fig.show()
+    # fig.show()
     return fig
 
 
@@ -293,8 +293,10 @@ class EnvironmentFeaturesAnalysis:
         )
         fig.update_xaxes(showticklabels=False)
         fig.update_yaxes(showticklabels=False)
-        fig.update_layout(height=500, width=600, title_text="Policy", title_x=0.5)
-        fig.show()
+        fig.update_layout(height=500, width=600,
+                        title_text='Policy',
+                        title_x=0.5)
+        # fig.show()
         return fig
 
     def error_map(
@@ -534,7 +536,7 @@ class OnPolicyAnalysis:
                 size=24, family="Courier New", color="black"
             )
 
-        fig.show()
+        # fig.show()
         return fig
 
     def plot_occupancy(self, scale="viridis"):
@@ -581,5 +583,5 @@ class OnPolicyAnalysis:
                 size=24, family="Courier New", color="black"
             )
 
-        fig.show()
+        # fig.show()
         return fig
