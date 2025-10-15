@@ -1,12 +1,14 @@
+import warnings
+
+### Suppress warnings ###
+warnings.filterwarnings("ignore", category=UserWarning)
+
 import time
 import datetime
-import torch
-import sys
 import os
-import shutil
 import numpy as np
 
-from omegaconf import OmegaConf, DictConfig, open_dict
+from omegaconf import OmegaConf, DictConfig
 import hydra
 import wandb
 
@@ -26,6 +28,7 @@ RNNoptions = {'LayerNormRNNCell' : LayerNormRNNCell ,
               'RNNCell' : RNNCell
                 }
 
+DIR = "/home/sabrina/Documents/experiments/scratch/curious-george/defaultName_seed2_25-10-12-21-51-06/"
 
 class RL_Trainer(object):
 
@@ -100,9 +103,10 @@ class RL_Trainer(object):
 
         # Load training status
 
-        try:
-            status = RLutils.get_status(self.model_dir)
-        except OSError:
+        if args.logging.load_acmodel:
+            # status = RLutils.get_status(self.model_dir)
+            status = RLutils.get_status(DIR)
+        else:
             status = {"num_frames": 0, "update": 0}
         print("Training status loaded\n")
 
@@ -114,39 +118,35 @@ class RL_Trainer(object):
         print("Observations preprocessor loaded\n")
 
         # Load pRNN
-        if args.exp.pRNN:
-            if args.logging.load_worldmodel:
-                predictiveNet = PredictiveNet.loadNet(args.predNet.path)
-                if not hasattr(predictiveNet.pRNN, 'hidden_size'):
-                    predictiveNet.pRNN.hidden_size = predictiveNet.pRNN.rnn.cell.hidden_size
-                predictiveNet.env_shell.env = env.env
-                env = predictiveNet.env_shell
-                print("pRNN model loaded\n")
-            elif args.logging.load_acmodel:
-                predictiveNet = PredictiveNet.loadNet(RLutils.get_pN(self.model_dir))
-                print("pRNN model loaded\n")
-            else:
-                predictiveNet = PredictiveNet(env,
-                                              hidden_size = args.predNet.hiddensize,
-                                              pRNNtype = args.predNet.pRNNtype,
-                                              learningRate = args.predNet.lr,
-                                              bptttrunc = args.predNet.bptttrunc,
-                                              weight_decay = args.predNet.weight_decay,
-                                              neuralTimescale = args.predNet.ntimescale,
-                                              dropp = args.predNet.dropout,
-                                              trainNoiseMeanStd = (args.predNet.noisemean,
-                                                                  args.predNet.noisestd),
-                                              f = args.predNet.sparsity,
-                                              wandb_log=True)
-                print("pRNN model initialized\n")
-            args.predNet.hiddensize = predictiveNet.hidden_size
-            # predictiveNet.pRNN.to(device)
-            predictiveNet.env_shell.hd_trans = np.array([-1,1,0,0]) # TODO: remove later
-        else:
-            predictiveNet = None
+        predictiveNet = PredictiveNet(env,
+                                    hidden_size = args.predNet.hiddensize,
+                                    pRNNtype = args.predNet.pRNNtype,
+                                    learningRate = args.predNet.lr,
+                                    bptttrunc = args.predNet.bptttrunc,
+                                    weight_decay = args.predNet.weight_decay,
+                                    neuralTimescale = args.predNet.ntimescale,
+                                    dropp = args.predNet.dropout,
+                                    trainNoiseMeanStd = (args.predNet.noisemean,
+                                                        args.predNet.noisestd),
+                                    f = args.predNet.sparsity,
+                                    wandb_log=True)
+
+        args.predNet.hiddensize = predictiveNet.hidden_size
+        # predictiveNet.pRNN.to(device)
+        predictiveNet.env_shell.hd_trans = np.array([-1,1,0,0]) # TODO: remove later
+        
+        # Try to load predictiveNet state from new format first
+        if args.logging.load_worldmodel:
+            RLutils.load_predictive_net_state(predictiveNet, DIR)
+            print("\n" + "="*10)
+            print(f"Existing pRNN model found at {DIR} and loaded from state dict")
+            print("="*10 + "\n")
+        
+        print("pRNN model initialized\n")
         prnn_eval_bool = args.exp.offpolicy_prnn_eval or args.exp.onpolicy_prnn_eval
 
-        # Load models
+        # Load ACModel
+        acmodel: ACModel
         if args.exp.recurrence-1:
             acmodel = RecACModel(obs_space,
                                  env.action_space,
@@ -180,8 +180,11 @@ class RL_Trainer(object):
                               args.exp.rgb)
 
         if "model_state" in status:
+            print("\n" + "="*10)
             acmodel.load_state_dict(status["model_state"])
             print("Existing model found")
+            print("="*10 + "\n")
+
         acmodel.to(device)
         print("AC model loaded\n")
 
@@ -367,7 +370,12 @@ class RL_Trainer(object):
                 # if hasattr(preprocess_obss, "vocab"):
                 #     status["vocab"] = preprocess_obss.vocab.vocab
                 RLutils.save_status(status, self.model_dir)
-                print("Status saved")
+            
+                # Save predictiveNet state if it exists and is being trained
+                if predictiveNet is not None and args.predNet.train:
+                    RLutils.save_predictive_net_state(predictiveNet, self.model_dir)
+            
+                print(f"Status saved at {self.model_dir}")
 
 @hydra.main(config_path="Configs", config_name="Conf1_Adel")
 def my_main(cfg: DictConfig):
