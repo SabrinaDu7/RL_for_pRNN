@@ -83,6 +83,10 @@ prnn = { path = "../pRNN", editable=true }
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+extraPaths = [
+    "../minigrid",
+    "../pRNN",
+]
 
 [project.urls]
 Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"
