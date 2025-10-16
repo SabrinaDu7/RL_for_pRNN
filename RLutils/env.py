@@ -1,7 +1,7 @@
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.core import ObservationWrapper, Wrapper
-from gymnasium.wrappers import RecordVideo
+from gymnasium.wrappers.record_video import RecordVideo
 from minigrid.wrappers import *
 from functools import partial
 
