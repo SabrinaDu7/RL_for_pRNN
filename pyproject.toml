@@ -1,48 +1,88 @@
 [project]
 name = "rl-for-prnn"
 version = "0.1.0"
-description = "This package builds an RL agent for pRNN."
+description = "pRNN embodied by curiosity-driven RL agents"
 readme = "README.md"
 requires-python = ">=3.9, <=3.10.15"
+license = "MIT"
 authors = [
     { name = "Daniel Levenstein", email = "daniel.levenstein@mila.quebec" },
+    { name = "Adel Halawa", email = "adel.halawa@mila.quebec" },
     { name = "Sabrina Du", email = "sabrina.du@mila.quebec"},
 ]
+
 dependencies = [
-    "hydra-core>=1.3.2",
-    "matplotlib>=3.5.3",
+    "minigrid", # Custom Minigrid package in local folder
+    "prnn", # Custom prnn package in local folder
+    "gymnasium==0.29.1",
+    "ratinabox==1.7.1",
+    "pynapple==0.6.1",
     "numpy>=1.22.4",
-    "pandas>=1.5.3",
     "scipy>=1.12.0",
+    "pandas>=1.5.3",
+    "scikit-learn>=1.4.0",
+    "matplotlib>=3.5.3",
+    "ruamel.yaml>=0.18.6",
     "torch>=2.7.1",
+    "torchvision>=0.20.1",
+    "gym>=0.26.2",
+    "importlib-metadata>=7.0.1",
+    "pyparsing>=3.1.1",
+    "zipp>=3.17.0",
     "wandb>=0.21.3",
-    "pRNN @ file:///Users/sabrinadu/Documents/Labs/PeyracheLab/projects/pRNN",
+    "hydra-core>=1.3.2",
+    "torch-ac>=1.4.0",
+    "plotly>=6.3.0",
+    "jaxtyping>=0.2.36",
+    "moviepy>=2.2.1",
+    "kaleido>=1.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "rust-just>=1.42.4",
+    "pytest>=8.4.2",
+    "ruff>=0.13.2",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# [tool.hatch.build.targets.wheel]
-# packages = ["rl-for-prnn"]
-# There needs to be a package/folder named rl-for-prnn for this to work
+[tool.hatch.build.targets.wheel]
+packages = ["RLutils"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.pytest.ini_options]
+testpaths = ["RLutils", "test"]
+python_files = ["test_*.py", "test.py"]
+python_functions = ["test_*"]
+addopts = "--durations=5 -m 'not slow'"
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::UserWarning:gymnasium.utils.passive_env_checker",
+    "ignore::UserWarning:gymnasium.envs.registration",
+    "ignore::UserWarning:gymnasium.core"
+]
+markers = ["slow: marks tests as slow to run"]
+
 [tool.ruff]
 include = [
-    "trainNet*",
-    "RLutils/*.py",
+    "pyproject.toml",
+    "RLUtils/*.py",
+    "test/*.py",
+    "trainRL_Adel.py",
 ]
-exclude = [
-    "Configs/",
-    "ConfigsRNN/",
-]
+
+[tool.uv.sources]
+minigrid = { path = "../minigrid", editable=true }
+prnn = { path = "../pRNN", editable=true }
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
 
 [project.urls]
-Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN"
+Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"
