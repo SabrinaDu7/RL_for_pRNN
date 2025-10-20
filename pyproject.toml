@@ -43,6 +43,7 @@ dev = [
     "rust-just>=1.42.4",
     "pytest>=8.4.2",
     "ruff>=0.13.2",
+    "python-dotenv>=1.1.1",
 ]
 
 [build-system]
@@ -56,7 +57,7 @@ packages = ["RLutils"]
 allow-direct-references = true
 
 [tool.pytest.ini_options]
-testpaths = ["RLutils", "test"]
+testpaths = ["RLutils", "test*"]
 python_files = ["test_*.py", "test.py"]
 python_functions = ["test_*"]
 addopts = "--durations=5 -m 'not slow'"
@@ -64,7 +65,8 @@ pythonpath = ["."]
 filterwarnings = [
     "ignore::UserWarning:gymnasium.utils.passive_env_checker",
     "ignore::UserWarning:gymnasium.envs.registration",
-    "ignore::UserWarning:gymnasium.core"
+    "ignore::UserWarning:gymnasium.core",
+    "ignore:::pydantic",
 ]
 markers = ["slow: marks tests as slow to run"]
 
