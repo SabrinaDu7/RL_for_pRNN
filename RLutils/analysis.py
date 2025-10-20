@@ -6,9 +6,8 @@ import plotly.graph_objects as go
 from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 
-from RLutils.model import ACModelSR
 from RLutils.format import get_obss_preprocessor
-from RLutils.other import device
+from RLutils.other import DEVICE
 from RLutils.algo import PredictivePPOAlgo
 
 SCALES = {
@@ -174,7 +173,7 @@ class EnvironmentFeaturesAnalysis:
             )
             with torch.no_grad():
                 _, _, data["h"] = self.prnn.predict(
-                    prnn_obs.to(device), prnn_act.to(device)
+                    prnn_obs.to(DEVICE), prnn_act.to(devDEVICEice)
                 )
 
         else:
@@ -196,7 +195,7 @@ class EnvironmentFeaturesAnalysis:
 
         for t in range(self.timesteps):
             preprocessed_obs = self.preprocess_obss(
-                [self.data["obs"][t + 1]], device=device
+                [self.data["obs"][t + 1]], device=DEVICE
             )
             with torch.no_grad():
                 if self.prnn:

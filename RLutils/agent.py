@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 import RLutils
-from .other import device
+from .other import DEVICE
 from RLutils.model import ACModel
 
 
@@ -32,17 +32,17 @@ class Agent:
 
         if self.acmodel.recurrent:
             self.memories = torch.zeros(
-                self.num_envs, self.acmodel.memory_size, device=device
+                self.num_envs, self.acmodel.memory_size, device=DEVICE
             )
 
         self.acmodel.load_state_dict(RLutils.get_model_state(model_dir))
-        self.acmodel.to(device)
+        self.acmodel.to(DEVICE)
         self.acmodel.eval()
         if hasattr(self.preprocess_obss, "vocab"):
             self.preprocess_obss.vocab.load_vocab(RLutils.get_vocab(model_dir))
 
     def get_actions(self, obss):
-        preprocessed_obss = self.preprocess_obss(obss, device=device)
+        preprocessed_obss = self.preprocess_obss(obss, device=DEVICE)
 
         with torch.no_grad():
             if self.acmodel.recurrent:
@@ -62,7 +62,7 @@ class Agent:
 
     def analyze_feedbacks(self, rewards, dones):
         if self.acmodel.recurrent:
-            masks = 1 - torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(
+            masks = 1 - torch.tensor(dones, dtype=torch.float, device=DEVICE).unsqueeze(
                 1
             )
             self.memories *= masks
