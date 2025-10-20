@@ -7,13 +7,15 @@ import time
 import datetime
 import os
 import numpy as np
+import torch.nn as nn
+from typing import Mapping, Any
 
 from omegaconf import OmegaConf, DictConfig
 import hydra
 import wandb
 
 import RLutils
-from RLutils.other import device
+from RLutils.other import DEVICE
 from RLutils.model import (
     ACModel,
     RecACModel,
@@ -30,15 +32,21 @@ from RLutils.analysis import (
     OnPolicyAnalysis,
     mutual_info_policy,
 )
-from prnn.utils.predictiveNet import PredictiveNet
-from prnn.utils.CANNNet import CANNnet
-from prnn.utils.thetaRNN import LayerNormRNNCell, RNNCell
-from prnn.utils.agent import RandomActionAgent
+from prnn.utils import (
+    PredictiveNet,
+    CANNnet,
+    LayerNormRNNCell,
+    RNNCell,
+    RandomActionAgent,
+    load_pN, 
+    save_pN, 
+    CkptKeys
+)
+import utils.dev_env as dev
+PRNN_CKPT, ACMODEL_STATUS_CKPT = dev.get_ckpt_env_vars()
+WANDB_ENTITY, WANDB_PROJECT = dev.get_wandb_env_vars()
 
 RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
-
-DIR = "/home/sabrina/Documents/experiments/scratch/curious-george/defaultName_seed2_25-10-12-21-51-06/"
-
 
 class RL_Trainer(object):
     def __init__(self, params):
@@ -56,7 +64,7 @@ class RL_Trainer(object):
         else:
             name = f"{params.exp.exp_name}_seed{params.exp.seed}"
         name_date = f"{name}_{date}/"
-        self.model_name = f"{params.logging.project}/{name_date}"
+        self.model_name = f"{WANDB_PROJECT}/{name_date}"
         if params.logging.focus:
             self.group = f"{params.exp.exp_name}_{params.logging.focus}_{par}"
         else:
@@ -81,8 +89,8 @@ class RL_Trainer(object):
 
         self.run = wandb.init(
             # set the wandb project where this run will be logged
-            entity="sabrina-du-mila-mila",
-            project=params.logging.project,
+            entity=WANDB_ENTITY,
+            project=WANDB_PROJECT,
             group=self.group,
             # group = f"{params.exp.exp_name}_width{params.rl.pc_sd}",
             name=name,
@@ -98,7 +106,7 @@ class RL_Trainer(object):
 
         RLutils.seed(args.exp.seed)
 
-        print(f"Device: {device}\n")
+        print(f"Device: {DEVICE}\n")
 
         # Load environment
 
@@ -115,8 +123,7 @@ class RL_Trainer(object):
         # Load training status
 
         if args.logging.load_acmodel:
-            # status = RLutils.get_status(self.model_dir)
-            status = RLutils.get_status(DIR)
+            status = RLutils.get_status(ACMODEL_STATUS_CKPT) 
         else:
             status = {"num_frames": 0, "update": 0}
         print("Training status loaded\n")
@@ -151,16 +158,16 @@ class RL_Trainer(object):
 
         # Try to load predictiveNet state from new format first
         if args.logging.load_worldmodel:
-            RLutils.load_predictive_net_state(predictiveNet, DIR)
+            load_pN(predictiveNet, PRNN_CKPT)
             print("\n" + "=" * 10)
-            print(f"Existing pRNN model found at {DIR} and loaded from state dict")
+            print(f"Existing pRNN model found at {PRNN_CKPT} and loaded from state dict")
             print("=" * 10 + "\n")
 
         print("pRNN model initialized\n")
         prnn_eval_bool = args.exp.offpolicy_prnn_eval or args.exp.onpolicy_prnn_eval
 
         # Load ACModel
-        acmodel: ACModel
+        acmodel: nn.Module
         if args.exp.recurrence - 1:
             acmodel = RecACModel(
                 obs_space,
@@ -217,11 +224,12 @@ class RL_Trainer(object):
 
         if "model_state" in status:
             print("\n" + "=" * 10)
-            acmodel.load_state_dict(status["model_state"])
+            state_dict: Mapping[str, Any] = status["model_state"]
+            acmodel.load_state_dict(state_dict)
             print("Existing model found")
             print("=" * 10 + "\n")
 
-        acmodel.to(device)
+        acmodel.to(DEVICE)
         print("AC model loaded\n")
 
         # Load place cells
@@ -253,7 +261,7 @@ class RL_Trainer(object):
                 env,
                 acmodel,
                 predictiveNet,
-                device,
+                DEVICE,
                 args.rl.frames,
                 args.rl.discount,
                 args.rl.lr,
@@ -284,7 +292,7 @@ class RL_Trainer(object):
                 env,
                 acmodel,
                 predictiveNet,
-                device,
+                DEVICE,
                 args.rl.frames,
                 args.rl.discount,
                 args.rl.lr,
@@ -314,7 +322,7 @@ class RL_Trainer(object):
                 env,
                 acmodel,
                 predictiveNet,
-                device,
+                DEVICE,
                 args.rl.frames,
                 args.rl.discount,
                 args.rl.lr,
@@ -342,7 +350,8 @@ class RL_Trainer(object):
             )
 
         if "optimizer_state" in status:
-            algo.optimizer.load_state_dict(status["optimizer_state"])
+            optimizer_state: dict[str, Any] = status["optimizer_state"]
+            algo.optimizer.load_state_dict(optimizer_state)
         print("Optimizer loaded\n")
 
         # Create random agent for analysis
@@ -351,7 +360,6 @@ class RL_Trainer(object):
         randomagent = RandomActionAgent(env.action_space, action_probability)
 
         # Train model
-
         num_frames = status["num_frames"]
         update = status["update"]
         start_time = time.time()
@@ -369,7 +377,7 @@ class RL_Trainer(object):
             else:
                 exps, logs1 = algo.collect_experiences()
                 logs2 = algo.update_parameters(
-                    exps, update_params=not args.exp.random_init_control
+                    exps, update_params=(not args.exp.random_init_control)
                 )
                 logs = {**logs1, **logs2}
 
@@ -462,7 +470,7 @@ class RL_Trainer(object):
                             randomagent
                             if args.exp.random_action_agent
                             else ActorCriticAgent(
-                                env.action_space, acmodel, predictiveNet, device
+                                env.action_space, acmodel, predictiveNet, DEVICE
                             )
                         )
 
@@ -481,7 +489,7 @@ class RL_Trainer(object):
                     if args.exp.offpolicy_prnn_eval:
                         analysisagent = (
                             ActorCriticAgent(
-                                env.action_space, acmodel, predictiveNet, device
+                                env.action_space, acmodel, predictiveNet, DEVICE
                             )
                             if args.exp.random_action_agent
                             else randomagent
@@ -499,7 +507,7 @@ class RL_Trainer(object):
                             wandb_nameext="_offPolicy",
                         )
 
-                    predictiveNet.pRNN.to(device)
+                    predictiveNet.pRNN.to(DEVICE)
                 if args.exp.analyze_agent_behav:
                     opa = OnPolicyAnalysis(algo, timesteps=25000)
                     wandb.log({"MI_policy_eval": opa.mi})
@@ -520,25 +528,22 @@ class RL_Trainer(object):
                 args.logging.save_interval > 0
                 and update % args.logging.save_interval == 0
             ):
-                status = {
+                status_save = {
                     "num_frames": num_frames,
                     "update": update,
-                    "model_state": acmodel.state_dict()
-                    if not args.exp.random_action_agent
-                    else None,
-                    "optimizer_state": algo.optimizer.state_dict()
-                    if not args.exp.random_action_agent
-                    else None,
                 }
+                if not args.exp.random_action_agent:
+                    status_save["model_state"] = acmodel.state_dict()
+                    status_save["optimizer_state"] = algo.optimizer.state_dict()
                 # if hasattr(preprocess_obss, "vocab"):
                 #     status["vocab"] = preprocess_obss.vocab.vocab
-                RLutils.save_status(status, self.model_dir)
+                RLutils.save_status(status_save, self.model_dir)
 
                 # Save predictiveNet state if it exists and is being trained
                 if predictiveNet is not None and args.predNet.train:
-                    RLutils.save_predictive_net_state(predictiveNet, self.model_dir)
+                    save_pN(predictiveNet, self.model_dir + "predictiveNet_state.pt")
 
-                print(f"Status saved at {self.model_dir}")
+                print(f"pN and ACmodel status saved at {self.model_dir}")
 
 
 @hydra.main(config_path="Configs", config_name="Conf1_Adel")
