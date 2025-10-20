@@ -1764,6 +1764,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "python-dotenv" },
     { name = "ruff" },
     { name = "rust-just" },
 ]
@@ -1799,6 +1800,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.4.2" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "ruff", specifier = ">=0.13.2" },
     { name = "rust-just", specifier = ">=1.42.4" },
 ]
