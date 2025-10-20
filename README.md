@@ -22,6 +22,7 @@ source .venv/bin/activate
 # Download dependencies from pyproject.toml
 uv sync
 ```
+Then, you should change the environment variables in ```.env```.
 
 ## Running pRNN training
 
