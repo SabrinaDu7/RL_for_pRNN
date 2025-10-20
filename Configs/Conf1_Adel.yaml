@@ -87,7 +87,6 @@ logging:
     early_stop: False # Should the training stop when the environment is solved?
     save_params: True # Should the parameters given to the script be saved? (Always...)
     focus: False #'rl.k_int' # Which parameter to include in the group name or False
-    project: curious-george
     logdir: /home/sabrina/Documents/experiments/scratch
     load_acmodel: False #'/network/scratch/a/aleksei.efremov/RLstorage/Donut_long_neg05_shortbptt/PO+Rec_seed10_24-01-22-15-46-34' # False or the path to the model
     load_worldmodel: False
