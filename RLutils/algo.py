@@ -339,7 +339,7 @@ class PredictivePPOAlgo:
             )
             self.advantages[i] = (
                 delta + self.discount * self.gae_lambda * next_advantage * next_mask
-            )
+            ) # n-step TD generalized advantage estimates
 
         exps = DictList()
         exps.obs = self.obss
@@ -411,6 +411,7 @@ class PredictivePPOAlgo:
         del exps["last_observations"]
 
         for _ in range(self.epochs):  # TODO: should it be just one epoch?
+        # shuffle everything 4 times
             # Initialize log values
 
             log_entropies = []
@@ -419,7 +420,7 @@ class PredictivePPOAlgo:
             log_value_losses = []
             log_grad_norms = []
 
-            for inds in self._get_batches_starting_indexes():
+            for inds in self._get_batches_starting_indexes(): # inds should be multiples of ppo_batch_size
                 # Initialize batch values
 
                 batch_entropy = 0
@@ -433,7 +434,7 @@ class PredictivePPOAlgo:
                 if self.acmodel.recurrent:
                     memory = exps.memory[inds]
 
-                for i in range(self.recurrence):
+                for i in range(self.recurrence): # only loops once
                     # Create a sub-batch of experience
 
                     sb = exps[inds + i]
@@ -460,8 +461,8 @@ class PredictivePPOAlgo:
                     value_clipped = sb.value + torch.clamp(
                         value - sb.value, -self.clip_eps, self.clip_eps
                     )
-                    surr1 = (value - sb.returnn).pow(2)
-                    surr2 = (value_clipped - sb.returnn).pow(2)
+                    surr1 = (value - sb.returnn).pow(2) # AC_model value estimate - target return
+                    surr2 = (value_clipped - sb.returnn).pow(2) # ppo clipping
                     value_loss = torch.max(surr1, surr2).mean()
 
                     loss = (
