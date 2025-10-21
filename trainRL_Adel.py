@@ -14,6 +14,7 @@ from omegaconf import OmegaConf, DictConfig
 import hydra
 import wandb
 
+from utils import get_ckpt_env_vars, get_wandb_env_vars, StateCkptKeys
 import RLutils
 from RLutils.other import DEVICE
 from RLutils.model import (
@@ -42,10 +43,9 @@ from prnn.utils import (
     save_pN, 
     CkptKeys
 )
-import utils.dev_env as dev
-PRNN_CKPT, ACMODEL_STATUS_CKPT = dev.get_ckpt_env_vars()
-WANDB_ENTITY, WANDB_PROJECT = dev.get_wandb_env_vars()
 
+PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
+WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
 RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
 
 class RL_Trainer(object):
@@ -56,6 +56,7 @@ class RL_Trainer(object):
 
         # Get params, init WandB !!change WandB default folder
         self.params = params
+        self.wandb_log = self.params.logging.wandb_log
 
         date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
         if params.logging.focus:
@@ -87,19 +88,20 @@ class RL_Trainer(object):
 
         print("\n\n\nLOGGING TO: ", self.model_dir, "\n\n\n")
 
-        self.run = wandb.init(
-            # set the wandb project where this run will be logged
-            entity=WANDB_ENTITY,
-            project=WANDB_PROJECT,
-            group=self.group,
-            # group = f"{params.exp.exp_name}_width{params.rl.pc_sd}",
-            name=name,
-            id=name_date[:-1],
-            dir=self.model_dir,
-            resume="allow",
-            # track hyperparameters and run metadata
-            config=OmegaConf.to_container(params, resolve=True),
-        )
+        if self.wandb_log:
+            self.run = wandb.init(
+                # set the wandb project where this run will be logged
+                entity=WANDB_ENTITY,
+                project=WANDB_PROJECT,
+                group=self.group,
+                # group = f"{params.exp.exp_name}_width{params.rl.pc_sd}",
+                name=name,
+                id=name_date[:-1],
+                dir=self.model_dir,
+                resume="allow",
+                # track hyperparameters and run metadata
+                config=OmegaConf.to_container(params, resolve=True),
+            )
 
     def run_training_loop(self):
         args = self.params
@@ -125,7 +127,7 @@ class RL_Trainer(object):
         if args.logging.load_acmodel:
             status = RLutils.get_status(ACMODEL_STATUS_CKPT) 
         else:
-            status = {"num_frames": 0, "update": 0}
+            status = {StateCkptKeys.NUM_FRAMES: 0, StateCkptKeys.UPDATE: 0}
         print("Training status loaded\n")
 
         # Load observations preprocessor
@@ -149,7 +151,7 @@ class RL_Trainer(object):
             dropp=args.predNet.dropout,
             trainNoiseMeanStd=(args.predNet.noisemean, args.predNet.noisestd),
             f=args.predNet.sparsity,
-            wandb_log=True,
+            wandb_log=self.wandb_log,
         )
 
         args.predNet.hiddensize = predictiveNet.hidden_size
@@ -222,9 +224,9 @@ class RL_Trainer(object):
                 obs_space, env.action_space, args.exp.with_HD, args.exp.rgb
             )
 
-        if "model_state" in status:
+        if StateCkptKeys.MODEL_STATE in status:
             print("\n" + "=" * 10)
-            state_dict: Mapping[str, Any] = status["model_state"]
+            state_dict: Mapping[str, Any] = status[StateCkptKeys.MODEL_STATE]
             acmodel.load_state_dict(state_dict)
             print("Existing model found")
             print("=" * 10 + "\n")
@@ -349,8 +351,8 @@ class RL_Trainer(object):
                 args.rl.k_curious,
             )
 
-        if "optimizer_state" in status:
-            optimizer_state: dict[str, Any] = status["optimizer_state"]
+        if StateCkptKeys.OPTIMIZER_STATE in status:
+            optimizer_state: dict[str, Any] = status[StateCkptKeys.OPTIMIZER_STATE]
             algo.optimizer.load_state_dict(optimizer_state)
         print("Optimizer loaded\n")
 
@@ -360,15 +362,15 @@ class RL_Trainer(object):
         randomagent = RandomActionAgent(env.action_space, action_probability)
 
         # Train model
-        num_frames = status["num_frames"]
-        update = status["update"]
+        num_frames = status[StateCkptKeys.NUM_FRAMES]
+        update = status[StateCkptKeys.UPDATE]
         start_time = time.time()
         header = False
 
         n_performance = 0
         error_map = None
 
-        while num_frames < args.rl.steps:
+        while num_frames < args.rl.steps: # TODO: Understand why we're comparing num_frames to args.rl.steps
             # Update model parameters
             update_start_time = time.time()
 
@@ -455,7 +457,8 @@ class RL_Trainer(object):
                     data += [logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
                     data += [mutual_info_policy(logs["joint_dist"])]
 
-                wandb.log(dict(zip(header, data)))
+                if self.wandb_log:
+                    wandb.log(dict(zip(header, data)))
 
             # Do analysis
 
@@ -474,7 +477,7 @@ class RL_Trainer(object):
                             )
                         )
 
-                        _, _, _ = predictiveNet.calculateSpatialRepresentation(
+                        _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
                             env,
                             analysisagent,
                             trainDecoder=True,
@@ -495,7 +498,7 @@ class RL_Trainer(object):
                             else randomagent
                         )
 
-                        _, _, _ = predictiveNet.calculateSpatialRepresentation(
+                        _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
                             env,
                             analysisagent,
                             trainDecoder=True,
@@ -510,7 +513,8 @@ class RL_Trainer(object):
                     predictiveNet.pRNN.to(DEVICE)
                 if args.exp.analyze_agent_behav:
                     opa = OnPolicyAnalysis(algo, timesteps=25000)
-                    wandb.log({"MI_policy_eval": opa.mi})
+                    if self.wandb_log:
+                        wandb.log({"MI_policy_eval": opa.mi})
                     RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
 
             if args.logging.early_stop:
@@ -529,14 +533,16 @@ class RL_Trainer(object):
                 and update % args.logging.save_interval == 0
             ):
                 status_save = {
-                    "num_frames": num_frames,
-                    "update": update,
+                    StateCkptKeys.NUM_FRAMES: num_frames,
+                    StateCkptKeys.UPDATE: update,
                 }
                 if not args.exp.random_action_agent:
-                    status_save["model_state"] = acmodel.state_dict()
-                    status_save["optimizer_state"] = algo.optimizer.state_dict()
+                    status_save[StateCkptKeys.MODEL_STATE] = acmodel.state_dict()
+                    status_save[StateCkptKeys.OPTIMIZER_STATE] = algo.optimizer.state_dict()
+
                 # if hasattr(preprocess_obss, "vocab"):
                 #     status["vocab"] = preprocess_obss.vocab.vocab
+
                 RLutils.save_status(status_save, self.model_dir)
 
                 # Save predictiveNet state if it exists and is being trained
@@ -554,17 +560,14 @@ def my_main(cfg: DictConfig):
 def my_app(cfg: DictConfig):
     print(OmegaConf.to_yaml(cfg))
 
-    # Add an environment variable for storage
-    os.environ["RL_STORAGE"] = cfg.logging.logdir
-
     ###################
     ### RUN TRAINING
     ###################
 
     trainer = RL_Trainer(cfg)
-    try:
-        trainer.run_training_loop()
-    finally:
+    trainer.run_training_loop()
+
+    if cfg.logging.wandb_log:
         wandb.finish()
 
 
