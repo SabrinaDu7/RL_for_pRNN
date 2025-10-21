@@ -1,17 +1,26 @@
 import os
+import torch
 from prnn.utils import (
     make_env,
     PredictiveNet,
-    load_pN
+    load_pN,
 )
+from RLutils import ACModelSR, get_obss_preprocessor, DEVICE
 
-from tests.commons import ENV_NAME, PRNN_CKPT
+from utils import load_statedict_from_acmodel_status, load_acmodel_status, StatusCkptKeys
+from tests.commons import ENV_NAME, PRNN_CKPT, ACMODEL_STATUS_CKPT
 
-def _get_pRNN():
-    assert os.path.isfile(f"{PRNN_CKPT}"), f"Network file {PRNN_CKPT} does not exist."
 
+def _get_env():
     env = make_env(env_key=ENV_NAME, act_enc="SpeedHD")
     env.reset()
+    return env
+    
+def _get_pRNN(env = None):
+    assert os.path.isfile(f"{PRNN_CKPT}"), f"Network file {PRNN_CKPT} does not exist."
+    
+    if env is None:
+        env = _get_env()
 
     predictive_net = PredictiveNet(env=env, pRNNtype="thRNN_5win")
     load_pN(predictive_net, model_filepath=PRNN_CKPT)
@@ -35,7 +44,7 @@ def test_load_pRNN():
 def test_pRNN_with_environment():
     """Test that a loaded network can work with the LRoom environment."""
 
-    env = make_env(env_key=ENV_NAME, act_enc="OneHotHD")
+    env = make_env(env_key=ENV_NAME, act_enc="SpeedHD")
     env.reset()
 
     predictive_net = _get_pRNN()
@@ -45,14 +54,105 @@ def test_pRNN_with_environment():
     assert len(predictive_net.EnvLibrary) >= 2  # Original env + new env
 
 
-def test_load_agent():
-    """Test loading a pre-trained."""
+def test_load_acmodel_from_checkpoint():
+    """Test loading a pre-trained ACModel from checkpoint."""
+    # Setup
+    env = _get_env()
+    obs_space, preprocess_obss = get_obss_preprocessor(env.observation_space)
+    predNet = _get_pRNN(env)
+
+    # Load checkpoint
+    status = load_acmodel_status(acmodel_status_ckpt=ACMODEL_STATUS_CKPT)
     
+    # Verify checkpoint has required keys
+    assert StatusCkptKeys.MODEL_STATE.value in status
+    assert StatusCkptKeys.NUM_FRAMES.value in status
     
+    # Create ACModel
+    acmodel = ACModelSR(
+        obs_space=obs_space,
+        action_space=env.action_space,
+        SR_size=predNet.hidden_size,
+        with_CV=True,
+        rgb=True,
+        with_HD=True,
+    )
+    
+    # Load weights into acmodel
+    load_statedict_from_acmodel_status(
+        receiver=acmodel,
+        status=status,
+        status_key=StatusCkptKeys.MODEL_STATE,
+    )
+    
+    # Verify model works
+    acmodel.eval()
+    acmodel.to(DEVICE)
+    
+    with torch.no_grad():
+        obs = env.reset()
+        preprocessed_obs = preprocess_obss([obs], device=DEVICE)
+        SR = torch.zeros(1, predNet.hidden_size, device=DEVICE)
+        
+        dist, value = acmodel(preprocessed_obs, SR=SR)
+        
+        # Verify output shapes
+        assert dist.probs.shape == (1, env.action_space.n)
+        assert value.shape == (1,)
+        
+        # Verify outputs are valid
+        assert torch.all(dist.probs >= 0) and torch.all(dist.probs <= 1)
+        assert torch.allclose(dist.probs.sum(dim=1), torch.ones(1).to(DEVICE))
+        assert not torch.isnan(value).any()
 
 
-def test_pRNN_sRSA():
-    """ Test that loaded pRNN can perform on and off policy sRSA"""
+def test_load_actor_critic_agent():
+    """Test creating an ActorCriticAgent with loaded models."""
+    env = _get_env()
+    predNet = _get_pRNN(env)
+    
+    # Load and setup ACModel
+    status = load_acmodel_status(acmodel_status_ckpt=ACMODEL_STATUS_CKPT)
+    obs_space, _ = get_obss_preprocessor(env.observation_space)
+    
+    acmodel = ACModelSR(
+        obs_space=obs_space,
+        action_space=env.action_space,
+        SR_size=predNet.hidden_size,
+        with_CV=True,
+        rgb=True,
+        with_HD=True,
+    )
+    load_statedict_from_acmodel_status(
+        receiver=acmodel,
+        status=status,
+        status_key=StatusCkptKeys.MODEL_STATE,
+    )
+    acmodel.to(DEVICE)
+    
+    # Create ActorCriticAgent
+    from RLutils import ActorCriticAgent
+    
+    agent = ActorCriticAgent(
+        action_space=env.action_space,
+        acmodel=acmodel,
+        prnn=predNet,
+        device=DEVICE
+    )
+    
+    # Test agent can generate observations
+    obs, acts, state, render = agent.getObservations(env, tsteps=10, reset=True)
+    
+    assert len(obs) == 11  # tsteps + 1
+    assert len(acts) == 10
+    assert "agent_pos" in state
+    assert "SRs" in state
 
-    predictive_net = _get_pRNN()
+"""
+def test_pRNN_sRSA()
+def test_pRNN_loss()
+def test acmodel 
+
+you want to run these values to make sure that you didn't break anything when changing the architecture
+"""
     
