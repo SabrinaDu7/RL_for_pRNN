@@ -5,7 +5,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 import time
 import datetime
-import os
 import numpy as np
 import torch.nn as nn
 from typing import Mapping, Any
@@ -16,23 +15,23 @@ import wandb
 
 from utils import get_ckpt_env_vars, get_wandb_env_vars, StateCkptKeys
 import RLutils
-from RLutils.other import DEVICE
-from RLutils.model import (
+from RLutils import (
+    DEVICE,
     ACModel,
     RecACModel,
     ACModelSR,
     ACModelTheta,
     ACModelThetaShared,
     ACModelThetaSingle,
-)
-from RLutils.agent import ActorCriticAgent
-from RLutils.algo import PredictivePPOAlgo, thetaPPOalgo, SingleThetaPPOalgo
-from RLutils.pc import FakePlaceCells
-from RLutils.analysis import (
-    EnvironmentFeaturesAnalysis,
+    ActorCriticAgent,
+    PredictivePPOAlgo, 
+    thetaPPOalgo, 
+    SingleThetaPPOalgo,
+    FakePlaceCells,
     OnPolicyAnalysis,
     mutual_info_policy,
 )
+
 from prnn.utils import (
     PredictiveNet,
     CANNnet,
@@ -41,7 +40,6 @@ from prnn.utils import (
     RandomActionAgent,
     load_pN, 
     save_pN, 
-    CkptKeys
 )
 
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
@@ -127,7 +125,7 @@ class RL_Trainer(object):
         if args.logging.load_acmodel:
             status = RLutils.get_status(ACMODEL_STATUS_CKPT) 
         else:
-            status = {StateCkptKeys.NUM_FRAMES: 0, StateCkptKeys.UPDATE: 0}
+            status = {StateCkptKeys.NUM_FRAMES.value: 0, StateCkptKeys.UPDATE.value: 0}
         print("Training status loaded\n")
 
         # Load observations preprocessor
@@ -224,9 +222,10 @@ class RL_Trainer(object):
                 obs_space, env.action_space, args.exp.with_HD, args.exp.rgb
             )
 
-        if StateCkptKeys.MODEL_STATE in status:
+        if StateCkptKeys.MODEL_STATE.value in status:
             print("\n" + "=" * 10)
-            state_dict: Mapping[str, Any] = status[StateCkptKeys.MODEL_STATE]
+            state_dict = status[StateCkptKeys.MODEL_STATE.value]
+            assert isinstance(state_dict, Mapping), "model_state must be a Mapping"
             acmodel.load_state_dict(state_dict)
             print("Existing model found")
             print("=" * 10 + "\n")
@@ -351,8 +350,9 @@ class RL_Trainer(object):
                 args.rl.k_curious,
             )
 
-        if StateCkptKeys.OPTIMIZER_STATE in status:
-            optimizer_state: dict[str, Any] = status[StateCkptKeys.OPTIMIZER_STATE]
+        if StateCkptKeys.OPTIMIZER_STATE.value in status:
+            optimizer_state = status[StateCkptKeys.OPTIMIZER_STATE.value]
+            assert isinstance(optimizer_state, dict), "optimizer_state must be a dict"
             algo.optimizer.load_state_dict(optimizer_state)
         print("Optimizer loaded\n")
 
@@ -362,15 +362,15 @@ class RL_Trainer(object):
         randomagent = RandomActionAgent(env.action_space, action_probability)
 
         # Train model
-        num_frames = status[StateCkptKeys.NUM_FRAMES]
-        update = status[StateCkptKeys.UPDATE]
+        num_frames = status[StateCkptKeys.NUM_FRAMES.value]
+        update = status[StateCkptKeys.UPDATE.value]
         start_time = time.time()
         header = False
 
         n_performance = 0
         error_map = None
 
-        while num_frames < args.rl.steps: # TODO: Understand why we're comparing num_frames to args.rl.steps
+        while num_frames < args.rl.steps: # num_frames' granularity is steps. It represents the number of steps taken in the env 
             # Update model parameters
             update_start_time = time.time()
 
@@ -386,7 +386,7 @@ class RL_Trainer(object):
             update_end_time = time.time()
 
             num_frames += logs["num_frames"]
-            update += 1
+            update += 1 # Update represents the number of 2048 steps taken. One update is the collection of 2048 steps (as seen in collect experiences)
 
             # Print logs
 
@@ -533,12 +533,12 @@ class RL_Trainer(object):
                 and update % args.logging.save_interval == 0
             ):
                 status_save = {
-                    StateCkptKeys.NUM_FRAMES: num_frames,
-                    StateCkptKeys.UPDATE: update,
+                    StateCkptKeys.NUM_FRAMES.value: num_frames,
+                    StateCkptKeys.UPDATE.value: update,
                 }
                 if not args.exp.random_action_agent:
-                    status_save[StateCkptKeys.MODEL_STATE] = acmodel.state_dict()
-                    status_save[StateCkptKeys.OPTIMIZER_STATE] = algo.optimizer.state_dict()
+                    status_save[StateCkptKeys.MODEL_STATE.value] = acmodel.state_dict()
+                    status_save[StateCkptKeys.OPTIMIZER_STATE.value] = algo.optimizer.state_dict()
 
                 # if hasattr(preprocess_obss, "vocab"):
                 #     status["vocab"] = preprocess_obss.vocab.vocab
