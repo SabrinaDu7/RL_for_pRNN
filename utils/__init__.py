@@ -1,9 +1,8 @@
 from utils.checkpoints import (
-    StateCkptKeys,
+    StatusCkptKeys,
     ACMODEL_STATUS,
     load_acmodel_status,
-    load_acmodel_optimizer,
-    load_acmodel
+    load_statedict_from_acmodel_status,
 )
 from utils.dev_env import (
     require_env,
@@ -13,11 +12,10 @@ from utils.dev_env import (
 )
 
 __all__ = [
-    "StateCkptKeys",
+    "StatusCkptKeys",
     "ACMODEL_STATUS",
     "load_acmodel_status",
-    "load_acmodel_optimizer",
-    "load_acmodel",
+    "load_statedict_from_acmodel_status",
     "require_env",
     "get_ckpt_env_vars",
     "get_wandb_env_vars",
