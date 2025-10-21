@@ -7,7 +7,6 @@ RLutils/__pycache__/*
 *.sh
 *.pyc
 *.ipynb
-test*
 .python*
 results/*
 
