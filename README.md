@@ -1,6 +1,7 @@
 # RL for pRNN
 
 This project is focused on modelling rat exploratory behavior in the Novel Object Recognition (NOR) paradigm, leveraging curiosity as an intrinsic reward signal for RL.
+An overview of the file system is found at the end of the README.
 
 ## Project Setup
 
@@ -56,4 +57,55 @@ and use the option ```--active``` to use the active venv. Example run command:
 
 ```bash
 uv run --active trainRL_Adel.py rl.steps=10000
+```
+
+## Overview of file system
+
+# Training
+```bash
+RL_Trainer
+    │
+    ├─> Creates: env, acmodel (ACModelSR), predictiveNet (pRNN)
+    │
+    ├─> Creates: algo = PredictivePPOAlgo(env, acmodel, predictiveNet, ...)
+    │
+    └─> Training loop:
+            │
+            ├─> algo.collect_experiences()
+            │       │
+            │       ├─> For each step:
+            │       │   ├─> acmodel.forward(obs, SR) → get action dist
+            │       │   ├─> action = dist.sample()
+            │       │   ├─> obs, reward = env.step(action)
+            │       │   └─> SR = pRNN.predict(obs, action)
+            │       │
+            │       └─> Returns experiences (obs, actions, rewards, SRs, advantages)
+            │
+            └─> algo.update_parameters(exps)
+                    │
+                    ├─> For each batch:
+                    │   ├─> acmodel.forward(obs, SR) → get new dist, value
+                    │   ├─> Compute PPO loss
+                    │   └─> optimizer.step() → update acmodel weights
+                    │
+                    └─> Optionally train pRNN
+```
+
+# Analysis
+```bash
+RL_Trainer (analysis interval)
+    │
+    └─> Creates: analysisagent = ActorCriticAgent(env.action_space, acmodel, predictiveNet, DEVICE)
+            │
+            └─> predictiveNet.calculateSpatialRepresentation(env, analysisagent, ...)
+                    │
+                    └─> Internally calls: analysisagent.getObservations(env, tsteps)
+                            │
+                            ├─> For each step:
+                            │   ├─> acmodel.forward(obs, SR) → get action dist
+                            │   ├─> action = dist.sample()
+                            │   ├─> obs = env.step(action)
+                            │   └─> SR = pRNN.predict(obs, action)
+                            │
+                            └─> Returns: observations, actions, states (for analysis)
 ```
