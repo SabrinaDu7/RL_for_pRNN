@@ -13,7 +13,7 @@ from omegaconf import OmegaConf, DictConfig
 import hydra
 import wandb
 
-from utils import get_ckpt_env_vars, get_wandb_env_vars, StateCkptKeys
+from utils import get_ckpt_env_vars, get_wandb_env_vars, StatusCkptKeys
 import RLutils
 from RLutils import (
     DEVICE,
@@ -41,6 +41,7 @@ from prnn.utils import (
     load_pN, 
     save_pN, 
 )
+from utils import load_statedict_from_acmodel_status
 
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
@@ -125,7 +126,7 @@ class RL_Trainer(object):
         if args.logging.load_acmodel:
             status = RLutils.get_status(ACMODEL_STATUS_CKPT) 
         else:
-            status = {StateCkptKeys.NUM_FRAMES.value: 0, StateCkptKeys.UPDATE.value: 0}
+            status = {StatusCkptKeys.NUM_FRAMES.value: 0, StatusCkptKeys.UPDATE.value: 0}
         print("Training status loaded\n")
 
         # Load observations preprocessor
@@ -222,11 +223,13 @@ class RL_Trainer(object):
                 obs_space, env.action_space, args.exp.with_HD, args.exp.rgb
             )
 
-        if StateCkptKeys.MODEL_STATE.value in status:
+        if StatusCkptKeys.MODEL_STATE.value in status:
             print("\n" + "=" * 10)
-            state_dict = status[StateCkptKeys.MODEL_STATE.value]
-            assert isinstance(state_dict, Mapping), "model_state must be a Mapping"
-            acmodel.load_state_dict(state_dict)
+            load_statedict_from_acmodel_status(
+                receiver=acmodel,
+                status=status,
+                status_key=StatusCkptKeys.MODEL_STATE,
+            )
             print("Existing model found")
             print("=" * 10 + "\n")
 
@@ -350,11 +353,13 @@ class RL_Trainer(object):
                 args.rl.k_curious,
             )
 
-        if StateCkptKeys.OPTIMIZER_STATE.value in status:
-            optimizer_state = status[StateCkptKeys.OPTIMIZER_STATE.value]
-            assert isinstance(optimizer_state, dict), "optimizer_state must be a dict"
-            algo.optimizer.load_state_dict(optimizer_state)
-        print("Optimizer loaded\n")
+        if StatusCkptKeys.OPTIMIZER_STATE.value in status:
+            load_statedict_from_acmodel_status(
+                receiver=algo.optimizer,
+                status=status,
+                status_key=StatusCkptKeys.OPTIMIZER_STATE,
+            )
+            print("Optimizer loaded\n")
 
         # Create random agent for analysis
 
@@ -362,8 +367,8 @@ class RL_Trainer(object):
         randomagent = RandomActionAgent(env.action_space, action_probability)
 
         # Train model
-        num_frames = status[StateCkptKeys.NUM_FRAMES.value]
-        update = status[StateCkptKeys.UPDATE.value]
+        num_frames = status[StatusCkptKeys.NUM_FRAMES.value]
+        update = status[StatusCkptKeys.UPDATE.value]
         start_time = time.time()
         header = False
 
@@ -533,12 +538,12 @@ class RL_Trainer(object):
                 and update % args.logging.save_interval == 0
             ):
                 status_save = {
-                    StateCkptKeys.NUM_FRAMES.value: num_frames,
-                    StateCkptKeys.UPDATE.value: update,
+                    StatusCkptKeys.NUM_FRAMES.value: num_frames,
+                    StatusCkptKeys.UPDATE.value: update,
                 }
                 if not args.exp.random_action_agent:
-                    status_save[StateCkptKeys.MODEL_STATE.value] = acmodel.state_dict()
-                    status_save[StateCkptKeys.OPTIMIZER_STATE.value] = algo.optimizer.state_dict()
+                    status_save[StatusCkptKeys.MODEL_STATE.value] = acmodel.state_dict()
+                    status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = algo.optimizer.state_dict()
 
                 # if hasattr(preprocess_obss, "vocab"):
                 #     status["vocab"] = preprocess_obss.vocab.vocab
