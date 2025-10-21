@@ -85,6 +85,7 @@ prnn = { path = "../pRNN", editable=true }
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+include = ["RLutils", "tests", "utils", "tasks", "*.py"]
 extraPaths = [
     "../minigrid",
     "../pRNN",

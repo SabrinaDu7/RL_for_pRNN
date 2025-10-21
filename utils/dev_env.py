@@ -29,3 +29,10 @@ def get_wandb_env_vars() -> tuple[str, str]:
     wandb_entity = require_env("WANDB_ENTITY")
     wandb_project = require_env("WANDB_PROJECT")
     return wandb_entity, wandb_project
+
+
+def get_logdir_env_var() -> str:
+    """Get and validate RL storage directory environment variable.
+    """
+    logdir = require_env("RL_STORAGE")
+    return logdir
