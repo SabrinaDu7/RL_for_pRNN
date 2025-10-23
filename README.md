@@ -59,9 +59,9 @@ and use the option ```--active``` to use the active venv. Example run command:
 uv run --active trainRL_Adel.py rl.steps=10000
 ```
 
-## Overview of file system
+# Overview of file system
 
-# Training
+## Training
 ```bash
 RL_Trainer
     │
@@ -91,7 +91,7 @@ RL_Trainer
                     └─> Optionally train pRNN
 ```
 
-# Analysis
+## Analysis
 ```bash
 RL_Trainer (analysis interval)
     │
