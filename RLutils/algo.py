@@ -564,7 +564,7 @@ class PredictivePPOAlgo:
 
         obs = obs.to(self.device)
         act = act.to(self.device)
-        _, _, _ = self.pN.trainStep(obs, act)
+        _, _, _ = self.pN.trainStep(obs, act, log_loss_statistics=True)
         self.pN.numTrainingEpochs += 1
 
     def randomAgent_collect_exp_and_update(self, agent):
@@ -587,7 +587,7 @@ class PredictivePPOAlgo:
 
             # Train
             obs, act = obs.to(self.device), act.to(self.device)
-            _, _, _ = self.pN.trainStep(obs, act)
+            _, _, _ = self.pN.trainStep(obs, act, log_loss_statistics=True)
             self.pN.numTrainingEpochs += 1
 
             # Collect location info
