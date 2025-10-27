@@ -39,8 +39,8 @@ exp:
     analyze_agent_behav: True # If true, analyze agent policy (plot policy,state distribution,and more, and calculate mutual info between state and action)
 
 hardware:
-    use_gpu: False
-    which_gpu: 0 # GPU device code, not used now
+    use_gpu: True
+    which_gpu: 0 # GPU device code
 
 
 rl:
@@ -66,7 +66,7 @@ predNet:
     foder: ''
     hiddensize: 500
     pRNNtype: thRNN_5win #AutoencoderPred_LN
-    action_encoding: SpeedHD #Onehot
+    action_encoding: SpeedHD #OneHotHD
     cell: LayerNormRNNCell
     lr: 3e-3
     bptttrunc: 1e8
