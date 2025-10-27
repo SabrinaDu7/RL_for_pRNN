@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # Load variables from .env
 
-def require_env(var_name: str) -> str:
+def get_env_var(var_name: str) -> str:
     """Return the value of an environment variable or raise if missing/empty.
     """
     value = os.getenv(var_name)
@@ -18,21 +18,21 @@ def require_env(var_name: str) -> str:
 def get_ckpt_env_vars() -> tuple[str, str]:
     """Get and validate checkpoint-related environment variables.
     """
-    prnn_ckpt = require_env("PRNN_CKPT")
-    acmodel_status_ckpt = require_env("ACMODEL_CKPT")
+    prnn_ckpt = get_env_var("PRNN_CKPT")
+    acmodel_status_ckpt = get_env_var("ACMODEL_CKPT")
     return prnn_ckpt, acmodel_status_ckpt
 
 
 def get_wandb_env_vars() -> tuple[str, str]:
     """Get and validate Weights & Biases environment variables.
     """
-    wandb_entity = require_env("WANDB_ENTITY")
-    wandb_project = require_env("WANDB_PROJECT")
+    wandb_entity = get_env_var("WANDB_ENTITY")
+    wandb_project = get_env_var("WANDB_PROJECT")
     return wandb_entity, wandb_project
 
 
 def get_logdir_env_var() -> str:
     """Get and validate RL storage directory environment variable.
     """
-    logdir = require_env("RL_STORAGE")
+    logdir = get_env_var("RL_STORAGE")
     return logdir
