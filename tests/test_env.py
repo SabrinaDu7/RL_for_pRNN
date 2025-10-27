@@ -1,6 +1,6 @@
 from minigrid.envs import LEnv_18_goal, LEnv_16_goal
-from prnn.utils import make_env, MinigridEnvNames, ActionEncodingsEnum
-from utils import get_minigrid_env
+from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
+from utils import get_minigrid_env, AgentInputType
 
 SIZE = 16
 ENV_NAME = MinigridEnvNames.LRoom18Goal if SIZE == 18 else MinigridEnvNames.LRoom16Goal
@@ -11,9 +11,12 @@ def test_import_lenv_goal():
     assert ENV_CLASS is not None
     assert hasattr(ENV_CLASS, "__init__")
 
+def _get_env():
+    env = get_minigrid_env(env_name=ENV_NAME, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+    return env
 
 def test_create_lroom_goal_env():
-    env = get_minigrid_env(env_name=ENV_NAME, act_enc=ActionEncodingsEnum.SpeedHD)
+    env = _get_env()
 
     # Basic checks
     assert env is not None
@@ -29,7 +32,7 @@ def test_create_lroom_goal_env():
 
 def test_env_reset():
     """Test that the environment can be reset successfully."""
-    env = get_minigrid_env(env_name=ENV_NAME, act_enc=ActionEncodingsEnum.SpeedHD)
+    env = _get_env()
 
     # Should return observation and info
     result = env.reset()
@@ -44,7 +47,7 @@ def test_env_reset():
 
 def test_environment_step():
     """Test that the environment can perform a step."""
-    env = get_minigrid_env(env_name=ENV_NAME, act_enc=ActionEncodingsEnum.SpeedHD)
+    env = _get_env()
 
     # Take a random action (0 should be valid for most MiniGrid envs)
     action = 0

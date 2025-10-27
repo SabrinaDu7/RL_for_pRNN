@@ -6,6 +6,8 @@ from minigrid.wrappers import *
 from functools import partial
 
 from prnn.utils.Shell import FaramaMinigridShell
+from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
+from utils import AgentInputType
 
 wrappers = {
     "ReseedWrapper": ReseedWrapper,
@@ -31,14 +33,14 @@ def episode_video_trigger(episode, vid_n_episodes):
 
 
 def make_env(
-    env_key,
-    input_type,
+    env_key: MinigridEnvNames,
+    input_type: AgentInputType,
     seed=0,
     vid_folder="",
     vid_n_episodes=0,
     wrapper=None,
     render_mode="rgb_array",
-    act_enc=None,
+    act_enc: ActionEncodingsEnum | None = None,
     **kwargs,
 ):
     env = gym.make(env_key, render_mode=render_mode)

@@ -1,3 +1,5 @@
+from utils.enums import AgentInputType
+
 from utils.checkpoints import (
     StatusCkptKeys,
     ACMODEL_STATUS,
@@ -5,7 +7,7 @@ from utils.checkpoints import (
     load_statedict_from_acmodel_status,
 )
 from utils.dev_env import (
-    require_env,
+    get_env_var,
     get_ckpt_env_vars,
     get_wandb_env_vars,
     get_logdir_env_var,
@@ -20,9 +22,10 @@ __all__ = [
     "ACMODEL_STATUS",
     "load_acmodel_status",
     "load_statedict_from_acmodel_status",
-    "require_env",
+    "get_env_var",
     "get_ckpt_env_vars",
     "get_wandb_env_vars",
     "get_logdir_env_var",
-    "get_minigrid_env"
+    "get_minigrid_env",
+    "AgentInputType",
 ]

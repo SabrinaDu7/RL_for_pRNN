@@ -8,17 +8,15 @@ from prnn.utils import (
     load_pN,
 )
 from RLutils import ACModelSR, get_obss_preprocessor, DEVICE
-from utils import get_ckpt_env_vars, load_statedict_from_acmodel_status, load_acmodel_status, StatusCkptKeys, get_minigrid_env
+from utils import get_ckpt_env_vars, load_statedict_from_acmodel_status, load_acmodel_status, StatusCkptKeys, get_minigrid_env, AgentInputType
 
 SIZE = 16
 ENV_NAME = MinigridEnvNames.LRoom18 if SIZE == 18 else MinigridEnvNames.LRoom16
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 
 def _get_env():
-    env = get_minigrid_env(env_name=ENV_NAME, act_enc=ActionEncodingsEnum.SpeedHD)
+    env = get_minigrid_env(env_name=ENV_NAME, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
     return env
-
-_get_env()
     
 def _get_pRNN(env = None, pRNN_ckpt_path = PRNN_CKPT):
     if env is None:
