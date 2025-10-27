@@ -209,6 +209,10 @@ class ACModelSR(ACModel):
             self.image_embedding_size = 0
 
     def forward(self, obs, SR, **kwargs):
+        # TODO: Must handle this case with thcycRNN where multiple SRs (e.g., shape is (6, 1, 500))
+        if SR.ndim > 2:
+            SR = SR.mean(dim=0)
+
         if self.with_CV:
             x = obs.image.transpose(1, 3).transpose(2, 3)
             if self.rgb:
