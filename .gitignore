@@ -10,4 +10,4 @@ RLutils/__pycache__/*
 .python*
 results/*
 
-trainRL.py
+wandb/*

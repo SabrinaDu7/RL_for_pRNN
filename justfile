@@ -1,3 +1,7 @@
+# Run experiments
+omt *EXTRA:
+    uv run tasks/ObjectMemoryTask/run_task.py {{EXTRA}}
+
 # Formatting and testing
 lint:
     uv run ruff format .
