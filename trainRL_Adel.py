@@ -7,7 +7,6 @@ import time
 import datetime
 import numpy as np
 import torch.nn as nn
-from typing import Mapping, Any
 
 from omegaconf import OmegaConf, DictConfig
 import hydra
@@ -38,10 +37,12 @@ from prnn.utils import (
     LayerNormRNNCell,
     RNNCell,
     RandomActionAgent,
+    MinigridEnvNames,
+    ActionEncodingsEnum,
     load_pN, 
     save_pN, 
 )
-from utils import load_statedict_from_acmodel_status
+from utils import load_statedict_from_acmodel_status, load_acmodel_status, AgentInputType
 
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
@@ -58,6 +59,7 @@ class RL_Trainer(object):
         self.wandb_log = self.params.logging.wandb_log
 
         date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+        par = ""
         if params.logging.focus:
             par = eval("params." + params.logging.focus)
             name = f"{params.exp.exp_name}_{params.logging.focus}_{par}_seed{params.exp.seed}"
@@ -110,6 +112,9 @@ class RL_Trainer(object):
         print(f"Device: {DEVICE}\n")
 
         # Load environment
+        assert args.exp.input_type in AgentInputType
+        assert args.exp.env_name in MinigridEnvNames
+        assert args.predNet.action_encoding in ActionEncodingsEnum
 
         env = RLutils.make_env(
             args.exp.env_name,
@@ -124,7 +129,7 @@ class RL_Trainer(object):
         # Load training status
 
         if args.logging.load_acmodel:
-            status = RLutils.get_status(ACMODEL_STATUS_CKPT) 
+            status = load_acmodel_status(ACMODEL_STATUS_CKPT, device=DEVICE) 
         else:
             status = {StatusCkptKeys.NUM_FRAMES.value: 0, StatusCkptKeys.UPDATE.value: 0}
         print("Training status loaded\n")
@@ -157,9 +162,9 @@ class RL_Trainer(object):
         # predictiveNet.pRNN.to(device)
         predictiveNet.env_shell.hd_trans = np.array([-1, 1, 0, 0])  # TODO: remove later
 
-        # Try to load predictiveNet state from new format first
+        # Load pRNN
         if args.logging.load_worldmodel:
-            load_pN(predictiveNet, PRNN_CKPT)
+            load_pN(model_ckpt_filepath=PRNN_CKPT, pRNNtype=args.predNet.pRNNtype, predictive_net=predictiveNet)
             print("\n" + "=" * 10)
             print(f"Existing pRNN model found at {PRNN_CKPT} and loaded from state dict")
             print("=" * 10 + "\n")
