@@ -1,11 +1,18 @@
+# Other utility functions and constants
+from RLutils.other import (
+    DEVICE,
+    seed,
+    synthesize,
+) 
+
 # Agent classes and functions
-from .agent import (
+from RLutils.agent import (
     Agent,
     ActorCriticAgent,
 )
 
 # Algorithm classes
-from .algo import (
+from RLutils.algo import (
     compare_trajs,
     PredictivePPOAlgo,
     thetaPPOalgo,
@@ -13,7 +20,7 @@ from .algo import (
 )
 
 # Analysis classes and functions
-from .analysis import (
+from RLutils.analysis import (
     mutual_info_policy,
     plot_heatmaps,
     EnvironmentFeaturesAnalysis,
@@ -21,7 +28,7 @@ from .analysis import (
 )
 
 # Environment functions and classes
-from .env import (
+from RLutils.env import (
     episode_video_trigger,
     make_env,
     ResetWrapper,
@@ -29,7 +36,7 @@ from .env import (
 )
 
 # Format/preprocessing functions and classes
-from .format import (
+from RLutils.format import (
     get_obss_preprocessor,
     preprocess_images,
     preprocess_int,
@@ -38,7 +45,7 @@ from .format import (
 )
 
 # Model classes and functions
-from .model import (
+from RLutils.model import (
     init_params,
     RecACModel,
     ACModel,
@@ -48,20 +55,13 @@ from .model import (
     ACModelThetaSingle,
 )
 
-# Other utility functions and constants
-from .other import (
-    DEVICE,
-    seed,
-    synthesize,
-)
-
 # Place cells class
-from .pc import (
+from RLutils.pc import (
     FakePlaceCells,
 )
 
 # Storage functions
-from .storage import (
+from RLutils.storage import (
     create_folders_if_necessary,
     get_storage_dir,
     get_model_dir,
