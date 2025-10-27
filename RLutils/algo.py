@@ -11,6 +11,8 @@ from torch_ac.utils import DictList
 from scipy.spatial.distance import cosine
 from scipy.linalg import toeplitz
 
+from prnn.utils import PredictiveNet
+
 
 def compare_trajs(traj1, traj2):
     delta = (traj1 == traj2).cumprod()
@@ -24,8 +26,8 @@ class PredictivePPOAlgo:
         self,
         env,
         acmodel,
-        predictiveNet=None,
-        device=None,
+        predictiveNet: PredictiveNet,
+        device: torch.device,
         num_frames=None,
         discount=0.99,
         lr=0.001,
@@ -193,6 +195,7 @@ class PredictivePPOAlgo:
         # The lists below are only relevant if pRNN is being trained
         self.done_indices = [0]
         self.last_observations = []
+        obs = None
 
         for i in range(self.num_frames):
             # Do one agent-environment interaction
@@ -258,7 +261,7 @@ class PredictivePPOAlgo:
                 self.log_reshaped_return.append(self.log_episode_reshaped_return)
                 self.log_num_frames.append(self.log_episode_num_frames)
                 if self.pN:
-                    self.pN.reset_state(device=self.device)
+                    self.pN.reset_state(device=str(self.device))
                 self.init_SR()
                 self.last_observations.append(self.obs)
                 self.obs = self.env.reset()
@@ -269,24 +272,29 @@ class PredictivePPOAlgo:
 
         # make sure last obs is included in done indices.
         # these is when each trial ends, for prnn training
-        if self.done_indices[-1] != i + 1:
-            self.done_indices.append(i + 1)
+        if self.done_indices[-1] != self.num_frames: # i + 1:
+            self.done_indices.append(self.num_frames) # (i + 1)
             self.last_observations.append(self.obs)
 
         # Calculate curious rewards
         if self.curious_agent:
             with torch.no_grad():
                 actions_preformatted = self.actions.cpu().numpy()
-                obs_formatted, act_formatted = self.pN.env_shell.env2pred(
-                    self.obss + [self.obs], actions_preformatted
-                )
-                obs_formatted, act_formatted = (
-                    obs_formatted.to(self.device),
-                    act_formatted.to(self.device),
-                )
-                obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted)
-                obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
-                MSEs = ((obs_pred - obs_next) ** 2).mean(dim=1)  # [2048]
+                MSEs = torch.zeros(self.num_frames, device=self.device)
+
+                for idx in range(1, len(self.done_indices)):
+                    start_episode, end_episode = self.done_indices[idx-1], self.done_indices[idx]
+                    last_obs = self.last_observations[idx-1]
+                    acts_now = actions_preformatted[start_episode:end_episode]
+                    obs_now = self.obss[start_episode:end_episode] + [last_obs]
+                    
+                    obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
+                    obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
+
+                    obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted)
+                    obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
+                    MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1) 
+
                 self.curious_rewards = MSEs
 
         # Calculate intrinsic rewards
@@ -564,7 +572,7 @@ class PredictivePPOAlgo:
 
         obs = obs.to(self.device)
         act = act.to(self.device)
-        _, _, _ = self.pN.trainStep(obs, act, log_loss_statistics=True)
+        _, _, _ = self.pN.trainStep(obs, act)
         self.pN.numTrainingEpochs += 1
 
     def randomAgent_collect_exp_and_update(self, agent):
@@ -587,7 +595,7 @@ class PredictivePPOAlgo:
 
             # Train
             obs, act = obs.to(self.device), act.to(self.device)
-            _, _, _ = self.pN.trainStep(obs, act, log_loss_statistics=True)
+            _, _, _ = self.pN.trainStep(obs, act)
             self.pN.numTrainingEpochs += 1
 
             # Collect location info
