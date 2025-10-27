@@ -1,30 +1,30 @@
-import os
 import torch
 from prnn.utils import (
     make_env,
     PredictiveNet,
+    ActionEncodingsEnum,
+    MinigridEnvNames,
+    pRNNtypes,
     load_pN,
 )
 from RLutils import ACModelSR, get_obss_preprocessor, DEVICE
+from utils import get_ckpt_env_vars, load_statedict_from_acmodel_status, load_acmodel_status, StatusCkptKeys, get_minigrid_env
 
-from utils import load_statedict_from_acmodel_status, load_acmodel_status, StatusCkptKeys
-from tests.commons import ENV_NAME, PRNN_CKPT, ACMODEL_STATUS_CKPT
-
+SIZE = 16
+ENV_NAME = MinigridEnvNames.LRoom18 if SIZE == 18 else MinigridEnvNames.LRoom16
+PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 
 def _get_env():
-    env = make_env(env_key=ENV_NAME, act_enc="SpeedHD")
-    env.reset()
+    env = get_minigrid_env(env_name=ENV_NAME, act_enc=ActionEncodingsEnum.SpeedHD)
     return env
+
+_get_env()
     
-def _get_pRNN(env = None):
-    assert os.path.isfile(f"{PRNN_CKPT}"), f"Network file {PRNN_CKPT} does not exist."
-    
+def _get_pRNN(env = None, pRNN_ckpt_path = PRNN_CKPT):
     if env is None:
         env = _get_env()
 
-    predictive_net = PredictiveNet(env=env, pRNNtype="thRNN_5win")
-    load_pN(predictive_net, model_filepath=PRNN_CKPT)
-    
+    predictive_net: PredictiveNet = load_pN(model_ckpt_filepath=pRNN_ckpt_path, env=env, pRNNtype=pRNNtypes.masked)
     return predictive_net
 
 

@@ -11,6 +11,10 @@ from utils.dev_env import (
     get_logdir_env_var,
 )
 
+from utils.minigrid import (
+    get_minigrid_env,
+)
+
 __all__ = [
     "StatusCkptKeys",
     "ACMODEL_STATUS",
@@ -20,4 +24,5 @@ __all__ = [
     "get_ckpt_env_vars",
     "get_wandb_env_vars",
     "get_logdir_env_var",
+    "get_minigrid_env"
 ]
