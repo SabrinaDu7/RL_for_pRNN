@@ -2,36 +2,45 @@ import matplotlib.pyplot as plt
 import wandb
 import time
 import warnings
+import hydra
+from omegaconf import DictConfig
 
 ### Suppress warnings ###
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from prnn.utils.predictiveNet import loadNet
-from prnn.analysis.ObjectMemoryTask.define_task import ObjectMemoryTask
+from prnn.utils import MinigridEnvNames
+from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
+from utils import get_wandb_env_vars, get_env_var
 from RLutils.other import DEVICE
 
-NET_NAME = "thRNN_5win_16_new_arch"
-ENV_NAME = "MiniGrid-LRoom_Goal-16x16-v0"
+DEVICE = "cpu"
+WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
+CKPT_DIR = get_env_var("CKPT_DIR")
+
 RESULTS_SAVE_FOLDER = "results"
-NETS_SAVE_FOLDER = "nets"
 TIME = time.strftime("%m%d-%H%M")
+NET_NAME = f"pN-omt-{TIME}"
 
-RUN = wandb.init(
-    entity="sabrina-du-mila-mila",
-    project="curious-george",
-)
+def create_wandb_run():
+    run = wandb.init(
+        entity=WANDB_ENTITY,
+        project=WANDB_PROJECT,
+        name=f"{TIME}",
+    )
+    return run
 
-
-def main():
+@hydra.main(config_path="../../Configs", config_name="Conf1_Adel")
+def main(args: DictConfig):
     print("Loading pre-trained network...")
-    predictiveNet = loadNet(NET_NAME)
-
+    if args.logging.wandb_log:
+        create_wandb_run()
+    
     # Step 2: Run the Object Memory Task
     print("Running Object Memory Task...")
     print(f"Using device: {DEVICE}")
     omt = ObjectMemoryTask(
-        predictiveNet,
-        env_novel_name=ENV_NAME,
+        args=args,
+        env_novel_name=MinigridEnvNames.LRoom16Goal,
     )
     omt.trainNovelObject(
         epochs=5,
@@ -42,7 +51,7 @@ def main():
         resetOptimizer=False,
         continueTraining=False,
         device=DEVICE,
-        full_filename=f"{NETS_SAVE_FOLDER}/{NET_NAME}-{TIME}.pkl",
+        full_filename=f"{CKPT_DIR}/{NET_NAME}.pt",
     )
     omt.getTestTrial(timesteps=2500)
     objectLearning = omt.quantifyObjectLearning(control_location=[2, 7], whichPhase=0)
@@ -57,6 +66,9 @@ def main():
     plt.figure(figsize=(12, 8))
     omt.ObjectLearningFigure(netname=NET_NAME, savefolder=RESULTS_SAVE_FOLDER)
     print("Done!")
+
+    if args.logging.wandb_log:
+        wandb.finish()
 
 
 if __name__ == "__main__":

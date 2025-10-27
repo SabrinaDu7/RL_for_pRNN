@@ -1,11 +1,20 @@
-from prnn.utils.env import make_env
-from prnn.utils.agent import RandomActionAgent
 import numpy as np
 import matplotlib.pyplot as plt
-from prnn.utils.general import saveFig
-from prnn.utils.eg_utils import get_device
 
-DEVICE = get_device()
+from prnn.utils.general import saveFig
+from prnn.utils import (
+    PredictiveNet,
+    MinigridEnvNames,
+    RandomActionAgent,
+    ActionEncodingsEnum,
+    save_pN,
+    load_pN,
+)
+
+from utils import get_minigrid_env, get_ckpt_env_vars, AgentInputType
+
+RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
+PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 
 
 def get_env_name(env):
@@ -21,18 +30,40 @@ def get_env_name(env):
             break
     return " -> ".join(names)
 
+def get_pN(args, env):
+    predictiveNet = PredictiveNet(
+        env,
+        hidden_size=args.predNet.hiddensize,
+        pRNNtype=args.predNet.pRNNtype,
+        learningRate=args.predNet.lr,
+        bptttrunc=args.predNet.bptttrunc,
+        weight_decay=args.predNet.weight_decay,
+        neuralTimescale=args.predNet.ntimescale,
+        dropp=args.predNet.dropout,
+        trainNoiseMeanStd=(args.predNet.noisemean, args.predNet.noisestd),
+        f=args.predNet.sparsity,
+        wandb_log=args.logging.wandb_log,
+    )
+    load_pN(model_ckpt_filepath=PRNN_CKPT, pRNNtype=args.predNet.pRNNtype, predictive_net=predictiveNet)
+    return predictiveNet
+
 
 class ObjectMemoryTask:
     def __init__(
         self,
-        predictiveNet,
-        env_novel_name: str,
+        args,
+        env_novel_name: MinigridEnvNames,
         decoder="train",
     ):
-        self.pN = predictiveNet
-        self.env_novel_name = env_novel_name
+        self.aargs = args
 
-        self.env_novel = make_env(env_key=self.env_novel_name, act_enc="OneHotHD")
+        self.env_novel_name = env_novel_name.value
+        self.env_novel = get_minigrid_env(env_name=env_novel_name, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+
+        self.pN = get_pN(args, self.env_novel)
+        self.wandb_log = args.logging.wandb_log
+        self.pN.wandb_log = self.wandb_log
+        
         self.env_orig = self.pN.EnvLibrary[0]
 
         # For clarity
@@ -59,8 +90,7 @@ class ObjectMemoryTask:
 
     def trainDecoder(self):
         env = self.pN.EnvLibrary[0]
-        action_probability = np.array([0.15, 0.15, 0.6, 0.1, 0, 0, 0])
-        agent = RandomActionAgent(env.action_space, action_probability)
+        agent = RandomActionAgent(env.action_space, RAND_ACT_PROBA)
         _, _, decoder, sRSA = self.pN.calculateSpatialRepresentation(
             env, agent, numBatches=10000, trainDecoder=True
         )
@@ -83,11 +113,7 @@ class ObjectMemoryTask:
         else:
             pN_post = self.pN.copy()
 
-        if resetOptimizer:
-            pN_post.resetOptimizer(pN_post.trainArgs.lr, pN_post.trainArgs.weight_decay)
-
-        action_probability = np.array([0.15, 0.15, 0.6, 0.1, 0, 0, 0])
-        agent = RandomActionAgent(self.env_novel.action_space, action_probability)
+        agent = RandomActionAgent(self.env_novel.action_space, RAND_ACT_PROBA)
 
         # print(lr_trials)
         # Update the learning rate
@@ -108,7 +134,7 @@ class ObjectMemoryTask:
                 forceDevice=device,
             )
 
-        pN_post.saveNet(full_filename)
+        save_pN(pN_post, full_filename)
         print(f"Saved trained net to {full_filename}")
 
         # Return the learning rate
@@ -117,6 +143,7 @@ class ObjectMemoryTask:
 
         self.pN_post = pN_post
         return pN_post
+
 
     def getTestTrial(
         self,
@@ -127,8 +154,7 @@ class ObjectMemoryTask:
         )
 
         # NOTE: self.pN acts as a control
-        action_probability = np.array([0.15, 0.15, 0.6, 0.1, 0, 0, 0])
-        agent = RandomActionAgent(self.env_orig.action_space, action_probability)
+        agent = RandomActionAgent(self.env_orig.action_space, RAND_ACT_PROBA)
 
         # Collect observation sequence in the environment
         obs, act, state, render = self.pN_post.collectObservationSequence(
