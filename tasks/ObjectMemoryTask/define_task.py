@@ -1,17 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
+
+from RLutils import get_pN, make_env, get_SR_acmodel, get_obss_preprocessor
 
 from prnn.utils.general import saveFig
 from prnn.utils import (
-    PredictiveNet,
     MinigridEnvNames,
     RandomActionAgent,
     ActionEncodingsEnum,
     save_pN,
-    load_pN,
 )
 
-from utils import get_minigrid_env, get_ckpt_env_vars, AgentInputType
+from utils import get_ckpt_env_vars, AgentInputType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
@@ -30,41 +31,27 @@ def get_env_name(env):
             break
     return " -> ".join(names)
 
-def get_pN(args, env):
-    predictiveNet = PredictiveNet(
-        env,
-        hidden_size=args.predNet.hiddensize,
-        pRNNtype=args.predNet.pRNNtype,
-        learningRate=args.predNet.lr,
-        bptttrunc=args.predNet.bptttrunc,
-        weight_decay=args.predNet.weight_decay,
-        neuralTimescale=args.predNet.ntimescale,
-        dropp=args.predNet.dropout,
-        trainNoiseMeanStd=(args.predNet.noisemean, args.predNet.noisestd),
-        f=args.predNet.sparsity,
-        wandb_log=args.logging.wandb_log,
-    )
-    load_pN(model_ckpt_filepath=PRNN_CKPT, pRNNtype=args.predNet.pRNNtype, predictive_net=predictiveNet)
-    return predictiveNet
-
 
 class ObjectMemoryTask:
     def __init__(
         self,
         args,
         env_novel_name: MinigridEnvNames,
+        env_orig_name: MinigridEnvNames,
+        device: torch.device,
         decoder="train",
     ):
-        self.aargs = args
+        self.args = args
 
         self.env_novel_name = env_novel_name.value
-        self.env_novel = get_minigrid_env(env_name=env_novel_name, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+        self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
 
-        self.pN = get_pN(args, self.env_novel)
+        self.pN_control = get_pN(args=args, env=self.env_orig, device=device)
         self.wandb_log = args.logging.wandb_log
-        self.pN.wandb_log = self.wandb_log
+        self.pN_control.wandb_log = self.wandb_log
         
-        self.env_orig = self.pN.EnvLibrary[0]
+        self.agent_random = RandomActionAgent(self.env_novel.action_space, RAND_ACT_PROBA)
 
         # For clarity
         env_farama_shell = self.env_novel
@@ -89,9 +76,9 @@ class ObjectMemoryTask:
         self.objectLearning = None  # Updated after quantifyObjectLearning() called
 
     def trainDecoder(self):
-        env = self.pN.EnvLibrary[0]
+        env = self.pN_control.EnvLibrary[0]
         agent = RandomActionAgent(env.action_space, RAND_ACT_PROBA)
-        _, _, decoder, sRSA = self.pN.calculateSpatialRepresentation(
+        _, _, decoder, sRSA = self.pN_control.calculateSpatialRepresentation(
             env, agent, numBatches=10000, trainDecoder=True
         )
         return decoder
@@ -102,16 +89,16 @@ class ObjectMemoryTask:
         num_trials: int,
         sequence_duration: int,
         lr_trials: int,
-        lrgroups: list,
+        lrgroups: list, # [0, 1, 2]
         resetOptimizer: bool,
         continueTraining: bool,
         device,
         full_filename: str,
     ):
         if continueTraining:
-            pN_post = self.pN
+            pN_post = self.pN_control
         else:
-            pN_post = self.pN.copy()
+            pN_post = self.pN_control.copy()
 
         agent = RandomActionAgent(self.env_novel.action_space, RAND_ACT_PROBA)
 
@@ -119,14 +106,15 @@ class ObjectMemoryTask:
         # Update the learning rate
         oldlr = [0.0 for i in lrgroups]
         if isinstance(lr_trials, int):
-            lr_trials = [lr_trials for i in lrgroups]
+            lr_trials = [lr_trials for i in lrgroups] # [2, 2, 2]
         for lidx, lgroup in enumerate(lrgroups):
+            # (0, 0), (1, 1), (2, 2)
             oldlr[lidx] = pN_post.optimizer.param_groups[lgroup]["lr"]
             pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx] * lr_trials[lidx]
 
         for _ in range(epochs):
             pN_post.trainingEpoch(
-                self.env_novel,
+                self.env_novel, # CRITICAL
                 agent,
                 num_trials=num_trials,
                 sequence_duration=sequence_duration,
@@ -142,6 +130,7 @@ class ObjectMemoryTask:
             pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx]
 
         self.pN_post = pN_post
+
         return pN_post
 
 
@@ -153,6 +142,13 @@ class ObjectMemoryTask:
             "You need to train the network in the novel object room first."
         )
 
+        # Ensure that pN's are on cpu since using numpy
+        self.pN_post.pRNN.to(torch.device("cpu"))
+        self.pN_control.pRNN.to(torch.device("cpu"))
+        
+        self.pN_post.pRNN.eval()
+        self.pN_control.pRNN.eval()
+
         # NOTE: self.pN acts as a control
         agent = RandomActionAgent(self.env_orig.action_space, RAND_ACT_PROBA)
 
@@ -161,9 +157,8 @@ class ObjectMemoryTask:
             self.env_orig, agent, timesteps, includeRender=True
         )
 
-        # Predict observations with the nets trained (and not trained) in the novel object room
         obs_pred, obs_next, _ = self.pN_post.predict(obs, act)
-        obs_pred_notrain, _, _ = self.pN.predict(obs, act)
+        obs_pred_notrain, _, _ = self.pN_control.predict(obs, act)
 
         objectTest = {
             "obs": obs,
@@ -267,7 +262,7 @@ class ObjectMemoryTask:
         obs = self.testTrial["obs"]
         obs_pred = self.testTrial["obs_pred"]
         obs_pred_notrain = self.testTrial["obs_pred_control"]
-        pN = self.pN
+        pN = self.pN_control
 
         inviewtimes = self.objectLearning["inviewtimes"]
         extimes = range(inviewtimes[whichview] - 2, inviewtimes[whichview] + 5)
