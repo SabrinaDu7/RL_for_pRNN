@@ -6,6 +6,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import time
 import datetime
 import numpy as np
+import torch
 import torch.nn as nn
 
 from omegaconf import OmegaConf, DictConfig
@@ -37,12 +38,10 @@ from prnn.utils import (
     LayerNormRNNCell,
     RNNCell,
     RandomActionAgent,
-    MinigridEnvNames,
-    ActionEncodingsEnum,
     load_pN, 
     save_pN, 
 )
-from utils import load_statedict_from_acmodel_status, load_acmodel_status, AgentInputType
+from utils import load_statedict_from_acmodel_status
 
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
@@ -74,11 +73,8 @@ class RL_Trainer(object):
 
         # Set run dir
 
-        if params.logging.load_acmodel:
-            self.model_dir = params.logging.load_acmodel
-        else:
-            self.model_dir = RLutils.get_model_dir(self.model_name)
-            RLutils.create_folders_if_necessary(self.model_dir)
+        self.model_dir = RLutils.get_model_dir(self.model_name)
+        RLutils.create_folders_if_necessary(self.model_dir)
 
         self.video_dir = (
             RLutils.get_video_dir(self.model_name)
@@ -112,10 +108,6 @@ class RL_Trainer(object):
         print(f"Device: {DEVICE}\n")
 
         # Load environment
-        assert args.exp.input_type in AgentInputType
-        assert args.exp.env_name in MinigridEnvNames
-        assert args.predNet.action_encoding in ActionEncodingsEnum
-
         env = RLutils.make_env(
             args.exp.env_name,
             args.exp.input_type,
@@ -129,7 +121,11 @@ class RL_Trainer(object):
         # Load training status
 
         if args.logging.load_acmodel:
-            status = load_acmodel_status(ACMODEL_STATUS_CKPT, device=DEVICE) 
+            status = torch.load(
+                ACMODEL_STATUS_CKPT,
+                map_location=DEVICE,
+                weights_only=False
+            )
         else:
             status = {StatusCkptKeys.NUM_FRAMES.value: 0, StatusCkptKeys.UPDATE.value: 0}
         print("Training status loaded\n")
@@ -161,10 +157,15 @@ class RL_Trainer(object):
         args.predNet.hiddensize = predictiveNet.hidden_size
         # predictiveNet.pRNN.to(device)
         predictiveNet.env_shell.hd_trans = np.array([-1, 1, 0, 0])  # TODO: remove later
+        # TODO: I think the above line is already set by default to [-1, 1, 0, 0] in FaramaMinigridShell(GymMinigrid)
 
         # Load pRNN
         if args.logging.load_worldmodel:
-            load_pN(model_ckpt_filepath=PRNN_CKPT, pRNNtype=args.predNet.pRNNtype, predictive_net=predictiveNet)
+            load_pN(model_ckpt_filepath=PRNN_CKPT, 
+                    device=DEVICE,
+                    pRNNtype=args.predNet.pRNNtype, 
+                    predictive_net=predictiveNet)
+            
             print("\n" + "=" * 10)
             print(f"Existing pRNN model found at {PRNN_CKPT} and loaded from state dict")
             print("=" * 10 + "\n")
@@ -234,8 +235,9 @@ class RL_Trainer(object):
                 receiver=acmodel,
                 status=status,
                 status_key=StatusCkptKeys.MODEL_STATE,
+                device=DEVICE,
             )
-            print("Existing model found")
+            print(f"Existing AC model found at {ACMODEL_STATUS_CKPT}")
             print("=" * 10 + "\n")
 
         acmodel.to(DEVICE)
@@ -363,6 +365,7 @@ class RL_Trainer(object):
                 receiver=algo.optimizer,
                 status=status,
                 status_key=StatusCkptKeys.OPTIMIZER_STATE,
+                device=DEVICE,
             )
             print("Optimizer loaded\n")
 
@@ -389,7 +392,7 @@ class RL_Trainer(object):
             else:
                 exps, logs1 = algo.collect_experiences()
                 logs2 = algo.update_parameters(
-                    exps, update_params=(not args.exp.random_init_control)
+                    exps=exps, update_params=(not args.exp.random_init_control)
                 )
                 logs = {**logs1, **logs2}
 
