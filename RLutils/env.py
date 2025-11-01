@@ -33,16 +33,20 @@ def episode_video_trigger(episode, vid_n_episodes):
 
 
 def make_env(
-    env_key: MinigridEnvNames,
-    input_type: AgentInputType,
+    env_key: str,
+    input_type: str,
     seed=0,
     vid_folder="",
     vid_n_episodes=0,
     wrapper=None,
     render_mode="rgb_array",
-    act_enc: ActionEncodingsEnum | None = None,
+    act_enc: str | None = None,
     **kwargs,
 ):
+    assert input_type in AgentInputType
+    assert env_key in MinigridEnvNames
+    assert act_enc in ActionEncodingsEnum
+
     env = gym.make(env_key, render_mode=render_mode)
 
     if input_type == "Visual_FO":
