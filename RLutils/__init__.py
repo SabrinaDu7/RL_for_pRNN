@@ -71,6 +71,8 @@ from RLutils.storage import (
     get_status_path,
     get_status,
     get_pN,
+    get_SR_acmodel,
+    get_algo,
     save_status,
     save_analysis_of_agent_behav,
 )
@@ -125,6 +127,8 @@ __all__ = [
     "get_status_path",
     "get_status",
     "get_pN",
+    "get_algo",
+    "get_SR_acmodel",
     "save_status",
     "save_analysis_of_agent_behav",
 ]
