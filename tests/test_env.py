@@ -1,6 +1,8 @@
 from minigrid.envs import LEnv_18_goal, LEnv_16_goal
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
-from utils import get_minigrid_env, AgentInputType
+
+from utils import AgentInputType
+from RLutils import make_env
 
 SIZE = 16
 ENV_NAME = MinigridEnvNames.LRoom18Goal if SIZE == 18 else MinigridEnvNames.LRoom16Goal
@@ -12,7 +14,7 @@ def test_import_lenv_goal():
     assert hasattr(ENV_CLASS, "__init__")
 
 def _get_env():
-    env = get_minigrid_env(env_name=ENV_NAME, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+    env = make_env(env_key=ENV_NAME, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
     return env
 
 def test_create_lroom_goal_env():

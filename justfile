@@ -8,3 +8,6 @@ lint:
 
 test:
     uv run -m pytest -m "not slow"
+
+test-slow:
+    uv run -m pytest -m "slow"

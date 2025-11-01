@@ -1,35 +1,91 @@
 import torch
+import pytest
+import numpy
+from dataclasses import dataclass
+
 from prnn.utils import (
-    make_env,
     PredictiveNet,
     ActionEncodingsEnum,
     MinigridEnvNames,
     pRNNtypes,
-    load_pN,
+    RandomActionAgent,
 )
-from RLutils import ACModelSR, get_obss_preprocessor, DEVICE
-from utils import get_ckpt_env_vars, load_statedict_from_acmodel_status, load_acmodel_status, StatusCkptKeys, get_minigrid_env, AgentInputType
+from prnn.utils.Shell import FaramaMinigridShell
+
+from RLutils import get_obss_preprocessor, make_env, get_pN, get_SR_acmodel, seed, DEVICE, ACModelSR, ActorCriticAgent
+from utils import get_ckpt_env_vars, AgentInputType
 
 SIZE = 16
 ENV_NAME = MinigridEnvNames.LRoom18 if SIZE == 18 else MinigridEnvNames.LRoom16
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
+seed(2)
 
-def _get_env():
-    env = get_minigrid_env(env_name=ENV_NAME, input_type = AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
-    return env
+
+def _check_same_device(model: torch.nn.Module, device: torch.device):
+    device_type = device.type
+    param = next(model.parameters())
+    assert param.device.type == device_type, f"Parameter on device {param.device.type}, expected {device.type}"
+
+def _get_pRNN(device: torch.device, env: FaramaMinigridShell | None = None) -> PredictiveNet:
+    @dataclass
+    class PredNetArgs:
+        hiddensize: int = 500
+        pRNNtype: str = pRNNtypes.masked.value
+        lr: float = 3e-3
+        bptttrunc: float = 1e8
+        weight_decay: float = 3e-3
+        ntimescale: int = 2
+        dropout: float = 0.15
+        noisemean: float = 0
+        noisestd: float = 0.05
+        sparsity: float = 0.5
+
+    @dataclass
+    class LoggingArgs:
+        wandb_log: bool = False
+
+    @dataclass
+    class Args:
+        predNet: PredNetArgs = PredNetArgs()
+        logging: LoggingArgs = LoggingArgs()
     
-def _get_pRNN(env = None, pRNN_ckpt_path = PRNN_CKPT):
     if env is None:
-        env = _get_env()
-
-    predictive_net: PredictiveNet = load_pN(model_ckpt_filepath=pRNN_ckpt_path, env=env, pRNNtype=pRNNtypes.masked)
+        env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+    
+    args = Args()
+    predictive_net = get_pN(args=args, env=env, device=DEVICE)
     return predictive_net
+
+
+def _get_acmodel(acmodel_status_ckpt: str, env: FaramaMinigridShell, predNet: PredictiveNet, device: torch.device) -> ACModelSR:
+    obs_space, _ = get_obss_preprocessor(env.observation_space)
+
+    @dataclass
+    class PredNetArgs:
+        hiddensize: int = 500
+        pRNNtype: str = pRNNtypes.masked.value
+
+    @dataclass
+    class ExperimentArgs:
+        with_obs: bool = True
+        rgb: bool = True
+        with_HD: bool = True
+
+    @dataclass
+    class Args:
+        predNet: PredNetArgs = PredNetArgs()
+        exp: ExperimentArgs = ExperimentArgs()
+    
+    args = Args()
+    acmodel = get_SR_acmodel(args, env, obs_space, acmodel_status_ckpt, device)
+    return acmodel
 
 
 def test_load_pRNN():
     """Test loading a pre-trained network."""
 
-    predictive_net = _get_pRNN()
+    predictive_net = _get_pRNN(device=DEVICE)
+    _check_same_device(predictive_net.pRNN, DEVICE)
 
     assert predictive_net is not None
     assert hasattr(predictive_net, "pRNN")
@@ -42,10 +98,9 @@ def test_load_pRNN():
 def test_pRNN_with_environment():
     """Test that a loaded network can work with the LRoom environment."""
 
-    env = make_env(env_key=ENV_NAME, act_enc="SpeedHD")
-    env.reset()
+    env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
 
-    predictive_net = _get_pRNN()
+    predictive_net = _get_pRNN(device=DEVICE)
     predictive_net.addEnvironment(env)
 
     # Basic functionality test
@@ -55,38 +110,16 @@ def test_pRNN_with_environment():
 def test_load_acmodel_from_checkpoint():
     """Test loading a pre-trained ACModel from checkpoint."""
     # Setup
-    env = _get_env()
+    env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
     obs_space, preprocess_obss = get_obss_preprocessor(env.observation_space)
-    predNet = _get_pRNN(env)
+    predNet = _get_pRNN(device=DEVICE, env=env)
 
     # Load checkpoint
-    status = load_acmodel_status(acmodel_status_ckpt=ACMODEL_STATUS_CKPT)
-    
-    # Verify checkpoint has required keys
-    assert StatusCkptKeys.MODEL_STATE.value in status
-    assert StatusCkptKeys.NUM_FRAMES.value in status
-    
-    # Create ACModel
-    acmodel = ACModelSR(
-        obs_space=obs_space,
-        action_space=env.action_space,
-        SR_size=predNet.hidden_size,
-        with_CV=True,
-        rgb=True,
-        with_HD=True,
-    )
-    
-    # Load weights into acmodel
-    load_statedict_from_acmodel_status(
-        receiver=acmodel,
-        status=status,
-        status_key=StatusCkptKeys.MODEL_STATE,
-    )
-    
+    acmodel = _get_acmodel(acmodel_status_ckpt=ACMODEL_STATUS_CKPT, env=env, predNet=predNet, device=DEVICE)
+    _check_same_device(acmodel, DEVICE)
+
     # Verify model works
     acmodel.eval()
-    acmodel.to(DEVICE)
-    
     with torch.no_grad():
         obs = env.reset()
         preprocessed_obs = preprocess_obss([obs], device=DEVICE)
@@ -106,31 +139,13 @@ def test_load_acmodel_from_checkpoint():
 
 def test_load_actor_critic_agent():
     """Test creating an ActorCriticAgent with loaded models."""
-    env = _get_env()
-    predNet = _get_pRNN(env)
+    env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+    predNet = _get_pRNN(device=DEVICE, env=env)
     
     # Load and setup ACModel
-    status = load_acmodel_status(acmodel_status_ckpt=ACMODEL_STATUS_CKPT)
-    obs_space, _ = get_obss_preprocessor(env.observation_space)
-    
-    acmodel = ACModelSR(
-        obs_space=obs_space,
-        action_space=env.action_space,
-        SR_size=predNet.hidden_size,
-        with_CV=True,
-        rgb=True,
-        with_HD=True,
-    )
-    load_statedict_from_acmodel_status(
-        receiver=acmodel,
-        status=status,
-        status_key=StatusCkptKeys.MODEL_STATE,
-    )
-    acmodel.to(DEVICE)
+    acmodel = _get_acmodel(acmodel_status_ckpt=ACMODEL_STATUS_CKPT, env=env, predNet=predNet, device=DEVICE)
     
     # Create ActorCriticAgent
-    from RLutils import ActorCriticAgent
-    
     agent = ActorCriticAgent(
         action_space=env.action_space,
         acmodel=acmodel,
@@ -146,11 +161,68 @@ def test_load_actor_critic_agent():
     assert "agent_pos" in state
     assert "SRs" in state
 
-"""
-def test_pRNN_sRSA()
-def test_pRNN_loss()
-def test acmodel 
 
-you want to run these values to make sure that you didn't break anything when changing the architecture
-"""
-    
+@pytest.mark.slow
+def test_pRNN_sRSA():
+    """Load a pRNN and an ACModelSR, run spatial-representation analysis and
+    assert the sRSA metric is above a threshold (0.6).
+    """
+    print(f"Loading from {PRNN_CKPT} and {ACMODEL_STATUS_CKPT}")
+    # Prepare environment and models
+    env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+    predictiveNet = _get_pRNN(env=env, device=DEVICE)
+    predictiveNet.wandb_log = False
+    predictiveNet.pRNN.to(DEVICE)
+
+    # Load acmodel
+    acmodel = _get_acmodel(acmodel_status_ckpt=ACMODEL_STATUS_CKPT, env=env, predNet=predictiveNet, device=DEVICE)
+
+    # Build the wrapper agent that uses the AC model and the predictive net
+    action_probability = numpy.array([0.15, 0.15, 0.6, 0.1])
+    randomagent = RandomActionAgent(env.action_space, action_probability)
+    ac_agent = ActorCriticAgent(env.action_space, acmodel, predictiveNet, device=DEVICE)
+
+    # Run the spatial-representation analysis
+    _, SI_on, _, sRSA_on = predictiveNet.calculateSpatialRepresentation(
+        env,
+        ac_agent,
+        trainDecoder=True,
+        trainHDDecoder=False,
+        saveTrainingData=False,
+        bitsec=False,
+        calculatesRSA=True,
+        sleepstd=0.03,
+        wandb_nameext="_onPolicy",
+    )
+
+    _, SI_off, _, sRSA_off = predictiveNet.calculateSpatialRepresentation(
+        env,
+        randomagent,
+        trainDecoder=True,
+        trainHDDecoder=False,
+        saveTrainingData=False,
+        bitsec=False,
+        calculatesRSA=True,
+        sleepstd=0.03,
+        wandb_nameext="_offPolicy",
+    )
+
+    # Assert sRSA is sufficiently high
+    print(sRSA_on)
+    assert type(sRSA_on) == numpy.float64, f"sRSA is not a float: {type(sRSA_on)} of value {sRSA_on}"
+    # assert sRSA_on >= 0.6, f"sRSA too low: {sRSA_on} < 0.6"
+
+    print(sRSA_off)
+    assert type(sRSA_off) == numpy.float64, f"sRSA is not a float: {type(sRSA_off)} of value {sRSA_off}"
+    # assert sRSA_off >= 0.4, f"sRSA too low: {sRSA_off} < 0.4"
+
+    SI_on_mean = SI_on["SI"].mean()
+    print(SI_on_mean)
+    assert type(SI_on_mean) == numpy.float64, f"SI is not a float: {type(SI_on_mean)} of value {SI_on_mean}"
+    # assert SI_on <= 0.9, f"SI too high: {SI_on} > 0.9"
+
+    SI_off_mean = SI_off["SI"].mean()
+    print(SI_off_mean)
+    assert type(SI_off_mean) == numpy.float64, f"SI is not a float: {type(SI_off_mean)} of value {SI_off_mean}"
+    # assert SI_off <= 0.7, f"SI too high: {SI_off} > 0.7"
+
