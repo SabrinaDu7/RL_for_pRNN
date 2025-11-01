@@ -4,6 +4,7 @@ import time
 import warnings
 import hydra
 from omegaconf import DictConfig
+import torch
 
 ### Suppress warnings ###
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -11,9 +12,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from prnn.utils import MinigridEnvNames
 from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
 from utils import get_wandb_env_vars, get_env_var
-from RLutils.other import DEVICE
 
-DEVICE = "cpu"
+DEVICE = torch.device("cuda")
+
 WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
 CKPT_DIR = get_env_var("CKPT_DIR")
 
@@ -41,6 +42,8 @@ def main(args: DictConfig):
     omt = ObjectMemoryTask(
         args=args,
         env_novel_name=MinigridEnvNames.LRoom16Goal,
+        env_orig_name=MinigridEnvNames.LRoom16,
+        device=DEVICE,
     )
     omt.trainNovelObject(
         epochs=5,
@@ -54,7 +57,7 @@ def main(args: DictConfig):
         full_filename=f"{CKPT_DIR}/{NET_NAME}.pt",
     )
     omt.getTestTrial(timesteps=2500)
-    objectLearning = omt.quantifyObjectLearning(control_location=[2, 7], whichPhase=0)
+    objectLearning = omt.quantifyObjectLearning(control_location=[1, 8], whichPhase=0)
 
     # Step 3: Display results
     print("\nResults:")
