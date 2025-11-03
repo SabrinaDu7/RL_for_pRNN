@@ -1,6 +1,7 @@
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 import torch
+import torch.nn as nn
 
 # Data classes
 ACMODEL_STATUS = dict[str, Any] # Will follow StatusCkptKeys
@@ -19,6 +20,7 @@ def load_statedict_from_acmodel_status(
 ):
     if status_key in status:
         receiver.load_state_dict(status[status_key.value])
-        receiver.to(device)
+        if isinstance(receiver, nn.Module):
+            receiver.to(device)
     else:
         raise KeyError(f"Status key '{status_key}' not found in checkpoint.")
