@@ -31,6 +31,18 @@ wrappers = {
 def episode_video_trigger(episode, vid_n_episodes):
     return episode % vid_n_episodes == 0
 
+def get_env_name(env):
+    """Helper method to get the actual environment class name through the wrapper hierarchy."""
+    temp_env = env
+    names = []
+    while temp_env is not None:
+        class_name = type(temp_env).__name__
+        names.append(class_name)
+        if hasattr(temp_env, "env"):
+            temp_env = temp_env.env
+        else:
+            break
+    return " -> ".join(names)
 
 def make_env(
     env_key: str,
