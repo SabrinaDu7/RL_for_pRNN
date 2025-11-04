@@ -77,7 +77,7 @@ def _get_acmodel(acmodel_status_ckpt: str, env: FaramaMinigridShell, predNet: Pr
         exp: ExperimentArgs = ExperimentArgs()
     
     args = Args()
-    acmodel = get_SR_acmodel(args, env, obs_space, acmodel_status_ckpt, device)
+    acmodel = get_SR_acmodel(args, env.action_space, obs_space, acmodel_status_ckpt, device)
     return acmodel
 
 
