@@ -1,8 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from tqdm import tqdm
 
-from RLutils import get_pN, make_env, get_SR_acmodel, get_obss_preprocessor
+from RLutils import (
+    get_pN, 
+    make_env, 
+    get_SR_acmodel, 
+    get_obss_preprocessor,
+    get_algo,
+    PredictivePPOAlgo,
+    ActorCriticAgent,
+)
 
 from prnn.utils.general import saveFig
 from prnn.utils import (
@@ -47,11 +56,33 @@ class ObjectMemoryTask:
         self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
         self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
 
-        self.pN_control = get_pN(args=args, env=self.env_orig, device=device)
         self.wandb_log = args.logging.wandb_log
+        self.pN_control = get_pN(args=args, env=self.env_orig, device=device)
         self.pN_control.wandb_log = self.wandb_log
-        
+        self.pN_post = self.pN_control.copy()
+
+        obs_space, preprocess_obss = get_obss_preprocessor(
+            self.env_orig.observation_space
+        )
+        self.ac_model = get_SR_acmodel(
+            args,
+            env_act_space=self.env_orig.action_space,
+            obs_space=obs_space,
+            acmodel_status_ckpt=ACMODEL_STATUS_CKPT,
+            device=device,
+        )
+        self.algo = get_algo(
+            args,
+            env=self.env_novel, # CRITICAL: Novel object env
+            predictiveNet=self.pN_post,
+            acmodel=self.ac_model,
+            preprocess_obss=preprocess_obss,
+            AlgoClass=PredictivePPOAlgo,
+            acmodel_status_ckpt=ACMODEL_STATUS_CKPT,
+            device=device,
+        )
         self.agent_random = RandomActionAgent(self.env_novel.action_space, RAND_ACT_PROBA)
+        self.agent_ac = ActorCriticAgent(self.env_novel.action_space, self.ac_model, self.pN_post, device)
 
         # For clarity
         env_farama_shell = self.env_novel
@@ -71,15 +102,13 @@ class ObjectMemoryTask:
         # Train the network in the object room #Note, copy ExperienceReplayAnalysis
         # approach for multiple learning rates (consider rec and FF learning rates)
 
-        self.pN_post = None  # Updated after trainNovelObject() called
         self.testTrial = None  # Updated after getTestTrial() called
         self.objectLearning = None  # Updated after quantifyObjectLearning() called
 
     def trainDecoder(self):
         env = self.pN_control.EnvLibrary[0]
-        agent = RandomActionAgent(env.action_space, RAND_ACT_PROBA)
         _, _, decoder, sRSA = self.pN_control.calculateSpatialRepresentation(
-            env, agent, numBatches=10000, trainDecoder=True
+            env, self.agent_random, numBatches=10000, trainDecoder=True
         )
         return decoder
 
@@ -95,53 +124,45 @@ class ObjectMemoryTask:
         device,
         full_filename: str,
     ):
-        if continueTraining:
-            pN_post = self.pN_control
-        else:
-            pN_post = self.pN_control.copy()
 
-        agent = RandomActionAgent(self.env_novel.action_space, RAND_ACT_PROBA)
-
-        # print(lr_trials)
         # Update the learning rate
         oldlr = [0.0 for i in lrgroups]
         if isinstance(lr_trials, int):
-            lr_trials = [lr_trials for i in lrgroups] # [2, 2, 2]
+            lr_trials = [lr_trials for i in lrgroups] # type: ignore
         for lidx, lgroup in enumerate(lrgroups):
             # (0, 0), (1, 1), (2, 2)
-            oldlr[lidx] = pN_post.optimizer.param_groups[lgroup]["lr"]
-            pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx] * lr_trials[lidx]
+            oldlr[lidx] = self.pN_post.optimizer.param_groups[lgroup]["lr"]
+            self.pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx] * lr_trials[lidx] # type: ignore
 
-        for _ in range(epochs):
-            pN_post.trainingEpoch(
+        for index in tqdm(range(epochs * num_trials)): # 500
+            """self.pN_post.trainingEpoch(
                 self.env_novel, # CRITICAL
-                agent,
+                self.agent_random,
                 num_trials=num_trials,
                 sequence_duration=sequence_duration,
                 learningRate=None,
                 forceDevice=device,
-            )
+            )"""
+            # self.algo.randomAgent_collect_exp_and_update(self.agent_random)
+            exps, logs1 = self.algo.collect_experiences()
+            logs2 = self.algo.update_parameters(exps=exps, update_params=True)
 
-        save_pN(pN_post, full_filename)
+            if index % (sequence_duration) == 0:
+                print(f"Completed epoch {(index // (num_trials * sequence_duration)) + 1} / {epochs}")
+                save_pN(self.pN_post, full_filename)
+        
+        save_pN(self.pN_post, full_filename)
         print(f"Saved trained net to {full_filename}")
 
         # Return the learning rate
         for lidx, lgroup in enumerate(lrgroups):
-            pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx]
-
-        self.pN_post = pN_post
-
-        return pN_post
+            self.pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx]
 
 
     def getTestTrial(
         self,
         timesteps: int,
     ):
-        assert self.pN_post is not None, (
-            "You need to train the network in the novel object room first."
-        )
-
         # Ensure that pN's are on cpu since using numpy
         self.pN_post.pRNN.to(torch.device("cpu"))
         self.pN_control.pRNN.to(torch.device("cpu"))
@@ -149,12 +170,9 @@ class ObjectMemoryTask:
         self.pN_post.pRNN.eval()
         self.pN_control.pRNN.eval()
 
-        # NOTE: self.pN acts as a control
-        agent = RandomActionAgent(self.env_orig.action_space, RAND_ACT_PROBA)
-
         # Collect observation sequence in the environment
         obs, act, state, render = self.pN_post.collectObservationSequence(
-            self.env_orig, agent, timesteps, includeRender=True
+            self.env_orig, self.agent_random, timesteps, includeRender=True
         )
 
         obs_pred, obs_next, _ = self.pN_post.predict(obs, act)
@@ -172,9 +190,6 @@ class ObjectMemoryTask:
         return objectTest
 
     def quantifyObjectLearning(self, control_location: list[int], whichPhase: int):
-        assert self.pN_post is not None, (
-            "You need to train the network in the novel object room first."
-        )
         assert self.testTrial is not None, (
             "You need to run trainNovelObject and getTestTrial first."
         )
