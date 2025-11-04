@@ -87,6 +87,9 @@ def get_SR_acmodel(args,
                    acmodel_status_ckpt: str,
                    device: torch.device) -> ACModelSR:
 
+    """
+    Loads ACModel and Optimizer State Dictionaries from checkpoint.
+    """
     status = torch.load(
         acmodel_status_ckpt,
         map_location=device,
@@ -105,12 +108,8 @@ def get_SR_acmodel(args,
         with_HD=args.exp.with_HD,
     )
     
-    load_statedict_from_acmodel_status(
-        receiver=acmodel,
-        status=status,
-        status_key=StatusCkptKeys.MODEL_STATE,
-        device=device,
-    )
+    acmodel.load_state_dict(status[StatusCkptKeys.MODEL_STATE.value])
+    acmodel.to(device)
 
     return acmodel
 
@@ -121,7 +120,14 @@ def get_algo(args,
              acmodel: ACModelSR,
              preprocess_obss: Callable,
              AlgoClass: Type[PredictivePPOAlgo],
+             acmodel_status_ckpt: str,
              device: torch.device) -> PredictivePPOAlgo:
+    
+    status = torch.load(
+        acmodel_status_ckpt,
+        map_location=device,
+        weights_only=False
+    )
     
     pastSR = not ("prevAct" in str(predictiveNet.pRNN))
     algo = AlgoClass(
@@ -154,6 +160,9 @@ def get_algo(args,
         args.exp.curious_agent,
         args.rl.k_curious,
     )
+
+    if StatusCkptKeys.OPTIMIZER_STATE.value in status:
+        algo.optimizer.load_state_dict(status[StatusCkptKeys.OPTIMIZER_STATE.value])
 
     return algo
 

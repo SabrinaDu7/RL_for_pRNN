@@ -44,7 +44,7 @@ hardware:
 
 
 rl:
-    steps: 2.048e7 #80 epochs for pRNN is 2.048e7 steps (implictly, each pRNN epoch is 256000 steps and with seqdur 256, it's 1000 steps per trajectory)
+    steps: 2.048e7 #80 epochs for pRNN is 2.048e7 steps (implictly, each pRNN epoch is 256000 steps and with seqdur 256, it's 1000 trajectories per epoch)
     discount: 0.98
     lr: 3e-4
     gae_lambda: 0.95 # Lambda coefficient in GAE formula (1 means no gae)
