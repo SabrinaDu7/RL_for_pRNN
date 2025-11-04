@@ -19,3 +19,7 @@ class AgentInputType(str, Enum, metaclass=MetaEnum):
     H = "pRNN"
     CANN_PO = "CANN+PO"
     CANN_norecurr = "CANN_norecurrence"
+
+class AgentType(str, Enum, metaclass=MetaEnum):
+    RANDOM = "random"
+    AC = "curious"

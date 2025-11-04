@@ -1,4 +1,4 @@
-from utils.enums import AgentInputType
+from utils.enums import AgentInputType, AgentType
 
 from utils.checkpoints import (
     StatusCkptKeys,
@@ -21,4 +21,5 @@ __all__ = [
     "get_wandb_env_vars",
     "get_logdir_env_var",
     "AgentInputType",
+    "AgentType",
 ]
