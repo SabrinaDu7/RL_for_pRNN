@@ -12,6 +12,7 @@ import torch.nn as nn
 from omegaconf import OmegaConf, DictConfig
 import hydra
 import wandb
+from tqdm import tqdm
 
 from utils import get_ckpt_env_vars, get_wandb_env_vars, StatusCkptKeys
 import RLutils
@@ -49,30 +50,16 @@ RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
 
 class RL_Trainer(object):
     def __init__(self, params):
-        #############
-        ## INIT
-        #############
 
-        # Get params, init WandB !!change WandB default folder
         self.params = params
+        self.group = params.exp.exp_name
         self.wandb_log = self.params.logging.wandb_log
 
         date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-        par = ""
-        if params.logging.focus:
-            par = eval("params." + params.logging.focus)
-            name = f"{params.exp.exp_name}_{params.logging.focus}_{par}_seed{params.exp.seed}"
-        else:
-            name = f"{params.exp.exp_name}_seed{params.exp.seed}"
-        name_date = f"{name}_{date}/"
-        self.model_name = f"{WANDB_PROJECT}/{name_date}"
-        if params.logging.focus:
-            self.group = f"{params.exp.exp_name}_{params.logging.focus}_{par}"
-        else:
-            self.group = params.exp.exp_name
+        name_date = f"{self.group}_{date}"
+        self.model_name = f"{WANDB_PROJECT}/{name_date}/"
 
         # Set run dir
-
         self.model_dir = RLutils.get_model_dir(self.model_name)
         RLutils.create_folders_if_necessary(self.model_dir)
 
@@ -87,16 +74,13 @@ class RL_Trainer(object):
 
         if self.wandb_log:
             self.run = wandb.init(
-                # set the wandb project where this run will be logged
                 entity=WANDB_ENTITY,
                 project=WANDB_PROJECT,
                 group=self.group,
-                # group = f"{params.exp.exp_name}_width{params.rl.pc_sd}",
-                name=name,
-                id=name_date[:-1],
+                name=name_date,
+                id=name_date,
                 dir=self.model_dir,
                 resume="allow",
-                # track hyperparameters and run metadata
                 config=OmegaConf.to_container(params, resolve=True),
             )
 
@@ -382,187 +366,188 @@ class RL_Trainer(object):
 
         n_performance = 0
         error_map = None
+        
+        with tqdm(total=args.rl.steps, desc="Processing") as pbar:
+            while num_frames < args.rl.steps: # num_frames' granularity is steps. It represents the number of steps taken in the env 
+                # Update model parameters
+                update_start_time = time.time()
 
-        while num_frames < args.rl.steps: # num_frames' granularity is steps. It represents the number of steps taken in the env 
-            # Update model parameters
-            update_start_time = time.time()
-
-            if args.exp.random_action_agent:
-                logs = algo.randomAgent_collect_exp_and_update(randomagent)
-            else:
-                exps, logs1 = algo.collect_experiences()
-                logs2 = algo.update_parameters(
-                    exps=exps, update_params=(not args.exp.random_init_control)
-                )
-                logs = {**logs1, **logs2}
-
-            update_end_time = time.time()
-
-            num_frames += logs["num_frames"]
-            update += 1 # Update represents the number of 2048 steps taken. One update is the collection of 2048 steps (as seen in collect experiences)
-
-            # Print logs
-
-            if update % args.logging.log_interval == 0:
-                fps = logs["num_frames"] / (update_end_time - update_start_time)
-                duration = int(time.time() - start_time)
-                num_frames_per_episode = RLutils.synthesize(
-                    logs["num_frames_per_episode"]
-                )
-
-                if not args.exp.random_action_agent:
-                    return_per_episode = RLutils.synthesize(
-                        logs["return_per_episode"], signs=True
+                if args.exp.random_action_agent:
+                    logs = algo.randomAgent_collect_exp_and_update(randomagent)
+                else:
+                    exps, logs1 = algo.collect_experiences()
+                    logs2 = algo.update_parameters(
+                        exps=exps, update_params=(not args.exp.random_init_control)
                     )
-                    int_rewards = RLutils.synthesize(
-                        logs["intrinsic_rewards"], abs=True
-                    )
-                    cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
-                    values = RLutils.synthesize(logs["values"])
-                    advantages = RLutils.synthesize(logs["advantages"])
+                    logs = {**logs1, **logs2}
 
-                if not header:
-                    header = ["update"]
-                    header += [
-                        "steps_per_trial_" + key
-                        for key in num_frames_per_episode.keys()
-                    ]
-                    header += [
-                        "num_episodes",
-                        "policy_entropy",
-                        "loc_entropy",
-                        "loc_entropy_5",
-                        "frames",
-                        "FPS",
-                        "duration",
+                update_end_time = time.time()
+
+                num_frames += logs["num_frames"]
+                update += 1 # Update represents the number of 2048 steps taken. One update is the collection of 2048 steps (as seen in collect experiences)
+
+                # Print logs
+
+                if update % args.logging.log_interval == 0:
+                    fps = logs["num_frames"] / (update_end_time - update_start_time)
+                    duration = int(time.time() - start_time)
+                    num_frames_per_episode = RLutils.synthesize(
+                        logs["num_frames_per_episode"]
+                    )
+
+                    if not args.exp.random_action_agent:
+                        return_per_episode = RLutils.synthesize(
+                            logs["return_per_episode"], signs=True
+                        )
+                        int_rewards = RLutils.synthesize(
+                            logs["intrinsic_rewards"], abs=True
+                        )
+                        cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
+                        values = RLutils.synthesize(logs["values"])
+                        advantages = RLutils.synthesize(logs["advantages"])
+
+                    if not header:
+                        header = ["update"]
+                        header += [
+                            "steps_per_trial_" + key
+                            for key in num_frames_per_episode.keys()
+                        ]
+                        header += [
+                            "num_episodes",
+                            "policy_entropy",
+                            "loc_entropy",
+                            "loc_entropy_5",
+                            "frames",
+                            "FPS",
+                            "duration",
+                        ]
+                        if not args.exp.random_action_agent:
+                            header += ["return_" + key for key in return_per_episode.keys()]
+                            header += ["int_reward_" + key for key in int_rewards.keys()]
+                            header += ["cur_reward_" + key for key in cur_rewards.keys()]
+                            header += ["values_" + key for key in values]
+                            header += ["advantages_" + key for key in advantages]
+                            header += [
+                                "policy_loss",
+                                "value_loss",
+                                "grad_norm",
+                                "MI_policy",
+                            ]
+
+                    data = []
+                    data += [update]
+                    data += num_frames_per_episode.values()
+                    data += [
+                        logs["num_episodes"],
+                        logs["entropy"],
+                        logs["loc_entropy"],
+                        logs["loc_entropy_5"],
+                        num_frames,
+                        fps,
+                        duration,
                     ]
                     if not args.exp.random_action_agent:
-                        header += ["return_" + key for key in return_per_episode.keys()]
-                        header += ["int_reward_" + key for key in int_rewards.keys()]
-                        header += ["cur_reward_" + key for key in cur_rewards.keys()]
-                        header += ["values_" + key for key in values]
-                        header += ["advantages_" + key for key in advantages]
-                        header += [
-                            "policy_loss",
-                            "value_loss",
-                            "grad_norm",
-                            "MI_policy",
-                        ]
+                        data += return_per_episode.values()
+                        data += int_rewards.values()
+                        data += cur_rewards.values()
+                        data += values.values()
+                        data += advantages.values()
+                        data += [logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
+                        data += [mutual_info_policy(logs["joint_dist"])]
 
-                data = []
-                data += [update]
-                data += num_frames_per_episode.values()
-                data += [
-                    logs["num_episodes"],
-                    logs["entropy"],
-                    logs["loc_entropy"],
-                    logs["loc_entropy_5"],
-                    num_frames,
-                    fps,
-                    duration,
-                ]
-                if not args.exp.random_action_agent:
-                    data += return_per_episode.values()
-                    data += int_rewards.values()
-                    data += cur_rewards.values()
-                    data += values.values()
-                    data += advantages.values()
-                    data += [logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
-                    data += [mutual_info_policy(logs["joint_dist"])]
-
-                if self.wandb_log:
-                    wandb.log(dict(zip(header, data)))
-
-            # Do analysis
-
-            if (
-                args.logging.analysis_interval > 0
-                and update % args.logging.analysis_interval == 0
-            ):
-                if prnn_eval_bool and not args.exp.CANN:
-                    predictiveNet.pRNN.to("cpu")
-                    if args.exp.onpolicy_prnn_eval:
-                        analysisagent = (
-                            randomagent
-                            if args.exp.random_action_agent
-                            else ActorCriticAgent(
-                                env.action_space, acmodel, predictiveNet, DEVICE
-                            )
-                        )
-
-                        _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
-                            env,
-                            analysisagent,
-                            trainDecoder=True,
-                            trainHDDecoder=False,
-                            saveTrainingData=False,
-                            bitsec=False,
-                            calculatesRSA=True,
-                            sleepstd=0.03,
-                            wandb_nameext="_onPolicy",
-                        )
-
-                    if args.exp.offpolicy_prnn_eval:
-                        analysisagent = (
-                            ActorCriticAgent(
-                                env.action_space, acmodel, predictiveNet, DEVICE
-                            )
-                            if args.exp.random_action_agent
-                            else randomagent
-                        )
-
-                        _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
-                            env,
-                            analysisagent,
-                            trainDecoder=True,
-                            trainHDDecoder=False,
-                            saveTrainingData=False,
-                            bitsec=False,
-                            calculatesRSA=True,
-                            sleepstd=0.03,
-                            wandb_nameext="_offPolicy",
-                        )
-
-                    predictiveNet.pRNN.to(DEVICE)
-                if args.exp.analyze_agent_behav:
-                    opa = OnPolicyAnalysis(algo, timesteps=25000)
                     if self.wandb_log:
-                        wandb.log({"MI_policy_eval": opa.mi})
-                    RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
+                        wandb.log(dict(zip(header, data)))
 
-            if args.logging.early_stop:
+                # Do analysis
+
                 if (
-                    return_per_episode["mean"] > 0.9
-                    and return_per_episode["std"] < 0.05
+                    args.logging.analysis_interval > 0
+                    and update % args.logging.analysis_interval == 0
                 ):
-                    n_performance += 1
-                    if n_performance == 25:
-                        break
+                    if prnn_eval_bool and not args.exp.CANN:
+                        predictiveNet.pRNN.to("cpu")
+                        if args.exp.onpolicy_prnn_eval:
+                            analysisagent = (
+                                randomagent
+                                if args.exp.random_action_agent
+                                else ActorCriticAgent(
+                                    env.action_space, acmodel, predictiveNet, DEVICE
+                                )
+                            )
 
-            # Save status
+                            _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
+                                env,
+                                analysisagent,
+                                trainDecoder=True,
+                                trainHDDecoder=False,
+                                saveTrainingData=False,
+                                bitsec=False,
+                                calculatesRSA=True,
+                                sleepstd=0.03,
+                                wandb_nameext="_onPolicy",
+                            )
 
-            if (
-                args.logging.save_interval > 0
-                and update % args.logging.save_interval == 0
-            ):
-                status_save = {
-                    StatusCkptKeys.NUM_FRAMES.value: num_frames,
-                    StatusCkptKeys.UPDATE.value: update,
-                }
-                if not args.exp.random_action_agent:
-                    status_save[StatusCkptKeys.MODEL_STATE.value] = acmodel.state_dict()
-                    status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = algo.optimizer.state_dict()
+                        if args.exp.offpolicy_prnn_eval:
+                            analysisagent = (
+                                ActorCriticAgent(
+                                    env.action_space, acmodel, predictiveNet, DEVICE
+                                )
+                                if args.exp.random_action_agent
+                                else randomagent
+                            )
 
-                # if hasattr(preprocess_obss, "vocab"):
-                #     status["vocab"] = preprocess_obss.vocab.vocab
+                            _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
+                                env,
+                                analysisagent,
+                                trainDecoder=True,
+                                trainHDDecoder=False,
+                                saveTrainingData=False,
+                                bitsec=False,
+                                calculatesRSA=True,
+                                sleepstd=0.03,
+                                wandb_nameext="_offPolicy",
+                            )
 
-                RLutils.save_status(status_save, self.model_dir)
+                        predictiveNet.pRNN.to(DEVICE)
+                    if args.exp.analyze_agent_behav:
+                        opa = OnPolicyAnalysis(algo, timesteps=25000)
+                        if self.wandb_log:
+                            wandb.log({"MI_policy_eval": opa.mi})
+                        RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
 
-                # Save predictiveNet state if it exists and is being trained
-                if predictiveNet is not None and args.predNet.train:
-                    save_pN(predictiveNet, self.model_dir + "predictiveNet_state.pt")
+                if args.logging.early_stop:
+                    if (
+                        return_per_episode["mean"] > 0.9
+                        and return_per_episode["std"] < 0.05
+                    ):
+                        n_performance += 1
+                        if n_performance == 25:
+                            break
 
-                print(f"pN and ACmodel status saved at {self.model_dir}")
+                # Save status
+
+                if (
+                    args.logging.save_interval > 0
+                    and update % args.logging.save_interval == 0
+                ):
+                    status_save = {
+                        StatusCkptKeys.NUM_FRAMES.value: num_frames,
+                        StatusCkptKeys.UPDATE.value: update,
+                    }
+                    if not args.exp.random_action_agent:
+                        status_save[StatusCkptKeys.MODEL_STATE.value] = acmodel.state_dict()
+                        status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = algo.optimizer.state_dict()
+
+                    # if hasattr(preprocess_obss, "vocab"):
+                    #     status["vocab"] = preprocess_obss.vocab.vocab
+
+                    RLutils.save_status(status_save, self.model_dir)
+
+                    # Save predictiveNet state if it exists and is being trained
+                    if predictiveNet is not None and args.predNet.train:
+                        save_pN(predictiveNet, self.model_dir + "predictiveNet_state.pt")
+
+                    print(f"pN and ACmodel status saved at {self.model_dir}")
 
 
 @hydra.main(config_path="Configs", config_name="Conf1_Adel")
