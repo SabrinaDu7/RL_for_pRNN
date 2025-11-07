@@ -84,20 +84,12 @@ def get_pN(args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt
 def get_SR_acmodel(args, 
                    env_act_space, 
                    obs_space: dict,
-                   acmodel_status_ckpt: str,
-                   device: torch.device) -> ACModelSR:
+                   device: torch.device,
+                   acmodel_status_ckpt: str = "") -> ACModelSR:
 
     """
     Loads ACModel and Optimizer State Dictionaries from checkpoint.
     """
-    status = torch.load(
-        acmodel_status_ckpt,
-        map_location=device,
-        weights_only=False
-    )
-
-    assert StatusCkptKeys.MODEL_STATE.value in status
-    assert StatusCkptKeys.NUM_FRAMES.value in status
 
     acmodel = ACModelSR(
         obs_space=obs_space,
@@ -107,11 +99,22 @@ def get_SR_acmodel(args,
         rgb=args.exp.rgb,
         with_HD=args.exp.with_HD,
     )
-    
-    acmodel.load_state_dict(status[StatusCkptKeys.MODEL_STATE.value])
-    acmodel.to(device)
 
-    return acmodel
+    if acmodel_status_ckpt == "":
+        return acmodel.to(device)
+    else:
+        status = torch.load(
+            acmodel_status_ckpt,
+            map_location=device,
+            weights_only=False
+        )
+
+    if StatusCkptKeys.MODEL_STATE.value in status:
+        acmodel.load_state_dict(status[StatusCkptKeys.MODEL_STATE.value])
+    else:
+        print("Warning: model_state not found in acmodel status ckpt. Random agent was used. Returning fresh ACModel")
+    
+    return acmodel.to(device)
 
 
 def get_algo(args, 
