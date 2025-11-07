@@ -1,6 +1,7 @@
 defaults:
-    - rl/ppo # Choose algorithm subconfig
-    - _self_  
+    - _self_ 
+    - rl: ppo # Choose algorithm subconfig
+    - tasks: omt 
     - override hydra/hydra_logging: disabled  
     - override hydra/job_logging: disabled
 
@@ -18,7 +19,7 @@ exp:
     # wrapper: 
     #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
     input_type: 'pRNN+PO' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
-    exp_name: defaultName
+    exp_name: omt
     seed: 2 # Random seed
     pRNN: True # Wether to use pRNN for spatial input
     PC: False # Wether to use fake place cells for spatial input
@@ -45,6 +46,8 @@ hardware:
 
 rl:
     steps: 2.048e7 #80 epochs for pRNN is 2.048e7 steps (implictly, each pRNN epoch is 256000 steps and with seqdur 256, it's 1000 trajectories per epoch)
+    trajs_per_batch: 8 # Number of trajectories per batch
+    trajs_total: 80000
     discount: 0.98
     lr: 3e-4
     gae_lambda: 0.95 # Lambda coefficient in GAE formula (1 means no gae)

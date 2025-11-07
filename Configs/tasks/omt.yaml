@@ -1,0 +1,17 @@
+defaults:
+    - _self_  
+
+room_size: 16
+
+training:
+  num_trajs: 1000 # trajectories to train on in novel env
+  saving_interval: 250 # trajs between saving
+  lr_trials: 2 
+  lrgroups: [0, 1, 2]
+  resetOptimizer: False
+  continueTraining: False
+
+testing:
+  timesteps: 1000 # timesteps for test trial
+  control_location: [4, 7]
+  whichPhase: 0 # which phase to analyze in quantifyObjectLearning
