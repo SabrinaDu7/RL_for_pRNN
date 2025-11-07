@@ -14,6 +14,7 @@ from RLutils import (
 )
 
 from prnn.utils.general import saveFig
+from prnn.utils.Shell import FaramaMinigridShell
 from prnn.utils import (
     MinigridEnvNames,
     RandomActionAgent,
@@ -21,45 +22,62 @@ from prnn.utils import (
     save_pN,
 )
 
-from utils import get_ckpt_env_vars, AgentInputType
+from utils import AgentInputType, AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
-PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 
+def _get_goal_loc(env: FaramaMinigridShell) -> list[int]:
+    env_farama_shell = env
+    env_rgb_wrapper = env_farama_shell.env
+    env_order_enforcing = env_rgb_wrapper.env
+    env_passive_checker = env_order_enforcing.env
+    env_LEnv_goal = env_passive_checker.env
 
-def get_env_name(env):
-    """Helper method to get the actual environment class name through the wrapper hierarchy."""
-    temp_env = env
-    names = []
-    while temp_env is not None:
-        class_name = type(temp_env).__name__
-        names.append(class_name)
-        if hasattr(temp_env, "env"):
-            temp_env = temp_env.env
-        else:
-            break
-    return " -> ".join(names)
+    goal_loc = env_LEnv_goal.goal_pos
+    return goal_loc
+
+def _get_agent(env: FaramaMinigridShell, agent_Type: AgentType, ac_model, pN_post, device) -> ActorCriticAgent | RandomActionAgent:
+    if agent_Type == AgentType.RANDOM:
+        agent = RandomActionAgent(env.action_space, RAND_ACT_PROBA)
+    elif agent_Type == AgentType.AC:
+        agent = ActorCriticAgent(env.action_space, ac_model, pN_post, device)
+    else:
+        raise ValueError(f"Unsupported agent type: {agent_Type}")
+    return agent
 
 
 class ObjectMemoryTask:
     def __init__(
         self,
         args,
+        agent_type: AgentType,
         env_novel_name: MinigridEnvNames,
         env_orig_name: MinigridEnvNames,
         device: torch.device,
+        save_path: str,
+        acmodel_status_ckpt: str,
+        prnn_ckpt: str,
         decoder="train",
     ):
         self.args = args
+        self.save_path = save_path
+
+        self.seqdur = args.predNet.seqdur # steps
+        self.trajs_per_batch = args.rl.trajs_per_batch
 
         self.env_novel_name = env_novel_name.value
         self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
         self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        self.goal_loc = _get_goal_loc(self.env_novel)
+
+        self.pN_control = get_pN(args=args, env=self.env_orig, device=device, pRNN_ckpt=prnn_ckpt)
+        self.pN_post = self.pN_control.copy()
+        self.pN_post.pRNN.train()
+        self.pN_control.pRNN.eval()
 
         self.wandb_log = args.logging.wandb_log
-        self.pN_control = get_pN(args=args, env=self.env_orig, device=device)
         self.pN_control.wandb_log = self.wandb_log
-        self.pN_post = self.pN_control.copy()
+        self.pN_post.wandb_log = self.wandb_log
 
         obs_space, preprocess_obss = get_obss_preprocessor(
             self.env_orig.observation_space
@@ -68,7 +86,7 @@ class ObjectMemoryTask:
             args,
             env_act_space=self.env_orig.action_space,
             obs_space=obs_space,
-            acmodel_status_ckpt=ACMODEL_STATUS_CKPT,
+            acmodel_status_ckpt=acmodel_status_ckpt,
             device=device,
         )
         self.algo = get_algo(
@@ -78,20 +96,18 @@ class ObjectMemoryTask:
             acmodel=self.ac_model,
             preprocess_obss=preprocess_obss,
             AlgoClass=PredictivePPOAlgo,
-            acmodel_status_ckpt=ACMODEL_STATUS_CKPT,
+            acmodel_status_ckpt=acmodel_status_ckpt,
             device=device,
         )
-        self.agent_random = RandomActionAgent(self.env_novel.action_space, RAND_ACT_PROBA)
-        self.agent_ac = ActorCriticAgent(self.env_novel.action_space, self.ac_model, self.pN_post, device)
 
-        # For clarity
-        env_farama_shell = self.env_novel
-        env_rgb_wrapper = env_farama_shell.env
-        env_order_enforcing = env_rgb_wrapper.env
-        env_passive_checker = env_order_enforcing.env
-        env_LEnv_16_goal = env_passive_checker.env
-
-        self.goal_loc = env_LEnv_16_goal.goal_pos
+        self.agent_type = agent_type
+        self.agent = _get_agent(
+            self.env_novel, 
+            self.agent_type, 
+            self.ac_model, 
+            self.pN_post, 
+            device
+        )
 
         # Train the decoder
         # if decoder is 'train':
@@ -108,21 +124,20 @@ class ObjectMemoryTask:
     def trainDecoder(self):
         env = self.pN_control.EnvLibrary[0]
         _, _, decoder, sRSA = self.pN_control.calculateSpatialRepresentation(
-            env, self.agent_random, numBatches=10000, trainDecoder=True
+            env, self.agent, numBatches=10000, trainDecoder=True
         )
         return decoder
 
     def trainNovelObject(
         self,
-        epochs: int,
-        num_trials: int,
-        sequence_duration: int,
         lr_trials: int,
         lrgroups: list, # [0, 1, 2]
+        num_trajs: int, # num of trajectories to train on in novel env
+        saving_interval: int, # num trajectories between logging
         resetOptimizer: bool,
         continueTraining: bool,
         device,
-        full_filename: str,
+        filename: str,
     ):
 
         # Update the learning rate
@@ -130,29 +145,39 @@ class ObjectMemoryTask:
         if isinstance(lr_trials, int):
             lr_trials = [lr_trials for i in lrgroups] # type: ignore
         for lidx, lgroup in enumerate(lrgroups):
-            # (0, 0), (1, 1), (2, 2)
             oldlr[lidx] = self.pN_post.optimizer.param_groups[lgroup]["lr"]
             self.pN_post.optimizer.param_groups[lgroup]["lr"] = oldlr[lidx] * lr_trials[lidx] # type: ignore
 
-        for index in tqdm(range(epochs * num_trials)): # 500
-            """self.pN_post.trainingEpoch(
-                self.env_novel, # CRITICAL
-                self.agent_random,
-                num_trials=num_trials,
-                sequence_duration=sequence_duration,
-                learningRate=None,
-                forceDevice=device,
-            )"""
-            # self.algo.randomAgent_collect_exp_and_update(self.agent_random)
-            exps, logs1 = self.algo.collect_experiences()
-            logs2 = self.algo.update_parameters(exps=exps, update_params=True)
+        num_batches = num_trajs // self.trajs_per_batch
+        # e.g., 1000 trajs / 8 trajs per batch = 125 batches
+        # Each loop/batch will call collect_experiences, which collects trajs_per_batch trajectories = trajs_per_batch * seqdur steps
+        # trajs_per_batch * seqdur = 8 * 256 = 2048 steps (defined as frames in Conf1_Adel.yaml)
 
-            if index % (sequence_duration) == 0:
-                print(f"Completed epoch {(index // (num_trials * sequence_duration)) + 1} / {epochs}")
-                save_pN(self.pN_post, full_filename)
-        
-        save_pN(self.pN_post, full_filename)
-        print(f"Saved trained net to {full_filename}")
+        for index in tqdm(range(num_batches)): 
+            # 125 batches = 125 * 4 gradient steps,
+            # 8 trajs per batch = 2048 steps per batch
+
+            if self.agent_type == AgentType.RANDOM:
+                self.algo.randomAgent_collect_exp_and_update(self.agent)
+            else:
+                exps, logs1 = self.algo.collect_experiences()
+                logs2 = self.algo.update_parameters(exps=exps, update_params=True)
+
+            if index % (saving_interval) == 0:
+                print(f"Completed {index * self.trajs_per_batch} trajectories = {index * self.trajs_per_batch * self.seqdur} steps")
+                save_pN(self.pN_post, f"{self.save_path}/{filename}")
+            
+            if index % 25 == 0:
+                self.getTestTrial(timesteps=self.args.tasks.testing.timesteps)
+                objectLearning = self.quantifyObjectLearning(
+                    control_location=self.args.tasks.testing.control_location,
+                    whichPhase=self.args.tasks.testing.whichPhase,
+                )
+                torch.save(objectLearning, f"{self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt")
+                print(f"Saved object learning results (traj {index * self.trajs_per_batch}): {self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt.")
+
+        save_pN(self.pN_post, f"{self.save_path}/{filename}")
+        print(f"Saved trained net to {self.save_path}/{filename}")
 
         # Return the learning rate
         for lidx, lgroup in enumerate(lrgroups):
@@ -163,6 +188,9 @@ class ObjectMemoryTask:
         self,
         timesteps: int,
     ):
+        # Store original device before moving to CPU
+        original_device = next(self.pN_post.pRNN.parameters()).device
+
         # Ensure that pN's are on cpu since using numpy
         self.pN_post.pRNN.to(torch.device("cpu"))
         self.pN_control.pRNN.to(torch.device("cpu"))
@@ -172,7 +200,7 @@ class ObjectMemoryTask:
 
         # Collect observation sequence in the environment
         obs, act, state, render = self.pN_post.collectObservationSequence(
-            self.env_orig, self.agent_random, timesteps, includeRender=True
+            self.env_orig, self.agent, timesteps, includeRender=True
         )
 
         obs_pred, obs_next, _ = self.pN_post.predict(obs, act)
@@ -186,10 +214,15 @@ class ObjectMemoryTask:
             "render": render,
         }
 
+        self.pN_post.pRNN.to(original_device)
+        self.pN_control.pRNN.to(original_device)
+        self.pN_post.pRNN.train()
+
         self.testTrial = objectTest
         return objectTest
 
-    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int):
+
+    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int) -> dict[str, np.ndarray]:
         assert self.testTrial is not None, (
             "You need to run trainNovelObject and getTestTrial first."
         )
@@ -198,17 +231,16 @@ class ObjectMemoryTask:
         HD = self.testTrial["state"]["agent_dir"][whichPhase:]
         obs_pred = self.testTrial["obs_pred"]
         obs_pred_notrain = self.testTrial["obs_pred_control"]
-        goal_loc = self.goal_loc
 
         # Get the predicted pixel values at the object/control location
         obs_np = self.pN_post.env_shell.pred2np(obs_pred, whichPhase=whichPhase)
-        locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, goal_loc, pos, HD)
+        locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.goal_loc, pos, HD)
         conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
 
         # Get the predicted pixel values in the control networks
         obs_np = self.pN_post.env_shell.pred2np(obs_pred_notrain, whichPhase=whichPhase)
         locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(
-            obs_np, goal_loc, pos, HD
+            obs_np, self.goal_loc, pos, HD
         )
         conobs_notrain, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
 
@@ -340,6 +372,9 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
     viewtimes = []
     viewcoords = []
     for tt in range(obs.shape[0]):
+        # Get egocentric coordinates of the goal/control loc
+        # Check that these coordinates are in the agent's 7x7 view
+
         vx, vy = get_view_coords(i, j, pos[tt, :], HD[tt])
         if (vx >= 0) & (vx < 7) & (vy >= 0) & (vy < 7):
             locobs.append(obs[tt, vy, vx, :])
