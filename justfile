@@ -2,6 +2,9 @@
 omt *EXTRA:
     uv run tasks/ObjectMemoryTask/run_task.py {{EXTRA}}
 
+omt-rand *EXTRA:
+    uv run tasks/ObjectMemoryTask/run_task.py exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
+
 # Formatting and testing
 lint:
     uv run ruff format .

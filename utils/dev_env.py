@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+from utils.enums import AgentType
+
 load_dotenv()  # Load variables from .env
 
 def get_env_var(var_name: str) -> str:
@@ -15,11 +17,12 @@ def get_env_var(var_name: str) -> str:
     return value
 
 
-def get_ckpt_env_vars() -> tuple[str, str]:
+def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC) -> tuple[str, str]:
     """Get and validate checkpoint-related environment variables.
     """
-    prnn_ckpt = get_env_var("PRNN_CKPT")
-    acmodel_status_ckpt = get_env_var("ACMODEL_CKPT")
+    prnn_ckpt = get_env_var("PRNN_CUR_CKPT") if agent_type == AgentType.AC  else get_env_var("PRNN_RAND_CKPT")
+    acmodel_status_ckpt = get_env_var("ACMODEL_CUR_CKPT") if agent_type == AgentType.AC else get_env_var("ACMODEL_RAND_CKPT")
+
     return prnn_ckpt, acmodel_status_ckpt
 
 
