@@ -56,8 +56,9 @@ class RL_Trainer(object):
         self.wandb_log = self.params.logging.wandb_log
 
         date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-        name_date = f"{self.group}_{date}"
-        self.model_name = f"{WANDB_PROJECT}/{name_date}/"
+        agent_type = "curious" if params.exp.curious_agent else "rand"
+        run_name = f"{self.group}_{agent_type}_{date}"
+        self.model_name = f"{WANDB_PROJECT}/{run_name}/"
 
         # Set run dir
         self.model_dir = RLutils.get_model_dir(self.model_name)
@@ -77,8 +78,8 @@ class RL_Trainer(object):
                 entity=WANDB_ENTITY,
                 project=WANDB_PROJECT,
                 group=self.group,
-                name=name_date,
-                id=name_date,
+                name=run_name,
+                id=run_name,
                 dir=self.model_dir,
                 resume="allow",
                 config=OmegaConf.to_container(params, resolve=True),

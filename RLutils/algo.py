@@ -182,6 +182,8 @@ class PredictivePPOAlgo:
         """
 
         # Joint prob between states and actions. Used in on-policy analysis
+        # Count the number of times an specific is taken in that (x, y, HD)
+        # In my case, 3D instead of 4D
         joint_probabilities = np.zeros(
             (
                 getattr(self.env, "numHDs"),
