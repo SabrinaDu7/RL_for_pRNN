@@ -13,12 +13,18 @@ from prnn.utils import (
 from prnn.utils.Shell import FaramaMinigridShell
 
 from RLutils import get_obss_preprocessor, make_env, get_pN, get_SR_acmodel, seed, DEVICE, ACModelSR, ActorCriticAgent
-from utils import get_ckpt_env_vars, AgentInputType
+from utils import get_ckpt_env_vars, AgentInputType, AgentType
 
+seed(2)
 SIZE = 16
 ENV_NAME = MinigridEnvNames.LRoom18 if SIZE == 18 else MinigridEnvNames.LRoom16
-PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
-seed(2)
+PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars(AgentType.AC)
+PRNN_RAND_CKPT, ACMODEL_STATUS_RAND_CKPT = get_ckpt_env_vars(AgentType.RANDOM)
+
+CHECKPOINT_PAIRS = [
+    pytest.param(PRNN_CKPT, ACMODEL_STATUS_CKPT, id="AC_agent"),
+    pytest.param(PRNN_RAND_CKPT, ACMODEL_STATUS_RAND_CKPT, id="random_agent"),
+]
 
 
 def _check_same_device(model: torch.nn.Module, device: torch.device):
@@ -26,7 +32,7 @@ def _check_same_device(model: torch.nn.Module, device: torch.device):
     param = next(model.parameters())
     assert param.device.type == device_type, f"Parameter on device {param.device.type}, expected {device.type}"
 
-def _get_pRNN(device: torch.device, env: FaramaMinigridShell | None = None) -> PredictiveNet:
+def _get_pRNN(prnn_ckpt:str, device: torch.device, env: FaramaMinigridShell | None = None) -> PredictiveNet:
     @dataclass
     class PredNetArgs:
         hiddensize: int = 500
@@ -53,7 +59,7 @@ def _get_pRNN(device: torch.device, env: FaramaMinigridShell | None = None) -> P
         env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
     
     args = Args()
-    predictive_net = get_pN(args=args, env=env, device=DEVICE)
+    predictive_net = get_pN(args=args, env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
     return predictive_net
 
 
@@ -77,14 +83,15 @@ def _get_acmodel(acmodel_status_ckpt: str, env: FaramaMinigridShell, predNet: Pr
         exp: ExperimentArgs = ExperimentArgs()
     
     args = Args()
-    acmodel = get_SR_acmodel(args, env.action_space, obs_space, acmodel_status_ckpt, device)
+    acmodel = get_SR_acmodel(args=args, env_act_space=env.action_space, obs_space=obs_space, acmodel_status_ckpt=acmodel_status_ckpt, device=device)
     return acmodel
 
 
-def test_load_pRNN():
+@pytest.mark.parametrize("prnn_ckpt,ac_status_ckpt", CHECKPOINT_PAIRS)
+def test_load_pRNN(prnn_ckpt: str, ac_status_ckpt: str):
     """Test loading a pre-trained network."""
 
-    predictive_net = _get_pRNN(device=DEVICE)
+    predictive_net = _get_pRNN(prnn_ckpt=prnn_ckpt, device=DEVICE)
     _check_same_device(predictive_net.pRNN, DEVICE)
 
     assert predictive_net is not None
@@ -95,27 +102,28 @@ def test_load_pRNN():
     assert hasattr(predictive_net, "addEnvironment")
 
 
-def test_pRNN_with_environment():
+@pytest.mark.parametrize("prnn_ckpt,ac_status_ckpt", CHECKPOINT_PAIRS)
+def test_pRNN_with_environment(prnn_ckpt: str, ac_status_ckpt: str):
     """Test that a loaded network can work with the LRoom environment."""
 
     env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
 
-    predictive_net = _get_pRNN(device=DEVICE)
+    predictive_net = _get_pRNN(prnn_ckpt=prnn_ckpt, device=DEVICE)
     predictive_net.addEnvironment(env)
 
     # Basic functionality test
     assert len(predictive_net.EnvLibrary) >= 2  # Original env + new env
 
 
-def test_load_acmodel_from_checkpoint():
+def test_load_acmodel_from_checkpoint(prnn_ckpt:str, ac_status_ckpt: str):
     """Test loading a pre-trained ACModel from checkpoint."""
     # Setup
     env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
     obs_space, preprocess_obss = get_obss_preprocessor(env.observation_space)
-    predNet = _get_pRNN(device=DEVICE, env=env)
+    predNet = _get_pRNN(prnn_ckpt=prnn_ckpt, device=DEVICE, env=env)
 
     # Load checkpoint
-    acmodel = _get_acmodel(acmodel_status_ckpt=ACMODEL_STATUS_CKPT, env=env, predNet=predNet, device=DEVICE)
+    acmodel = _get_acmodel(acmodel_status_ckpt=ac_status_ckpt, env=env, predNet=predNet, device=DEVICE)
     _check_same_device(acmodel, DEVICE)
 
     # Verify model works
@@ -137,13 +145,13 @@ def test_load_acmodel_from_checkpoint():
         assert not torch.isnan(value).any()
 
 
-def test_load_actor_critic_agent():
+def test_load_actor_critic_agent(prnn_ckpt: str, ac_status_ckpt: str):
     """Test creating an ActorCriticAgent with loaded models."""
     env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
-    predNet = _get_pRNN(device=DEVICE, env=env)
+    predNet = _get_pRNN(prnn_ckpt=prnn_ckpt, device=DEVICE, env=env)
     
     # Load and setup ACModel
-    acmodel = _get_acmodel(acmodel_status_ckpt=ACMODEL_STATUS_CKPT, env=env, predNet=predNet, device=DEVICE)
+    acmodel = _get_acmodel(acmodel_status_ckpt=ac_status_ckpt, env=env, predNet=predNet, device=DEVICE)
     
     # Create ActorCriticAgent
     agent = ActorCriticAgent(
@@ -170,7 +178,7 @@ def test_pRNN_sRSA():
     print(f"Loading from {PRNN_CKPT} and {ACMODEL_STATUS_CKPT}")
     # Prepare environment and models
     env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
-    predictiveNet = _get_pRNN(env=env, device=DEVICE)
+    predictiveNet = _get_pRNN(prnn_ckpt=PRNN_CKPT, env=env, device=DEVICE)
     predictiveNet.wandb_log = False
     predictiveNet.pRNN.to(DEVICE)
 
