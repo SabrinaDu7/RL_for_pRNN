@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import os
 from tqdm import tqdm
+from omegaconf import DictConfig, OmegaConf
 
 from RLutils import (
     get_pN, 
@@ -9,6 +11,7 @@ from RLutils import (
     get_SR_acmodel, 
     get_obss_preprocessor,
     get_algo,
+    seed,
     PredictivePPOAlgo,
     ActorCriticAgent,
 )
@@ -49,7 +52,7 @@ def _get_agent(env: FaramaMinigridShell, agent_Type: AgentType, ac_model, pN_pos
 class ObjectMemoryTask:
     def __init__(
         self,
-        args,
+        args: DictConfig,
         agent_type: AgentType,
         env_novel_name: MinigridEnvNames,
         env_orig_name: MinigridEnvNames,
@@ -59,8 +62,15 @@ class ObjectMemoryTask:
         prnn_ckpt: str,
         decoder="train",
     ):
+        seed(args.exp.seed)
+
         self.args = args
         self.save_path = save_path
+        self.wandb_log = args.logging.wandb_log
+
+        # Create save directory and save config
+        os.makedirs(self.save_path, exist_ok=True)
+        OmegaConf.save(args, f"{self.save_path}/config.yaml")
 
         self.seqdur = args.predNet.seqdur # steps
         self.trajs_per_batch = args.rl.trajs_per_batch
@@ -75,7 +85,6 @@ class ObjectMemoryTask:
         self.pN_post.pRNN.train()
         self.pN_control.pRNN.eval()
 
-        self.wandb_log = args.logging.wandb_log
         self.pN_control.wandb_log = self.wandb_log
         self.pN_post.wandb_log = self.wandb_log
 
@@ -154,6 +163,10 @@ class ObjectMemoryTask:
         # trajs_per_batch * seqdur = 8 * 256 = 2048 steps (defined as frames in Conf1_Adel.yaml)
 
         for index in tqdm(range(num_batches)): 
+
+            traj_count = index * self.trajs_per_batch
+            step_count = traj_count * self.seqdur
+
             # 125 batches = 125 * 4 gradient steps,
             # 8 trajs per batch = 2048 steps per batch
 
@@ -172,11 +185,12 @@ class ObjectMemoryTask:
                 objectLearning = self.quantifyObjectLearning(
                     control_location=self.args.tasks.testing.control_location,
                     whichPhase=self.args.tasks.testing.whichPhase,
+                    traj_count=traj_count,
                 )
                 
                 if objectLearning is not None:
-                    torch.save(objectLearning, f"{self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt")
-                    print(f"Saved object learning results (traj {index * self.trajs_per_batch}): {self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt.")
+                    torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
+                    print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
 
         save_pN(self.pN_post, f"{self.save_path}/{filename}")
         print(f"Saved trained net to {self.save_path}/{filename}")
@@ -224,7 +238,7 @@ class ObjectMemoryTask:
         return objectTest
 
 
-    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int) -> dict[str, np.ndarray] | None:
+    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int, traj_count: int) -> dict[str, np.ndarray | np.float32 | int] | None:
         assert self.testTrial is not None, (
             "You need to run trainNovelObject and getTestTrial first."
         )
@@ -269,6 +283,7 @@ class ObjectMemoryTask:
             "goalmodulation": goalmodulation,
             "ctlmodulation_diffcolor": ctlmodulation_diffcolor,
             "ctlmodulation_diffloc": ctlmodulation_diffloc,
+            "traj_count": traj_count,
         }
         self.objectLearning = objectLearning
         return objectLearning

@@ -4,7 +4,7 @@ defaults:
 room_size: 16
 
 training:
-  num_trajs: 1000 # trajectories to train on in novel env
+  num_trajs: 5000 # trajectories to train on in novel env
   saving_interval: 250 # trajs between saving
   lr_trials: 2 
   lrgroups: [0, 1, 2]
