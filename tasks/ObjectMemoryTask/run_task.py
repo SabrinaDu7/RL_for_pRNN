@@ -24,11 +24,11 @@ TIME = time.strftime("%m%d-%H%M")
 NET_NAME = f"pN-omt-{TIME}"
 
 # ===== Helper functions =====
-def create_wandb_run():
+def create_wandb_run(agent_type: AgentType):
     run = wandb.init(
         entity=WANDB_ENTITY,
         project=WANDB_PROJECT,
-        name=f"{TIME}",
+        name=f"{agent_type}-{TIME}",
     )
     return run
 
@@ -36,29 +36,29 @@ def create_wandb_run():
 @hydra.main(config_path="../../Configs", config_name="Conf1_Adel")
 def main(args: DictConfig):
 
-    # Setup
-    print("Running Object Memory Task...")
-    print(f"Using device: {DEVICE}")
-
+    agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC# Setup
     if args.logging.wandb_log:
-        create_wandb_run()
+        create_wandb_run(agent_type)
+    
 
-    agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
     env_novel_name = MinigridEnvNames.LRoom16Goal if args.tasks.room_size == 16 else MinigridEnvNames.LRoom18Goal
     env_orig_name = MinigridEnvNames.LRoom16 if args.tasks.room_size == 16 else MinigridEnvNames.LRoom18
 
     date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-    agent_name = "curious" if args.exp.curious_agent else "rand"
+    agent_name = "cur" if args.exp.curious_agent else "rand"
     run_name = f"{args.exp.exp_name}_{agent_name}_{date}"
+
+    print(f"Running Object Memory Task with {agent_name} agent")
+    print(f"Using device: {DEVICE}")
     
     omt = ObjectMemoryTask(
         args=args,
         agent_type=agent_type,
         env_novel_name=env_novel_name,
         env_orig_name=env_orig_name,
-        save_path=f"{RL_STORAGE}/{run_name}/",
+        save_path=f"{RL_STORAGE}/{run_name}",
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,
@@ -81,15 +81,19 @@ def main(args: DictConfig):
     )
 
     # Display results
-    print("\nResults:")
-    print(f"Goal modulation: {objectLearning['goalmodulation']:.4f}")
-    print(f"Control modulation: {objectLearning['ctlmodulation_diffloc']:.4f}")
+    if objectLearning is not None: # In case control or goal locations were never viewed
+        print("\nResults:")
+        print(f"Goal modulation: {objectLearning['goalmodulation']:.4f}")
+        print(f"Control modulation: {objectLearning['ctlmodulation_diffloc']:.4f}")
 
-    # Generate plots
-    print("Generating plots...")
-    plt.figure(figsize=(12, 8))
-    omt.ObjectLearningFigure(netname=NET_NAME, savefolder=RESULTS_SAVE_FOLDER)
-    print("Done!")
+        # Generate plots
+        print("Generating plots...")
+        plt.figure(figsize=(12, 8))
+        omt.ObjectLearningFigure(netname=NET_NAME, savefolder=RESULTS_SAVE_FOLDER)
+        print("Done!")
+    
+    else:
+        print("Object learning results could not be computed due to lack of views of goal or control locations during test trial.")
 
     if args.logging.wandb_log:
         wandb.finish()

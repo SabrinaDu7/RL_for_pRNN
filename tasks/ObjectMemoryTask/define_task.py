@@ -173,8 +173,10 @@ class ObjectMemoryTask:
                     control_location=self.args.tasks.testing.control_location,
                     whichPhase=self.args.tasks.testing.whichPhase,
                 )
-                torch.save(objectLearning, f"{self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt")
-                print(f"Saved object learning results (traj {index * self.trajs_per_batch}): {self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt.")
+                
+                if objectLearning is not None:
+                    torch.save(objectLearning, f"{self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt")
+                    print(f"Saved object learning results (traj {index * self.trajs_per_batch}): {self.save_path}/objectLearning_{index * self.trajs_per_batch}.pt.")
 
         save_pN(self.pN_post, f"{self.save_path}/{filename}")
         print(f"Saved trained net to {self.save_path}/{filename}")
@@ -222,7 +224,7 @@ class ObjectMemoryTask:
         return objectTest
 
 
-    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int) -> dict[str, np.ndarray]:
+    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int) -> dict[str, np.ndarray] | None:
         assert self.testTrial is not None, (
             "You need to run trainNovelObject and getTestTrial first."
         )
@@ -232,17 +234,19 @@ class ObjectMemoryTask:
         obs_pred = self.testTrial["obs_pred"]
         obs_pred_notrain = self.testTrial["obs_pred_control"]
 
-        # Get the predicted pixel values at the object/control location
+        # Get predicted pixel values at the object/control location for trained and control pRNNs
         obs_np = self.pN_post.env_shell.pred2np(obs_pred, whichPhase=whichPhase)
+        obs_notrain_np = self.pN_post.env_shell.pred2np(obs_pred_notrain, whichPhase=whichPhase)
+        
         locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.goal_loc, pos, HD)
         conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
 
-        # Get the predicted pixel values in the control networks
-        obs_np = self.pN_post.env_shell.pred2np(obs_pred_notrain, whichPhase=whichPhase)
-        locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(
-            obs_np, self.goal_loc, pos, HD
-        )
-        conobs_notrain, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
+        locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(obs_notrain_np, self.goal_loc, pos, HD)
+        conobs_notrain, _, _ = get_obs_at_loc(obs_notrain_np, control_location, pos, HD)
+
+        if locobs is None or conobs is None:
+            print("No views of the goal or control location were found during the test trial.")
+            return None
 
         objectloc_deltaobs = locobs - locobs_notrain
         controlloc_deltaobs = conobs - conobs_notrain
@@ -380,6 +384,10 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
             locobs.append(obs[tt, vy, vx, :])
             viewtimes.append(tt)
             viewcoords.append([vx, vy])
+    
+    if locobs == []:
+        # No views of the location were found
+        return None, None, None
 
     locobs = np.stack(locobs, axis=0)
     viewtimes = np.stack(viewtimes, axis=0)
