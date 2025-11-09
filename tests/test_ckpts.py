@@ -115,6 +115,7 @@ def test_pRNN_with_environment(prnn_ckpt: str, ac_status_ckpt: str):
     assert len(predictive_net.EnvLibrary) >= 2  # Original env + new env
 
 
+@pytest.mark.parametrize("prnn_ckpt,ac_status_ckpt", CHECKPOINT_PAIRS)
 def test_load_acmodel_from_checkpoint(prnn_ckpt:str, ac_status_ckpt: str):
     """Test loading a pre-trained ACModel from checkpoint."""
     # Setup
@@ -145,6 +146,7 @@ def test_load_acmodel_from_checkpoint(prnn_ckpt:str, ac_status_ckpt: str):
         assert not torch.isnan(value).any()
 
 
+@pytest.mark.parametrize("prnn_ckpt,ac_status_ckpt", CHECKPOINT_PAIRS)
 def test_load_actor_critic_agent(prnn_ckpt: str, ac_status_ckpt: str):
     """Test creating an ActorCriticAgent with loaded models."""
     env = make_env(env_key=ENV_NAME, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
