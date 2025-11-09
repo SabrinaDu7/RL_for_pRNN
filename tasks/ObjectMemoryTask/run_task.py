@@ -24,11 +24,11 @@ TIME = time.strftime("%m%d-%H%M")
 NET_NAME = f"pN-omt-{TIME}"
 
 # ===== Helper functions =====
-def create_wandb_run(agent_type: AgentType):
+def create_wandb_run(run_name: str):
     run = wandb.init(
         entity=WANDB_ENTITY,
         project=WANDB_PROJECT,
-        name=f"{agent_type}-{TIME}",
+        name=run_name,
     )
     return run
 
@@ -36,19 +36,18 @@ def create_wandb_run(agent_type: AgentType):
 @hydra.main(config_path="../../Configs", config_name="Conf1_Adel")
 def main(args: DictConfig):
 
-    agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC# Setup
-    if args.logging.wandb_log:
-        create_wandb_run(agent_type)
-    
+    agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
+    date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+    agent_name = "cur" if args.exp.curious_agent else "rand"
+    run_name = f"{args.exp.exp_name}_{agent_name}_{date}"
 
+    if args.logging.wandb_log:
+        create_wandb_run(run_name)
+    
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
     env_novel_name = MinigridEnvNames.LRoom16Goal if args.tasks.room_size == 16 else MinigridEnvNames.LRoom18Goal
     env_orig_name = MinigridEnvNames.LRoom16 if args.tasks.room_size == 16 else MinigridEnvNames.LRoom18
-
-    date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-    agent_name = "cur" if args.exp.curious_agent else "rand"
-    run_name = f"{args.exp.exp_name}_{agent_name}_{date}"
 
     print(f"Running Object Memory Task with {agent_name} agent")
     print(f"Using device: {DEVICE}")
@@ -78,6 +77,7 @@ def main(args: DictConfig):
     objectLearning = omt.quantifyObjectLearning(
         control_location=args.tasks.testing.control_location,
         whichPhase=args.tasks.testing.whichPhase,
+        traj_count=args.tasks.training.num_trajs,
     )
 
     # Display results
