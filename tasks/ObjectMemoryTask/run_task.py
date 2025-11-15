@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 from prnn.utils import MinigridEnvNames
 from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
+from tasks.ObjectMemoryTask.figure import figure_object_learning
 from utils import get_wandb_env_vars, get_ckpt_env_vars, get_env_var, AgentType
  
 # ===== Constants =====
@@ -21,7 +22,6 @@ RL_STORAGE = get_env_var("RL_STORAGE")
 
 RESULTS_SAVE_FOLDER = "results"
 TIME = time.strftime("%m%d-%H%M")
-NET_NAME = f"pN-omt-{TIME}"
 
 # ===== Helper functions =====
 def create_wandb_run(run_name: str):
@@ -37,9 +37,9 @@ def create_wandb_run(run_name: str):
 def main(args: DictConfig):
 
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
-    date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+    date = datetime.datetime.now().strftime("%m%d-%H%M%S")
     agent_name = "cur" if args.exp.curious_agent else "rand"
-    run_name = f"{args.exp.exp_name}_{agent_name}_{date}"
+    run_name = f"{args.exp.exp_name}-{agent_name}-{date}"
 
     if args.logging.wandb_log:
         create_wandb_run(run_name)
@@ -66,14 +66,16 @@ def main(args: DictConfig):
     omt.trainNovelObject(
         num_trajs=args.tasks.training.num_trajs,
         saving_interval=args.tasks.training.saving_interval,
+        analysis_interval=args.tasks.training.analysis_interval,
         lr_trials=args.tasks.training.lr_trials,
         lrgroups=args.tasks.training.lrgroups,
         resetOptimizer=args.tasks.training.resetOptimizer,
         continueTraining=args.tasks.training.continueTraining,
         device=DEVICE,
-        filename=f"{NET_NAME}.pt",
     )
-    omt.getTestTrial(timesteps=args.tasks.testing.timesteps)
+    testTrial = omt.getTestTrial(timesteps=args.tasks.testing.timesteps)
+    torch.save(testTrial, f"{RL_STORAGE}/{run_name}/testTrial_{args.tasks.training.num_trajs}.pt")
+
     objectLearning = omt.quantifyObjectLearning(
         control_location=args.tasks.testing.control_location,
         whichPhase=args.tasks.testing.whichPhase,
@@ -82,14 +84,16 @@ def main(args: DictConfig):
 
     # Display results
     if objectLearning is not None: # In case control or goal locations were never viewed
+        torch.save(objectLearning, f"{RL_STORAGE}/{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt")
+        print(f"Saved object learning results (traj {args.tasks.training.num_trajs}): {RL_STORAGE}/{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt.")
+        
         print("\nResults:")
         print(f"Goal modulation: {objectLearning['goalmodulation']:.4f}")
         print(f"Control modulation: {objectLearning['ctlmodulation_diffloc']:.4f}")
 
         # Generate plots
-        print("Generating plots...")
-        plt.figure(figsize=(12, 8))
-        omt.ObjectLearningFigure(netname=NET_NAME, savefolder=RESULTS_SAVE_FOLDER)
+        print(f"Generating plots in: {RESULTS_SAVE_FOLDER}")
+        figure_object_learning(env_name=env_orig_name, run_name=run_name, traj_num=args.tasks.training.num_trajs, save_folder=RESULTS_SAVE_FOLDER)
         print("Done!")
     
     else:
