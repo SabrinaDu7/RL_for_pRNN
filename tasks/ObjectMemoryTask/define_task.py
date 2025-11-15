@@ -2,8 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import os
+import wandb
 from tqdm import tqdm
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 from RLutils import (
     get_pN, 
@@ -14,6 +15,7 @@ from RLutils import (
     seed,
     PredictivePPOAlgo,
     ActorCriticAgent,
+    get_occupancy_fig,
 )
 
 from prnn.utils.general import saveFig
@@ -64,21 +66,24 @@ class ObjectMemoryTask:
     ):
         seed(args.exp.seed)
 
-        self.args = args
-        self.save_path = save_path
-        self.wandb_log = args.logging.wandb_log
-
-        # Create save directory and save config
-        os.makedirs(self.save_path, exist_ok=True)
-        OmegaConf.save(args, f"{self.save_path}/config.yaml")
-
-        self.seqdur = args.predNet.seqdur # steps
-        self.trajs_per_batch = args.rl.trajs_per_batch
-
         self.env_novel_name = env_novel_name.value
         self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
         self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
         self.goal_loc = _get_goal_loc(self.env_novel)
+
+        with open_dict(args):
+            args.tasks.goal_loc = self.goal_loc
+
+        self.args = args
+        self.save_path = save_path
+        self.wandb_log = args.logging.wandb_log
+
+        self.seqdur = args.predNet.seqdur # steps
+        self.trajs_per_batch = args.rl.trajs_per_batch
+
+        # Create save directory and save config
+        os.makedirs(self.save_path, exist_ok=True)
+        OmegaConf.save(args, f"{self.save_path}/config.yaml")
 
         self.pN_control = get_pN(args=args, env=self.env_orig, device=device, pRNN_ckpt=prnn_ckpt)
         self.pN_post = self.pN_control.copy()
@@ -142,11 +147,11 @@ class ObjectMemoryTask:
         lr_trials: int,
         lrgroups: list, # [0, 1, 2]
         num_trajs: int, # num of trajectories to train on in novel env
-        saving_interval: int, # num trajectories between logging
+        saving_interval: int, # num batches between logging
+        analysis_interval: int, # num batches between logging
         resetOptimizer: bool,
         continueTraining: bool,
         device,
-        filename: str,
     ):
 
         # Update the learning rate
@@ -175,25 +180,34 @@ class ObjectMemoryTask:
             else:
                 exps, logs1 = self.algo.collect_experiences()
                 logs2 = self.algo.update_parameters(exps=exps, update_params=True)
+                
+                if self.wandb_log:
+                    for key, val in logs2.items():
+                        wandb.log({f"Train/{key}": val}, step=step_count)
 
-            if index % (saving_interval) == 0:
+            if index % saving_interval == 0:
                 print(f"Completed {index * self.trajs_per_batch} trajectories = {index * self.trajs_per_batch * self.seqdur} steps")
-                save_pN(self.pN_post, f"{self.save_path}/{filename}")
+                save_pN(self.pN_post, f"{self.save_path}/pN-{traj_count}.pt")
             
-            if index % 25 == 0:
+            if index % analysis_interval == 0:
+                # Object Learning Analysis
                 self.getTestTrial(timesteps=self.args.tasks.testing.timesteps)
                 objectLearning = self.quantifyObjectLearning(
                     control_location=self.args.tasks.testing.control_location,
                     whichPhase=self.args.tasks.testing.whichPhase,
                     traj_count=traj_count,
                 )
-                
                 if objectLearning is not None:
                     torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
                     print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                
+                # Occupancy Analysis
+                if self.agent_type == AgentType.AC:
+                    occ_fig = get_occupancy_fig(self.algo, timesteps=self.args.tasks.testing.timesteps)
+                    occ_fig.write_image(f"{self.save_path}/Occupancy_{traj_count}.png")
 
-        save_pN(self.pN_post, f"{self.save_path}/{filename}")
-        print(f"Saved trained net to {self.save_path}/{filename}")
+        save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
+        print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
 
         # Return the learning rate
         for lidx, lgroup in enumerate(lrgroups):
@@ -216,7 +230,7 @@ class ObjectMemoryTask:
 
         # Collect observation sequence in the environment
         obs, act, state, render = self.pN_post.collectObservationSequence(
-            self.env_orig, self.agent, timesteps, includeRender=True
+            self.env_orig, self.agent, timesteps, includeRender=True # Critical self.env_orig
         )
 
         obs_pred, obs_next, _ = self.pN_post.predict(obs, act)
@@ -287,66 +301,6 @@ class ObjectMemoryTask:
         }
         self.objectLearning = objectLearning
         return objectLearning
-
-    def ObjectLearningFigure(self, netname=None, savefolder=None, whichview=1):
-        plt.subplot(4, 3, 1)
-        self.objPixelChangePanel(self.objectLearning)
-
-        self.exampleObsSequencePanel(whichview=whichview)
-
-        plt.tight_layout()
-        if netname is not None:
-            saveFig(plt.gcf(), "ObjectLearning_" + netname, savefolder, filetype="png")
-
-    def objPixelChangePanel(self, objectLearning):
-        deltaobs_goal = objectLearning["objectloc_deltaobs"]
-        deltaobs_ctl = objectLearning["controlloc_deltaobs"]
-
-        plt.boxplot(
-            deltaobs_goal,
-            showfliers=False,
-            positions=[1.8, 1, 2.2],
-            label=["R", "G", "B"],
-        )
-        plt.boxplot(
-            deltaobs_ctl,
-            showfliers=False,
-            positions=[4.3, 3.5, 4.7],
-            label=["R", "G", "B"],
-        )
-        plt.plot(plt.xlim(), [0, 0], "k--")
-        plt.plot([3, 3], plt.ylim(), "k:")
-        plt.ylabel("Change in Predicted Observation")
-
-    def exampleObsSequencePanel(self, firstrow=3, whichview=1):
-        assert self.objectLearning is not None, (
-            "You need to run quantifyObjectLearning first."
-        )
-        assert self.testTrial is not None, "You need to run getTestTrial first."
-
-        render = self.testTrial["render"]
-        obs = self.testTrial["obs"]
-        obs_pred = self.testTrial["obs_pred"]
-        obs_pred_notrain = self.testTrial["obs_pred_control"]
-        pN = self.pN_control
-
-        inviewtimes = self.objectLearning["inviewtimes"]
-        extimes = range(inviewtimes[whichview] - 2, inviewtimes[whichview] + 5)
-
-        pN.plotSequence(render, extimes, firstrow, label="State")
-
-        pN.plotSequence(pN.env_shell.pred2np(obs), extimes, firstrow + 1, label="Obs")
-
-        pN.plotSequence(
-            pN.env_shell.pred2np(obs_pred_notrain),
-            extimes,
-            firstrow + 2,
-            label="Pred_CTL",
-        )
-
-        pN.plotSequence(
-            pN.env_shell.pred2np(obs_pred), extimes, firstrow + 3, label="Pred"
-        )
 
 
 # Map of agent direction indices to vectors

@@ -3,11 +3,18 @@ import matplotlib.pyplot as plt
 import torch
 import re
 from pathlib import Path
+import torch
+from omegaconf import OmegaConf
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
-from utils import get_env_var
+from prnn.utils import PredictiveNet, ActionEncodingsEnum, MinigridEnvNames
+from utils import get_env_var, AgentInputType
+from RLutils import get_pN, make_env
 RL_STORAGE = get_env_var("RL_STORAGE")
+DEVICE = torch.device("cpu")
 
-
+# Figure: Goal Modulation
 def extract_objectlearning_values(key: str, directory: str) -> np.ndarray:
     """
     Extract values for a specific key from all objectLearning dictionaries in a directory.
@@ -142,7 +149,78 @@ def plot_metric_vs_trajectories(
     plt.show()
 
 
-if __name__ == "__main__":
+# Figure: Object Learning Panels
+def plot_obj_pixel_change_panel(objectLearning: dict) -> None:
+    """
+    Create a boxplot panel showing pixel changes at goal and control locations.
+
+    Args:
+        objectLearning: Dictionary containing 'objectloc_deltaobs' and 'controlloc_deltaobs'
+    """
+    deltaobs_goal = objectLearning["objectloc_deltaobs"]
+    deltaobs_ctl = objectLearning["controlloc_deltaobs"]
+
+    plt.boxplot(
+        deltaobs_goal,
+        showfliers=False,
+        positions=[1.8, 1, 2.2],
+    )
+    plt.boxplot(
+        deltaobs_ctl,
+        showfliers=False,
+        positions=[4.3, 3.5, 4.7],
+    )
+    plt.plot(plt.xlim(), [0, 0], "k--")
+    plt.plot([3, 3], plt.ylim(), "k:")
+    plt.xticks([1, 1.8, 2.2, 3.5, 4.3, 4.7], ["G", "R", "B", "G", "R", "B"])
+    plt.ylabel("Change in Predicted Observation", fontsize=6)
+
+
+def plot_example_obs_sequence_panel(
+    objectLearning: dict,
+    testTrial: dict,
+    pN: PredictiveNet,
+    firstrow: int = 3,
+    whichview: int = 1
+) -> None:
+    """
+    Create a panel showing example observation sequences.
+
+    Args:
+        objectLearning: Dictionary containing 'inviewtimes'
+        testTrial: Dictionary containing 'render', 'obs', 'obs_pred', 'obs_pred_control'
+        pN: Predictive network with env_shell and plotSequence method
+        firstrow: First row index for plotting (default=3)
+        whichview: Which view timepoint to center on (default=1)
+    """
+    render = testTrial["render"]
+    obs = testTrial["obs"]
+    obs_pred = testTrial["obs_pred"]
+    obs_pred_notrain = testTrial["obs_pred_control"]
+
+    inviewtimes = objectLearning["inviewtimes"]
+    extimes = range(inviewtimes[whichview] - 2, inviewtimes[whichview] + 5)
+
+    pN.plotSequence(render, extimes, firstrow, label="State", show_axis=True)
+    pN.plotSequence(pN.env_shell.pred2np(obs), extimes, firstrow + 1, label="True Obs", show_axis=True)
+    pN.plotSequence(
+        pN.env_shell.pred2np(obs_pred_notrain),
+        extimes,
+        firstrow + 2,
+        label="Pred (Ctrl)",
+        show_axis=True
+    )
+    pN.plotSequence(
+        pN.env_shell.pred2np(obs_pred), extimes, firstrow + 3, label="Pred (Exp)", show_axis=True
+    )
+
+# Generate Figures
+def figure_goal_modulation_vs_trajectories():
+    """
+    Generate a plot comparing goal modulation vs trajectory count
+    for random and curious agents.
+    """
+
     # Extract goal modulation and trajectory counts for random agent
     seqdur = 256
     num_datapoints = 25
@@ -167,3 +245,45 @@ if __name__ == "__main__":
         save_path=f"results/goalmodulation{num_datapoints}.png",
         run_names=["omt_rand_25-11-07-16-42-10", "omt_curious_25-11-07-16-37-10"]
     )
+
+
+def figure_object_learning(env_name: MinigridEnvNames, run_name: str, traj_num: int, save_folder: str, testTrial: dict | None = None):
+    """
+    Generate object learning figure panels for a specific run.
+    """
+    from prnn.utils.general import saveFig
+
+    # Setup
+    plt.figure(figsize=(12, 8))
+    run_filepath = RL_STORAGE / Path(run_name)
+    config = OmegaConf.load(run_filepath / "config.yaml")
+
+    # Loading components
+    objectLearning_dict_file = run_filepath / f"objectLearning_{traj_num}.pt"
+    object_learning_dict = torch.load(objectLearning_dict_file, weights_only=False)
+
+    env = make_env(env_key=env_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+    prnn_ckpt = str(run_filepath / f"pN-{traj_num}.pt")
+    predictiveNet = get_pN(args=config, env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
+    
+    if testTrial is None:
+        test_trial_file = run_filepath / f"testTrial_{traj_num}.pt"
+        test_trial_dict = torch.load(test_trial_file, weights_only=False)
+    else:
+        test_trial_dict = testTrial
+    
+
+    # Plotting
+    plt.subplot(4, 3, 1)
+    plot_obj_pixel_change_panel(object_learning_dict)
+
+    plot_example_obs_sequence_panel(
+        objectLearning=object_learning_dict,
+        testTrial=test_trial_dict,
+        pN=predictiveNet,
+        whichview=1,
+    )
+
+    plt.title(f'Object Learning after training on {traj_num} trajectories\nNovel Object Loc: {config.tasks.goal_loc}', fontsize=9, loc='right', y=6)
+    plt.tight_layout()
+    saveFig(fig=plt.gcf(), savename="ObjectLearning_" + run_name, savepath=save_folder, filetype="png")
