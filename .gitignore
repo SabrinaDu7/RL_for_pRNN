@@ -9,5 +9,6 @@ RLutils/__pycache__/*
 *.ipynb
 .python*
 results/*
+omt-cur*/
 
 wandb/*

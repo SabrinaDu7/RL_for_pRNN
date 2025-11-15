@@ -4,6 +4,8 @@ from gymnasium.core import ObservationWrapper, Wrapper
 from gymnasium.wrappers.record_video import RecordVideo
 from minigrid.wrappers import *
 from functools import partial
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 from prnn.utils.Shell import FaramaMinigridShell
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum

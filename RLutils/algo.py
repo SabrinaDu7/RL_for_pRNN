@@ -293,7 +293,7 @@ class PredictivePPOAlgo:
                     obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
                     obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
 
-                    obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted)
+                    obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
                     obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
                     MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1) 
 
@@ -369,7 +369,7 @@ class PredictivePPOAlgo:
         exps.last_observations = self.last_observations
 
         # Calculate locations entropy
-        for loc in self.locs:
+        for loc in self.locs: # This is the location sequence you want to plot trajectories
             self.loc_visits[loc] += 1
         self.loc_visits = self.loc_visits.flatten("F")[self.loc_mask]
         loc_entropy = entropy(self.loc_visits, base=2)
@@ -408,7 +408,7 @@ class PredictivePPOAlgo:
         self.log_reshaped_return = []
         self.log_num_frames = []
 
-        return exps, logs
+        return exps, logs # Everything in exps must be exact same length. Get self.locs out through logs
 
     def update_parameters(self, exps, update_params=True):
         # Collect experiences

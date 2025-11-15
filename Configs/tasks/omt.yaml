@@ -5,7 +5,8 @@ room_size: 16
 
 training:
   num_trajs: 5000 # trajectories to train on in novel env
-  saving_interval: 250 # trajs between saving
+  saving_interval: 50 # batches between saving
+  analysis_interval: 25 # batches between logging
   lr_trials: 2 
   lrgroups: [0, 1, 2]
   resetOptimizer: False
