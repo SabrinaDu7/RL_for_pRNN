@@ -25,6 +25,7 @@ from RLutils.analysis import (
     plot_heatmaps,
     EnvironmentFeaturesAnalysis,
     OnPolicyAnalysis,
+    get_occupancy_fig,
 )
 
 # Environment functions and classes

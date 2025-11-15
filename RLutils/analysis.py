@@ -539,48 +539,53 @@ class OnPolicyAnalysis:
         return fig
 
     def plot_occupancy(self, scale="viridis"):
-        """
-        Show state-occupancy counts (no action dimension).
-        1×4 layout – one heat-map per head-direction.
-        """
-        hd_labels = ["→", "↓", "←", "↑"]
+        return get_occupancy_fig(self.algo, self.timesteps, scale)
 
-        occ = np.zeros((4, self.algo.env.width - 2, self.algo.env.height - 2))
-        for t in range(self.timesteps):
-            hd = self.algo.obss[t]["direction"]
-            x, y = self.algo.locs[t][0] - 1, self.algo.locs[t][1] - 1
-            occ[hd, x, y] += 1
 
-        fig = make_subplots(
-            rows=1,
-            cols=4,
-            specs=[[{}] * 4],
-            horizontal_spacing=0.03,
-            column_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)],
+# Distinct function
+def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="viridis"):
+    """
+    Show state-occupancy counts (no action dimension).
+    1×4 layout – one heat-map per head-direction.
+    """
+    hd_labels = ["→", "↓", "←", "↑"]
+
+    occ = np.zeros((4, algo.env.width - 2, algo.env.height - 2))
+    for t in range(timesteps):
+        hd = algo.obss[t]["direction"]
+        x, y = algo.locs[t][0] - 1, algo.locs[t][1] - 1
+        occ[hd, x, y] += 1
+
+    fig = make_subplots(
+        rows=1,
+        cols=4,
+        specs=[[{}] * 4],
+        horizontal_spacing=0.03,
+        column_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)],
+    )
+
+    for hd in range(4):
+        fig.add_trace(
+            go.Heatmap(z=occ[hd].T, showscale=False, colorscale=SCALES[scale]),
+            row=1,
+            col=hd + 1,
         )
 
-        for hd in range(4):
-            fig.add_trace(
-                go.Heatmap(z=occ[hd].T, showscale=False, colorscale=SCALES[scale]),
-                row=1,
-                col=hd + 1,
-            )
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(showticklabels=False, autorange="reversed")
+    fig.update_layout(
+        height=280,
+        width=900,
+        title="State-occupancy per head-direction",
+        title_x=0.5,
+        font_family="Courier New",
+    )
 
-        fig.update_xaxes(showticklabels=False)
-        fig.update_yaxes(showticklabels=False, autorange="reversed")
-        fig.update_layout(
-            height=280,
-            width=900,
-            title="State-occupancy per head-direction",
-            title_x=0.5,
-            font_family="Courier New",
+    # Make HD labels bigger + bold
+    for i in range(len(fig.layout.annotations)):
+        fig.layout.annotations[i].font = dict(
+            size=24, family="Courier New", color="black"
         )
 
-        # Make HD labels bigger + bold
-        for i in range(len(fig.layout.annotations)):
-            fig.layout.annotations[i].font = dict(
-                size=24, family="Courier New", color="black"
-            )
-
-        # fig.show()
-        return fig
+    # fig.show()
+    return fig
