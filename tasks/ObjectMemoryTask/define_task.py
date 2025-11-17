@@ -7,15 +7,16 @@ from tqdm import tqdm
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from RLutils import (
-    get_pN, 
-    make_env, 
-    get_SR_acmodel, 
+    get_pN,
+    make_env,
+    get_SR_acmodel,
     get_obss_preprocessor,
     get_algo,
     seed,
     PredictivePPOAlgo,
     ActorCriticAgent,
     get_occupancy_fig,
+    grid_to_pixel_coords,
 )
 
 from prnn.utils.general import saveFig
@@ -176,9 +177,9 @@ class ObjectMemoryTask:
             # 8 trajs per batch = 2048 steps per batch
 
             if self.agent_type == AgentType.RANDOM:
-                self.algo.randomAgent_collect_exp_and_update(self.agent)
+                exp_logs = self.algo.randomAgent_collect_exp_and_update(self.agent)
             else:
-                exps, logs1 = self.algo.collect_experiences()
+                exps, exp_logs = self.algo.collect_experiences()
                 logs2 = self.algo.update_parameters(exps=exps, update_params=True)
                 
                 if self.wandb_log:
@@ -205,6 +206,28 @@ class ObjectMemoryTask:
                 if self.agent_type == AgentType.AC:
                     occ_fig = get_occupancy_fig(self.algo, timesteps=self.args.tasks.testing.timesteps)
                     occ_fig.write_image(f"{self.save_path}/Occupancy_{traj_count}.png")
+
+                    locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
+                    locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur, 2)
+
+                    env_img = self.algo.env.render(mode=None)
+                    plot_scaling_factor = env_img.shape[0] // self.algo.env.width
+
+                    # Convert grid coordinates to pixel coordinates for plotting
+                    traj0_grid = locs_tensor[0, :, :].cpu().numpy()  # Shape: (seqdur, 2)
+                    traj0_pixel = grid_to_pixel_coords(traj0_grid, tile_size=plot_scaling_factor)
+                    traj0_x = traj0_pixel[:, 0]
+                    traj0_y = traj0_pixel[:, 1]
+
+                    plt.imshow(env_img)
+                    plt.plot(traj0_x, traj0_y, ".-", color="cyan", linewidth=0.5, markersize=3, alpha=0.5)
+                    plt.plot(traj0_x[0], traj0_y[0], "o", color="red", markersize=5, alpha=0.8) # Start point
+                    plt.xticks([])
+                    plt.yticks([])
+
+                    plt.savefig(f"{self.save_path}/SampleTrajectory_{traj_count}.png", dpi=200)
+                    torch.save(traj0_grid, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")
+                    print(f"Saved sample trajectory (traj {traj_count}): {self.save_path}/SampleTrajectory_{traj_count}.png")
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
         print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")

@@ -3,6 +3,7 @@ from RLutils.other import (
     DEVICE,
     seed,
     synthesize,
+    grid_to_pixel_coords,
 ) 
 
 # Agent classes and functions
@@ -93,6 +94,7 @@ __all__ = [
     "plot_heatmaps",
     "EnvironmentFeaturesAnalysis",
     "OnPolicyAnalysis",
+    "get_occupancy_fig",
     # Env
     "episode_video_trigger",
     "make_env",
@@ -116,6 +118,7 @@ __all__ = [
     "DEVICE",
     "seed",
     "synthesize",
+    "grid_to_pixel_coords",
     # PC
     "FakePlaceCells",
     # Storage
