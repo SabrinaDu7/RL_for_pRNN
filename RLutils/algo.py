@@ -197,6 +197,8 @@ class PredictivePPOAlgo:
         # The lists below are only relevant if pRNN is being trained
         self.done_indices = [0]
         self.last_observations = []
+        self.locs = []
+        self.obss = []
         obs = None
 
         for i in range(self.num_frames):
@@ -204,7 +206,7 @@ class PredictivePPOAlgo:
 
             action, dist, value, memory, det_action = self.next_experience()
 
-            obs, reward, terminated, truncated, _ = self.env.step(det_action)
+            obs, reward, terminated, truncated, _ = self.env.step(det_action) # CAREFUL: obs = observation after taking action
             loc = self.agent_pos()
             done = terminated or truncated
 
@@ -216,9 +218,9 @@ class PredictivePPOAlgo:
 
             # Update experiences values
 
-            self.obss[i] = self.obs
+            self.obss.append(self.obs)
             self.obs = obs
-            self.locs[i] = self.loc
+            self.locs.append(self.loc)
             self.loc = loc
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
             self.SRs[i] = self.SR
@@ -252,7 +254,7 @@ class PredictivePPOAlgo:
             if self.prnn_seqdur > 0 and (i + 1) % self.prnn_seqdur == 0:
                 done = True
 
-            if done:
+            if done: # This resets the agent's position to start next trajectory/trial
                 if self.intrinsic and reward > 1e-5:
                     if self.pastSR:
                         _, _, _, _, det_action = self.next_experience()
@@ -369,7 +371,7 @@ class PredictivePPOAlgo:
         exps.last_observations = self.last_observations
 
         # Calculate locations entropy
-        for loc in self.locs: # This is the location sequence you want to plot trajectories
+        for loc in self.locs: # HERE: This is the location sequence you want to plot trajectories
             self.loc_visits[loc] += 1
         self.loc_visits = self.loc_visits.flatten("F")[self.loc_mask]
         loc_entropy = entropy(self.loc_visits, base=2)
@@ -385,7 +387,7 @@ class PredictivePPOAlgo:
 
         # Reset pN state
         if self.pN:
-            self.pN.reset_state(device=self.device)
+            self.pN.reset_state(device=str(self.device))
 
         # Log some values
 
@@ -402,6 +404,7 @@ class PredictivePPOAlgo:
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
             "joint_dist": joint_probabilities,
+            "locs": self.locs,
         }
 
         self.log_return = []
@@ -627,6 +630,7 @@ class PredictivePPOAlgo:
             "entropy": policy_entropy,
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
+            "locs": self.locs,
         }
 
     def _get_batches_starting_indexes(self):
