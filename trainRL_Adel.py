@@ -58,7 +58,7 @@ class RL_Trainer(object):
         date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
         agent_type = "curious" if params.exp.curious_agent else "rand"
         run_name = f"{self.group}_{agent_type}_{date}"
-        self.model_name = f"{WANDB_PROJECT}/{run_name}/"
+        self.model_name = f"{run_name}/"
 
         # Set run dir
         self.model_dir = RLutils.get_model_dir(self.model_name)
@@ -252,6 +252,7 @@ class RL_Trainer(object):
 
         # Load algo
         pastSR = not ("prevAct" in str(predictiveNet.pRNN))
+        print("pastSR:", pastSR)
         if args.exp.single_theta:
             algo = SingleThetaPPOalgo(
                 env,
@@ -472,7 +473,7 @@ class RL_Trainer(object):
                                 randomagent
                                 if args.exp.random_action_agent
                                 else ActorCriticAgent(
-                                    env.action_space, acmodel, predictiveNet, DEVICE
+                                    env.action_space, acmodel, predictiveNet, DEVICE, pastSR
                                 )
                             )
 
@@ -491,7 +492,7 @@ class RL_Trainer(object):
                         if args.exp.offpolicy_prnn_eval:
                             analysisagent = (
                                 ActorCriticAgent(
-                                    env.action_space, acmodel, predictiveNet, DEVICE
+                                    env.action_space, acmodel, predictiveNet, DEVICE, pastSR
                                 )
                                 if args.exp.random_action_agent
                                 else randomagent

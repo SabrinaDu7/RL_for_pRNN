@@ -79,6 +79,7 @@ class ActorCriticAgent:
         self.device = device
         self.pastSR = pastSR
         self.name = "ActorCritic Agent"
+        assert pastSR is not ("prevAct" in str(prnn.pRNN))
 
     def next_SR(self, obs, act):
         obs = [obs, obs]
@@ -114,32 +115,34 @@ class ActorCriticAgent:
             render = [None for t in range(tsteps + 1)]
             render[0] = env.render(mode=None)
 
-        if self.pastSR:
-            SR = torch.zeros((1, self.prnn.hidden_size), device=self.device)
-            state["SRs"] = SR.cpu().numpy()
-        else:
-            raise NotImplementedError
+        # TODO: Double check with Alex
+        SR = torch.zeros((1, self.prnn.hidden_size), device=self.device)
+        state["SRs"] = SR.cpu().numpy()
 
-        for aa in range(tsteps):
+        for t in range(tsteps):
             # obs_tensor = torch.tensor(obs[aa]['image'], device=self.device)
             _, preprocess_obss = RLutils.get_obss_preprocessor(env.observation_space)
-            preprocessed_obs = preprocess_obss([obs[aa]], device=self.device)
+            preprocessed_obs = preprocess_obss([obs[t]], device=self.device)
             with torch.no_grad():
                 dist, _ = self.acmodel(preprocessed_obs, SR=SR)
                 action = dist.sample()
-                act[aa] = action.cpu().numpy()
+                act[t] = action.cpu().numpy()
 
-            obs[aa + 1] = env.step(act[aa])[0]
+            obs[t + 1] = env.step(act[t])[0]
             state["agent_pos"] = np.append(
                 state["agent_pos"], np.resize(env.get_agent_pos(), (1, 2)), axis=0
             )
             state["agent_dir"] = np.append(state["agent_dir"], env.get_agent_dir())
 
-            SR = self.next_SR(obs[aa], act[aa])
+            if self.pastSR:
+                SR = self.next_SR(act[t], obs[t]) # obs that lead to the action
+            else:
+                SR = self.next_SR(act[t], obs[t + 1])
+
             state["SRs"] = np.append(state["SRs"], SR.cpu().numpy())
 
             if includeRender:
-                render[aa + 1] = env.render(mode=None)
+                render[t + 1] = env.render(mode=None)
 
         self.prnn.pRNN.to("cpu")
 
