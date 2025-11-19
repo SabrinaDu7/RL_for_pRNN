@@ -73,7 +73,7 @@ def main(args: DictConfig):
         continueTraining=args.tasks.training.continueTraining,
         device=DEVICE,
     )
-    testTrial = omt.getTestTrial(timesteps=args.tasks.testing.timesteps)
+    testTrial = omt.getTestTrial(timesteps=omt.trajs_test * omt.seqdur)
     torch.save(testTrial, f"{RL_STORAGE}/{run_name}/testTrial_{args.tasks.training.num_trajs}.pt")
 
     objectLearning = omt.quantifyObjectLearning(

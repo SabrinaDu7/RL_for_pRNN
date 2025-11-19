@@ -206,7 +206,8 @@ class PredictivePPOAlgo:
 
             action, dist, value, memory, det_action = self.next_experience()
 
-            obs, reward, terminated, truncated, _ = self.env.step(det_action) # CAREFUL: obs = observation after taking action
+            # CAREFUL: obs = observation after taking action whereas self.obs is before taking action
+            obs, reward, terminated, truncated, _ = self.env.step(det_action)
             loc = self.agent_pos()
             done = terminated or truncated
 

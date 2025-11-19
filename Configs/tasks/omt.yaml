@@ -13,6 +13,6 @@ training:
   continueTraining: False
 
 testing:
-  timesteps: 1000 # timesteps for test trial
+  trajs: 4 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
   control_location: [4, 7]
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
