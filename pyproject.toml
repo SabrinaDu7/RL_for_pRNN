@@ -36,6 +36,7 @@ dependencies = [
     "jaxtyping>=0.2.36",
     "moviepy>=2.2.1",
     "kaleido>=1.1.0",
+    "ultraplot>=1.0.3",
 ]
 
 [dependency-groups]
