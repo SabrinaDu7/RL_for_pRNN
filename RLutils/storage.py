@@ -1,24 +1,27 @@
 import os
 import torch
+import numpy as np
 from typing import Callable, Type
 
 from prnn.utils.Shell import FaramaMinigridShell
 from prnn.utils import (
     PredictiveNet,
     pRNNtypes,
+    RandomActionAgent,
     load_pN,
 )
 
 import RLutils
-from RLutils import DEVICE, ACModelSR, PredictivePPOAlgo
+from RLutils import DEVICE, ACModelSR, PredictivePPOAlgo, ActorCriticAgent
 from utils import (
     get_ckpt_env_vars, 
     load_statedict_from_acmodel_status, 
     StatusCkptKeys,
+    AgentType,
 )
 
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
-
+RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 
 def create_folders_if_necessary(path):
     if path == "":
@@ -168,6 +171,34 @@ def get_algo(args,
         algo.optimizer.load_state_dict(status[StatusCkptKeys.OPTIMIZER_STATE.value])
 
     return algo
+
+
+def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
+    env_farama_shell = env
+    env_rgb_wrapper = env_farama_shell.env
+    env_order_enforcing = env_rgb_wrapper.env
+    env_passive_checker = env_order_enforcing.env
+    env_LEnv_goal = env_passive_checker.env
+
+    goal_loc = env_LEnv_goal.goal_pos
+    return goal_loc
+
+
+def get_agent(
+        env: FaramaMinigridShell, 
+        agent_Type: AgentType, 
+        ac_model: ACModelSR, 
+        pN_post: PredictiveNet, 
+        device: torch.device,
+        rand_act_prob: np.ndarray = RAND_ACT_PROBA
+    ) -> ActorCriticAgent | RandomActionAgent:
+
+    if agent_Type == AgentType.RANDOM:
+        agent = RandomActionAgent(env.action_space, rand_act_prob)
+    elif agent_Type == AgentType.AC:
+        agent = ActorCriticAgent(env.action_space, ac_model, pN_post, device)
+
+    return agent
 
 
 def save_status(status, model_dir):

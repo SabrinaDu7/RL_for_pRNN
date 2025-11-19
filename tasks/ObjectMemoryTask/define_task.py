@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 import os
 import wandb
+from jaxtyping import Float
 from tqdm import tqdm
 from omegaconf import DictConfig, OmegaConf, open_dict
 
@@ -14,42 +15,18 @@ from RLutils import (
     get_algo,
     seed,
     PredictivePPOAlgo,
-    ActorCriticAgent,
     get_occupancy_fig,
-    grid_to_pixel_coords,
+    get_agent,
+    get_goal_loc
 )
 
-from prnn.utils.general import saveFig
-from prnn.utils.Shell import FaramaMinigridShell
 from prnn.utils import (
     MinigridEnvNames,
-    RandomActionAgent,
     ActionEncodingsEnum,
     save_pN,
 )
-
+from tasks.ObjectMemoryTask.figure import plot_k_trajectories
 from utils import AgentInputType, AgentType
-
-RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
-
-def _get_goal_loc(env: FaramaMinigridShell) -> list[int]:
-    env_farama_shell = env
-    env_rgb_wrapper = env_farama_shell.env
-    env_order_enforcing = env_rgb_wrapper.env
-    env_passive_checker = env_order_enforcing.env
-    env_LEnv_goal = env_passive_checker.env
-
-    goal_loc = env_LEnv_goal.goal_pos
-    return goal_loc
-
-def _get_agent(env: FaramaMinigridShell, agent_Type: AgentType, ac_model, pN_post, device) -> ActorCriticAgent | RandomActionAgent:
-    if agent_Type == AgentType.RANDOM:
-        agent = RandomActionAgent(env.action_space, RAND_ACT_PROBA)
-    elif agent_Type == AgentType.AC:
-        agent = ActorCriticAgent(env.action_space, ac_model, pN_post, device)
-    else:
-        raise ValueError(f"Unsupported agent type: {agent_Type}")
-    return agent
 
 
 class ObjectMemoryTask:
@@ -70,7 +47,7 @@ class ObjectMemoryTask:
         self.env_novel_name = env_novel_name.value
         self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
         self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-        self.goal_loc = _get_goal_loc(self.env_novel)
+        self.goal_loc = get_goal_loc(self.env_novel)
 
         with open_dict(args):
             args.tasks.goal_loc = self.goal_loc
@@ -81,6 +58,7 @@ class ObjectMemoryTask:
 
         self.seqdur = args.predNet.seqdur # steps
         self.trajs_per_batch = args.rl.trajs_per_batch
+        self.trajs_test = args.tasks.testing.trajs
 
         # Create save directory and save config
         os.makedirs(self.save_path, exist_ok=True)
@@ -116,7 +94,7 @@ class ObjectMemoryTask:
         )
 
         self.agent_type = agent_type
-        self.agent = _get_agent(
+        self.agent = get_agent(
             self.env_novel, 
             self.agent_type, 
             self.ac_model, 
@@ -191,8 +169,10 @@ class ObjectMemoryTask:
                 save_pN(self.pN_post, f"{self.save_path}/pN-{traj_count}.pt")
             
             if index % analysis_interval == 0:
+                testing_tsteps = self.trajs_test * self.seqdur
+                
                 # Object Learning Analysis
-                self.getTestTrial(timesteps=self.args.tasks.testing.timesteps)
+                self.getTestTrial(timesteps=testing_tsteps)
                 objectLearning = self.quantifyObjectLearning(
                     control_location=self.args.tasks.testing.control_location,
                     whichPhase=self.args.tasks.testing.whichPhase,
@@ -202,31 +182,26 @@ class ObjectMemoryTask:
                     torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
                     print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
                 
-                # Occupancy Analysis
                 if self.agent_type == AgentType.AC:
-                    occ_fig = get_occupancy_fig(self.algo, timesteps=self.args.tasks.testing.timesteps)
+
+                    # Occupancy Analysis
+                    occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
                     occ_fig.write_image(f"{self.save_path}/Occupancy_{traj_count}.png")
 
                     locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
                     locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur, 2)
 
-                    env_img = self.algo.env.render(mode=None)
-                    plot_scaling_factor = env_img.shape[0] // self.algo.env.width
+                    # Plotting Trajectories
+                    plotted_locs: Float[np.ndarray, "k seqdur 2"]
+                    fig, plotted_locs = plot_k_trajectories(
+                        env=self.algo.env,
+                        locs_tensor=locs_tensor,
+                        k=1,
+                        save_full_filename=f"{self.save_path}/SampleTrajectory_{traj_count}.png",
+                    )
 
-                    # Convert grid coordinates to pixel coordinates for plotting
-                    traj0_grid = locs_tensor[0, :, :].cpu().numpy()  # Shape: (seqdur, 2)
-                    traj0_pixel = grid_to_pixel_coords(traj0_grid, tile_size=plot_scaling_factor)
-                    traj0_x = traj0_pixel[:, 0]
-                    traj0_y = traj0_pixel[:, 1]
-
-                    plt.imshow(env_img)
-                    plt.plot(traj0_x, traj0_y, ".-", color="cyan", linewidth=0.5, markersize=3, alpha=0.5)
-                    plt.plot(traj0_x[0], traj0_y[0], "o", color="red", markersize=5, alpha=0.8) # Start point
-                    plt.xticks([])
-                    plt.yticks([])
-
-                    plt.savefig(f"{self.save_path}/SampleTrajectory_{traj_count}.png", dpi=200)
-                    torch.save(traj0_grid, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")
+                    plt.close(fig)
+                    torch.save(plotted_locs, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")
                     print(f"Saved sample trajectory (traj {traj_count}): {self.save_path}/SampleTrajectory_{traj_count}.png")
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
@@ -253,7 +228,7 @@ class ObjectMemoryTask:
 
         # Collect observation sequence in the environment
         obs, act, state, render = self.pN_post.collectObservationSequence(
-            self.env_orig, self.agent, timesteps, includeRender=True # Critical self.env_orig
+            env=self.env_orig, agent=self.agent, tsteps=timesteps, includeRender=True # Critical self.env_orig
         )
 
         obs_pred, obs_next, _ = self.pN_post.predict(obs, act)

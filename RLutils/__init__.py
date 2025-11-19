@@ -77,6 +77,8 @@ from RLutils.storage import (
     get_algo,
     save_status,
     save_analysis_of_agent_behav,
+    get_goal_loc,
+    get_agent,
 )
 
 
@@ -135,4 +137,6 @@ __all__ = [
     "get_SR_acmodel",
     "save_status",
     "save_analysis_of_agent_behav",
+    "get_goal_loc",
+    "get_agent",
 ]

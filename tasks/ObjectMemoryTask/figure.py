@@ -1,18 +1,62 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import torch
-import re
 from pathlib import Path
+import re
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+import numpy as np
 import torch
 from omegaconf import OmegaConf
+from jaxtyping import Float
+
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 from prnn.utils import PredictiveNet, ActionEncodingsEnum, MinigridEnvNames
+from prnn.utils.Shell import FaramaMinigridShell
 from utils import get_env_var, AgentInputType
-from RLutils import get_pN, make_env
+from RLutils import get_pN, make_env, grid_to_pixel_coords
+
 RL_STORAGE = get_env_var("RL_STORAGE")
 DEVICE = torch.device("cpu")
+
+# Plotting: Trajectories
+def plot_k_trajectories(
+        env: FaramaMinigridShell,
+        locs_tensor: Float[torch.Tensor, "n_trajectories seqdur 2"],
+        k: int | None = None,
+        save_full_filename: str | None = None
+    ) -> tuple[Figure, Float[np.ndarray, "k seqdur 2"]]:
+
+    env_img = env.render(mode=None)
+    plot_scaling_factor = env_img.shape[0] // env.width
+
+    # Determine how many trajectories to plot. Default: 1
+    n_trajectories = locs_tensor.shape[0]
+    k = min(k, n_trajectories) if k is not None else 1
+
+    fig = plt.figure()
+    plt.imshow(env_img)
+
+    # Plot each of the first k trajectories
+    cmap = plt.cm.get_cmap('tab10')
+    for i in range(k):
+        color = cmap(i % 10)
+
+        traj_grid: Float[np.ndarray, "seqdur 2"] = locs_tensor[i, :, :].cpu().numpy()
+        traj_pixel = grid_to_pixel_coords(traj_grid, tile_size=plot_scaling_factor)
+        traj_x = traj_pixel[:, 0]
+        traj_y = traj_pixel[:, 1]
+
+        plt.plot(traj_x, traj_y, ".-", color=color, linewidth=0.5, markersize=3, alpha=0.5)
+        plt.plot(traj_x[0], traj_y[0], "o", color="red", markersize=5, alpha=0.8)  # Start point
+
+    plt.xticks([])
+    plt.yticks([])
+
+    if save_full_filename is not None:
+        plt.savefig(f"{save_full_filename}", dpi=200)
+
+    return fig, locs_tensor[:k, :, :].cpu().numpy()
+
 
 # Figure: Goal Modulation
 def extract_objectlearning_values(key: str, directory: str) -> np.ndarray:
