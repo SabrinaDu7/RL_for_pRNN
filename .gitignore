@@ -12,3 +12,4 @@ results/*
 omt-cur*/
 
 wandb/*
+scripts/*
