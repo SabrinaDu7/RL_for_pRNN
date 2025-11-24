@@ -135,9 +135,9 @@ class ActorCriticAgent:
             state["agent_dir"] = np.append(state["agent_dir"], env.get_agent_dir())
 
             if self.pastSR:
-                SR = self.next_SR(act[t], obs[t]) # obs that lead to the action
+                SR = self.next_SR(obs=obs[t], act=act[t]) # obs that lead to the action
             else:
-                SR = self.next_SR(act[t], obs[t + 1])
+                SR = self.next_SR(obs=obs[t + 1], act=act[t])
 
             state["SRs"] = np.append(state["SRs"], SR.cpu().numpy())
 
