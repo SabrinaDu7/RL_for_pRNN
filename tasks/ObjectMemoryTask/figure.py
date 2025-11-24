@@ -291,7 +291,12 @@ def figure_goal_modulation_vs_trajectories():
     )
 
 
-def figure_object_learning(env_name: MinigridEnvNames, run_name: str, traj_num: int, save_folder: str, testTrial: dict | None = None):
+def figure_object_learning(env_name: MinigridEnvNames, 
+                           run_name: str, 
+                           traj_num: int, 
+                           save_folder: str, 
+                           testTrial: dict | None = None,
+                           rl_storage: str = RL_STORAGE) -> None:
     """
     Generate object learning figure panels for a specific run.
     """
@@ -299,7 +304,7 @@ def figure_object_learning(env_name: MinigridEnvNames, run_name: str, traj_num: 
 
     # Setup
     plt.figure(figsize=(12, 8))
-    run_filepath = RL_STORAGE / Path(run_name)
+    run_filepath = Path(rl_storage) / Path(run_name)
     config = OmegaConf.load(run_filepath / "config.yaml")
 
     # Loading components
