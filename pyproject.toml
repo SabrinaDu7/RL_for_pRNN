@@ -37,6 +37,7 @@ dependencies = [
     "moviepy>=2.2.1",
     "kaleido>=1.1.0",
     "ultraplot>=1.0.3",
+    "ipykernel>=6.31.0",
 ]
 
 [dependency-groups]
