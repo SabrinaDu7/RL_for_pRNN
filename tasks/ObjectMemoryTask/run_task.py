@@ -32,6 +32,17 @@ def create_wandb_run(run_name: str):
     )
     return run
 
+def get_env_novel_name(room_type: str) -> MinigridEnvNames:
+    if room_type == "line":
+        return MinigridEnvNames.LRoom16LineGreen
+    elif room_type == "plus":
+        return MinigridEnvNames.LRoom16PlusGreen
+    elif room_type == "dot":
+        return MinigridEnvNames.LRoom16Goal
+    else:
+        raise ValueError(f"Invalid room type: {room_type}")
+
+
 # ===== Main =====
 @hydra.main(config_path="../../Configs", config_name="Conf1_Adel")
 def main(args: DictConfig):
@@ -46,9 +57,9 @@ def main(args: DictConfig):
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
-    env_novel_name = MinigridEnvNames.LRoom16Goal if args.tasks.room_size == 16 else MinigridEnvNames.LRoom18Goal
-    env_orig_name = MinigridEnvNames.LRoom16 if args.tasks.room_size == 16 else MinigridEnvNames.LRoom18
-
+    env_orig_name = MinigridEnvNames.LRoom16
+    env_novel_name = get_env_novel_name(args.tasks.omt.room_type_green)
+    
     print(f"Running Object Memory Task with {agent_name} agent")
     print(f"Using device: {DEVICE}")
     
