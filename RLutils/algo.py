@@ -13,6 +13,13 @@ from scipy.linalg import toeplitz
 
 from prnn.utils import PredictiveNet
 
+def check_large_jump(loc0: tuple, loc1: tuple):
+    x0, y0 = loc0
+    x1, y1 = loc1
+    if (x1 - x0)**2 > 1 or (y1 - y0)**2 > 1:
+        return True
+    else:
+        return False
 
 def compare_trajs(traj1, traj2):
     delta = (traj1 == traj2).cumprod()
@@ -201,7 +208,7 @@ class PredictivePPOAlgo:
         self.obss = []
         obs = None
 
-        for i in range(self.num_frames):
+        for i in range(self.num_frames): #LANDMINE
             # Do one agent-environment interaction
 
             action, dist, value, memory, det_action = self.next_experience()
@@ -209,7 +216,15 @@ class PredictivePPOAlgo:
             # CAREFUL: obs = observation after taking action whereas self.obs is before taking action
             obs, reward, terminated, truncated, _ = self.env.step(det_action)
             loc = self.agent_pos()
+
             done = terminated or truncated
+
+            # DEBUG
+            if check_large_jump(self.loc, loc) and i % self.prnn_seqdur != 0:
+                print("====== DEBUG START ======")
+                print(f"Large jump detected at step {i}: from {self.loc} to {loc}")
+                torch.save(self.locs, f"debug_locs{i}.pt")
+                print("====== DEBUG END ======")
 
             # Update spatial representation
             if self.pastSR:
@@ -223,6 +238,7 @@ class PredictivePPOAlgo:
             self.obs = obs
             self.locs.append(self.loc)
             self.loc = loc
+
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
             self.SRs[i] = self.SR
             self.SR = SR
@@ -269,7 +285,7 @@ class PredictivePPOAlgo:
                     self.pN.reset_state(device=str(self.device))
                 self.init_SR()
                 self.last_observations.append(self.obs)
-                self.obs = self.env.reset()
+                self.obs = self.env.reset() # Now the agent is in completely new position
                 self.log_episode_return = 0
                 self.log_episode_reshaped_return = 0
                 self.log_episode_num_frames = 0
@@ -693,7 +709,7 @@ class PredictivePPOAlgo:
             obs = [obs] * (self.k + 1)
             act = act.repeat(self.k)
 
-            obs_pN, act_pN = self.pN.env_shell.env2pred(obs, act)
+            obs_pN, act_pN = self.pN.env_shell.env2pred(obs, act) # act_pN now contains HD
             obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
             with (
                 torch.no_grad()
