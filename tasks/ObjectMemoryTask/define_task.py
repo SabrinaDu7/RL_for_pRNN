@@ -47,10 +47,13 @@ class ObjectMemoryTask:
         self.env_novel_name = env_novel_name.value
         self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
         self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-        self.goal_loc = get_goal_loc(self.env_novel)
-
+        
+        goal_loc = get_goal_loc(self.env_novel)
         with open_dict(args):
-            args.tasks.goal_loc = self.goal_loc
+            args.tasks.goal_loc = goal_loc
+        self.goal_loc = goal_loc if goal_loc is not None else [7, 2] 
+        # CRITICAL: These rooms have no goal. So object learning figures are MEANINGLESS.
+        # TODO: Just show predictions instead of object learning.
 
         self.args = args
         self.save_path = save_path
@@ -159,6 +162,7 @@ class ObjectMemoryTask:
             else:
                 exps, exp_logs = self.algo.collect_experiences()
                 logs2 = self.algo.update_parameters(exps=exps, update_params=True)
+                locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
                 
                 if self.wandb_log:
                     for key, val in logs2.items():
@@ -171,28 +175,30 @@ class ObjectMemoryTask:
             if index % analysis_interval == 0:
                 testing_tsteps = self.trajs_test * self.seqdur
                 
-                # Object Learning Analysis
-                self.getTestTrial(timesteps=testing_tsteps)
-                objectLearning = self.quantifyObjectLearning(
-                    control_location=self.args.tasks.testing.control_location,
-                    whichPhase=self.args.tasks.testing.whichPhase,
-                    traj_count=traj_count,
-                )
-                if objectLearning is not None:
-                    torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
-                    print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                if self.args.tasks.analysis.objectLearning:
+                    # Object Learning Analysis
+                    testTrial = self.getTestTrial(timesteps=testing_tsteps)
+                    objectLearning = self.quantifyObjectLearning(
+                        control_location=self.args.tasks.testing.control_location,
+                        whichPhase=self.args.tasks.testing.whichPhase,
+                        traj_count=traj_count,
+                    )
+                    if objectLearning is not None and testTrial is not None:
+                        torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
+                        torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
+                        print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
                 
-                if self.agent_type == AgentType.AC:
+                if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy:
 
                     # Occupancy Analysis
                     occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
                     occ_fig.write_image(f"{self.save_path}/Occupancy_{traj_count}.png")
 
                     locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
-                    locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur, 2)
+                    locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur + 1, 2)
 
                     # Plotting Trajectories
-                    plotted_locs: Float[np.ndarray, "k seqdur 2"]
+                    plotted_locs: Float[np.ndarray, "k seqdur+1 2"]
                     fig, plotted_locs = plot_k_trajectories(
                         env=self.algo.env,
                         locs_tensor=locs_tensor,
