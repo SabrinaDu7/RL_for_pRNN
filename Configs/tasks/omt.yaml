@@ -1,10 +1,10 @@
 defaults:
     - _self_  
 
-room_size: 16
+room_plusGreen: False 
 
 training:
-  num_trajs: 5000 # trajectories to train on in novel env
+  num_trajs: 4000 # trajectories to train on in novel env
   saving_interval: 50 # batches between saving
   analysis_interval: 25 # batches between logging
   lr_trials: 2 
@@ -13,6 +13,10 @@ training:
   continueTraining: False
 
 testing:
-  trajs: 4 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
+  trajs: 6 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
   control_location: [4, 7]
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
+
+analysis:
+  objectLearning: True
+  occupancy: True

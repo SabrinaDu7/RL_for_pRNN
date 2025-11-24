@@ -1,6 +1,6 @@
 defaults:
     - _self_ 
-    - rl: ppo # Choose algorithm subconfig
+    - rl: ppo
     - tasks: omt 
     - override hydra/hydra_logging: disabled  
     - override hydra/job_logging: disabled
@@ -45,8 +45,8 @@ hardware:
 
 
 rl:
-    steps: 2.048e7 #80 epochs for pRNN is 2.048e7 steps (implictly, each pRNN epoch is 256000 steps and with seqdur 256, it's 1000 trajectories per epoch)
-    trajs_per_batch: 8 # Number of trajectories per batch
+    steps: 2.048e7 # 80 epochs for pRNN is 2.048e7 steps (implictly, each pRNN epoch is 256000 steps and with seqdur 256, it's 1000 trajectories per epoch)
+    trajs_per_batch: 8 # Number of trajectories per batch / per collect_experiences
     trajs_total: 80000
     discount: 0.98
     lr: 3e-4
@@ -69,7 +69,7 @@ predNet:
     foder: ''
     hiddensize: 500
     pRNNtype: thRNN_5win #AutoencoderPred_LN
-    action_encoding: SpeedHD #OneHotHD
+    action_encoding: SpeedHD #OneHotHD, SpeedNextHD
     cell: LayerNormRNNCell
     lr: 3e-3
     bptttrunc: 1e8
