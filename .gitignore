@@ -9,7 +9,7 @@ RLutils/__pycache__/*
 *.ipynb
 .python*
 results/*
-omt-cur*/
+omt-*/
 
 wandb/*
 scripts/*
