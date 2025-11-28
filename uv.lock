@@ -51,6 +51,55 @@ wheels = [
 ]
 
 [[package]]
+name = "bokeh"
+version = "3.4.3"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.10' and sys_platform == 'linux'",
+    "python_full_version < '3.10' and sys_platform != 'linux'",
+]
+dependencies = [
+    { name = "contourpy", version = "1.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "jinja2", marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "packaging", marker = "python_full_version < '3.10'" },
+    { name = "pandas", marker = "python_full_version < '3.10'" },
+    { name = "pillow", marker = "python_full_version < '3.10'" },
+    { name = "pyyaml", marker = "python_full_version < '3.10'" },
+    { name = "tornado", marker = "python_full_version < '3.10'" },
+    { name = "xyzservices", marker = "python_full_version < '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c1/a8/4f750e1febe3b8d448794a7b85cd0efd2eb649eb915c990bcdd3650a5f3b/bokeh-3.4.3.tar.gz", hash = "sha256:b7c22fb0f7004b04f12e1b7b26ee0269a26737a08ded848fb58f6a34ec1eb155", size = 6410715, upload-time = "2024-07-25T10:44:33.237Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/5d/e96520996607c9b894a4716ddedc447a68351b0a8729f26ac012c8e7041b/bokeh-3.4.3-py3-none-any.whl", hash = "sha256:c6f33817f866fc67fbeb5df79cd13a8bb592c05c591f3fd7f4f22b824f7afa01", size = 7017720, upload-time = "2024-07-25T10:44:29.542Z" },
+]
+
+[[package]]
+name = "bokeh"
+version = "3.8.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.10' and sys_platform == 'linux'",
+    "python_full_version >= '3.10' and sys_platform != 'linux'",
+]
+dependencies = [
+    { name = "contourpy", version = "1.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "jinja2", marker = "python_full_version >= '3.10'" },
+    { name = "narwhals", marker = "python_full_version >= '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "packaging", marker = "python_full_version >= '3.10'" },
+    { name = "pandas", marker = "python_full_version >= '3.10'" },
+    { name = "pillow", marker = "python_full_version >= '3.10'" },
+    { name = "pyyaml", marker = "python_full_version >= '3.10'" },
+    { name = "tornado", marker = "python_full_version >= '3.10' and sys_platform != 'emscripten'" },
+    { name = "xyzservices", marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/de/42/777c0627dbd78a2a7c6c6a1c3327e8a787ec99a4b84ae93245ce49c96af7/bokeh-3.8.1.tar.gz", hash = "sha256:40df8e632de367399d06979cbd76c9e68a133a3138e1adde37c4a4715ecb4d6e", size = 6529791, upload-time = "2025-11-07T20:50:59.565Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/e7/b18bee0772d49c0f78d57f15a68e85257abf7224d9b910706abe8bd1dc0f/bokeh-3.8.1-py3-none-any.whl", hash = "sha256:89a66cb8bfe85e91bce144e3ccf3c4a6f0f1347e7006282972568ea0ecacbb00", size = 7206137, upload-time = "2025-11-07T20:50:58.108Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.10.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2103,6 +2152,28 @@ wheels = [
 ]
 
 [[package]]
+name = "rdkit"
+version = "2025.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pillow" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/86/ffa67bd5a49f5b9e809785b8628f1a53065c7c38f70fad8638a78c459cc9/rdkit-2025.9.1-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:46ea08f6ba7ed57dba015a5e4dc42776dc0359121959a70a5487ca81611ccace", size = 31690565, upload-time = "2025-10-06T09:04:02.002Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/8f/cd7fa64e38c94e174cc5dfce939d9aa1a93833252671ff07511591be0686/rdkit-2025.9.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e50a89b2755e25d7d4a69e7125daa9d96242449e2796c7eefb58e468de7933ae", size = 29138210, upload-time = "2025-10-06T09:04:06.436Z" },
+    { url = "https://files.pythonhosted.org/packages/26/d1/12b91963ebc0097985bb158097c8fb27a8c89c1fa7ab6b69a504accd0254/rdkit-2025.9.1-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:ed5030c377da16c5888f742cf81e223db29921cf03b62d31209e2aa3c4bc297b", size = 34764104, upload-time = "2025-10-06T09:04:10.347Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/14/3faee55479e8a101e646e2e78359a49138fa42bbde328033b235005ef95c/rdkit-2025.9.1-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:e5d6cb67637890bdebe5cb43c2882bd39c7ba1a6c22e0c7609b98a91895a361a", size = 36227927, upload-time = "2025-10-06T09:04:17.736Z" },
+    { url = "https://files.pythonhosted.org/packages/37/04/4e0f4ae1e2ea49f8dc828d62882380621b2a06bcba9704bc15549d246843/rdkit-2025.9.1-cp310-cp310-win_amd64.whl", hash = "sha256:707bf5e965b736f3a45f14de29ae569197b5391b7c39c1c53bc6f17bbb36d622", size = 23562396, upload-time = "2025-10-06T09:04:21.661Z" },
+    { url = "https://files.pythonhosted.org/packages/30/5a/376cc4eb9792b57531290ea0d3a538c7e93f491f57b890842ba24bf19f8f/rdkit-2025.9.1-cp39-cp39-macosx_10_15_x86_64.whl", hash = "sha256:917749c11d41fb8040f95194fc378fedc373389df1e4a1b411ac4116dd51a868", size = 31691147, upload-time = "2025-10-06T09:05:40.759Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/ee/042a156c55854143a21f9bbf140a6c95a7f21ab42cac34dada37ef1cc4d2/rdkit-2025.9.1-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:4265fc94a06b93217a223e2b9305c15240612e9894e33ac242926b48563388ef", size = 29138719, upload-time = "2025-10-06T09:05:43.984Z" },
+    { url = "https://files.pythonhosted.org/packages/24/7e/d4022a3056cf68705bcb574dd2f0951b875d767c83c1932dc9167b694393/rdkit-2025.9.1-cp39-cp39-manylinux_2_28_aarch64.whl", hash = "sha256:fceb3224a130f99873159cd82bb76198f13b664b91bb208f56d7c611c18dd65a", size = 34765135, upload-time = "2025-10-06T09:05:47.648Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/7b/18ba6ccc7ef20b963e1ef454994500b5f3da040ec2fea4c43b8be5016bce/rdkit-2025.9.1-cp39-cp39-manylinux_2_28_x86_64.whl", hash = "sha256:b0fb192846dc0ce40ffe0c3ac3fc349f4f1e221922e44380e99ce177ec3e455f", size = 36228414, upload-time = "2025-10-06T09:05:51.914Z" },
+    { url = "https://files.pythonhosted.org/packages/44/fe/429177fa328fa859b58aa3be814c3d8d834af579fb46853923c4fc3a0822/rdkit-2025.9.1-cp39-cp39-win_amd64.whl", hash = "sha256:8dd67e9291aa0561c97a1015d2a62926beafac6d2240e7110578c20fca300f00", size = 23565613, upload-time = "2025-10-06T09:05:56.528Z" },
+]
+
+[[package]]
 name = "referencing"
 version = "0.36.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2181,7 +2252,7 @@ dependencies = [
     { name = "torchvision" },
     { name = "ultraplot", version = "1.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "ultraplot", version = "1.65.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "wandb" },
+    { name = "wandb", extra = ["media"] },
     { name = "zipp" },
 ]
 
@@ -2219,7 +2290,7 @@ requires-dist = [
     { name = "torch-ac", specifier = ">=1.4.0" },
     { name = "torchvision", specifier = ">=0.20.1" },
     { name = "ultraplot", specifier = ">=1.0.3" },
-    { name = "wandb", specifier = ">=0.21.3" },
+    { name = "wandb", extras = ["media"], specifier = ">=0.21.3" },
     { name = "zipp", specifier = ">=3.17.0" },
 ]
 
@@ -2609,6 +2680,26 @@ wheels = [
 ]
 
 [[package]]
+name = "soundfile"
+version = "0.13.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+    { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/41/9b873a8c055582859b239be17902a85339bec6a30ad162f98c9b0288a2cc/soundfile-0.13.1.tar.gz", hash = "sha256:b2c68dab1e30297317080a5b43df57e302584c49e2942defdde0acccc53f0e5b", size = 46156, upload-time = "2025-01-25T09:17:04.831Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/28/e2a36573ccbcf3d57c00626a21fe51989380636e821b341d36ccca0c1c3a/soundfile-0.13.1-py2.py3-none-any.whl", hash = "sha256:a23c717560da2cf4c7b5ae1142514e0fd82d6bbd9dfc93a50423447142f2c445", size = 25751, upload-time = "2025-01-25T09:16:44.235Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/ab/73e97a5b3cc46bba7ff8650a1504348fa1863a6f9d57d7001c6b67c5f20e/soundfile-0.13.1-py2.py3-none-macosx_10_9_x86_64.whl", hash = "sha256:82dc664d19831933fe59adad199bf3945ad06d84bc111a5b4c0d3089a5b9ec33", size = 1142250, upload-time = "2025-01-25T09:16:47.583Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/e5/58fd1a8d7b26fc113af244f966ee3aecf03cb9293cb935daaddc1e455e18/soundfile-0.13.1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:743f12c12c4054921e15736c6be09ac26b3b3d603aef6fd69f9dde68748f2593", size = 1101406, upload-time = "2025-01-25T09:16:49.662Z" },
+    { url = "https://files.pythonhosted.org/packages/58/ae/c0e4a53d77cf6e9a04179535766b3321b0b9ced5f70522e4caf9329f0046/soundfile-0.13.1-py2.py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:9c9e855f5a4d06ce4213f31918653ab7de0c5a8d8107cd2427e44b42df547deb", size = 1235729, upload-time = "2025-01-25T09:16:53.018Z" },
+    { url = "https://files.pythonhosted.org/packages/57/5e/70bdd9579b35003a489fc850b5047beeda26328053ebadc1fb60f320f7db/soundfile-0.13.1-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:03267c4e493315294834a0870f31dbb3b28a95561b80b134f0bd3cf2d5f0e618", size = 1313646, upload-time = "2025-01-25T09:16:54.872Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/df/8c11dc4dfceda14e3003bb81a0d0edcaaf0796dd7b4f826ea3e532146bba/soundfile-0.13.1-py2.py3-none-win32.whl", hash = "sha256:c734564fab7c5ddf8e9be5bf70bab68042cd17e9c214c06e365e20d64f9a69d5", size = 899881, upload-time = "2025-01-25T09:16:56.663Z" },
+    { url = "https://files.pythonhosted.org/packages/14/e9/6b761de83277f2f02ded7e7ea6f07828ec78e4b229b80e4ca55dd205b9dc/soundfile-0.13.1-py2.py3-none-win_amd64.whl", hash = "sha256:1e70a05a0626524a69e9f0f4dd2ec174b4e9567f4d8b6c11d38b5c289be36ee9", size = 1019162, upload-time = "2025-01-25T09:16:59.573Z" },
+]
+
+[[package]]
 name = "stack-data"
 version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2904,6 +2995,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7a/a2/c7c24fda78513cab5686949d8cb36459dbbccbbb4b2b6fc67237ece31a00/wandb-0.22.2-py3-none-win_arm64.whl", hash = "sha256:20d2ab9aa10445aab3d60914a980f002a4f66566e28b0cd156b1e462f0080a0d", size = 17383217, upload-time = "2025-10-07T19:54:19.384Z" },
 ]
 
+[package.optional-dependencies]
+media = [
+    { name = "bokeh", version = "3.4.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "bokeh", version = "3.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "imageio" },
+    { name = "moviepy" },
+    { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pillow" },
+    { name = "plotly" },
+    { name = "rdkit" },
+    { name = "soundfile" },
+]
+
 [[package]]
 name = "wcwidth"
 version = "0.2.14"
@@ -2911,6 +3016,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/30/6b0809f4510673dc723187aeaf24c7f5459922d01e2f794277a3dfb90345/wcwidth-0.2.14.tar.gz", hash = "sha256:4d478375d31bc5395a3c55c40ccdf3354688364cd61c4f6adacaa9215d0b3605", size = 102293, upload-time = "2025-09-22T16:29:53.023Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/af/b5/123f13c975e9f27ab9c0770f514345bd406d0e8d3b7a0723af9d43f710af/wcwidth-0.2.14-py2.py3-none-any.whl", hash = "sha256:a7bb560c8aee30f9957e5f9895805edd20602f2d7f720186dfd906e82b4982e1", size = 37286, upload-time = "2025-09-22T16:29:51.641Z" },
+]
+
+[[package]]
+name = "xyzservices"
+version = "2025.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/0f/022795fc1201e7c29e742a509913badb53ce0b38f64b6db859e2f6339da9/xyzservices-2025.11.0.tar.gz", hash = "sha256:2fc72b49502b25023fd71e8f532fb4beddbbf0aa124d90ea25dba44f545e17ce", size = 1135703, upload-time = "2025-11-22T11:31:51.82Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/5c/2c189d18d495dd0fa3f27ccc60762bbc787eed95b9b0147266e72bb76585/xyzservices-2025.11.0-py3-none-any.whl", hash = "sha256:de66a7599a8d6dad63980b77defd1d8f5a5a9cb5fc8774ea1c6e89ca7c2a3d2f", size = 93916, upload-time = "2025-11-22T11:31:50.525Z" },
 ]
 
 [[package]]
