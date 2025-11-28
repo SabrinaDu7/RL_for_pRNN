@@ -208,7 +208,7 @@ class PredictivePPOAlgo:
         self.obss = []
         obs = None
 
-        for i in range(self.num_frames): #LANDMINE
+        for i in range(self.num_frames):
             # Do one agent-environment interaction
 
             action, dist, value, memory, det_action = self.next_experience()
@@ -218,6 +218,8 @@ class PredictivePPOAlgo:
             loc = self.agent_pos()
 
             done = terminated or truncated
+            if self.prnn_seqdur > 0 and (i + 1) % self.prnn_seqdur == 0:
+                done = True
 
             # DEBUG
             if check_large_jump(self.loc, loc) and i % self.prnn_seqdur != 0:
@@ -268,9 +270,6 @@ class PredictivePPOAlgo:
             self.log_episode_reshaped_return += self.rewards[i]
             self.log_episode_num_frames += 1
 
-            if self.prnn_seqdur > 0 and (i + 1) % self.prnn_seqdur == 0:
-                done = True
-
             if done: # This resets the agent's position to start next trajectory/trial
                 if self.intrinsic and reward > 1e-5:
                     if self.pastSR:
@@ -286,6 +285,7 @@ class PredictivePPOAlgo:
                 self.init_SR()
                 self.last_observations.append(self.obs)
                 self.obs = self.env.reset() # Now the agent is in completely new position
+                self.loc = self.agent_pos()
                 self.log_episode_return = 0
                 self.log_episode_reshaped_return = 0
                 self.log_episode_num_frames = 0
