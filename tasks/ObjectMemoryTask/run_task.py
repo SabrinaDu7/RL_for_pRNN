@@ -39,6 +39,8 @@ def get_env_novel_name(room_type: str) -> MinigridEnvNames:
         return MinigridEnvNames.LRoom16PlusGreen
     elif room_type == "dot":
         return MinigridEnvNames.LRoom16Goal
+    elif room_type == "extrinsic_goal":
+        return MinigridEnvNames.LRoom16ExtrinsicGoal
     else:
         raise ValueError(f"Invalid room type: {room_type}")
 
@@ -50,7 +52,7 @@ def main(args: DictConfig):
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
     date = datetime.datetime.now().strftime("%m%d-%H%M%S")
     agent_name = "cur" if args.exp.curious_agent else "rand"
-    run_name = f"{args.exp.exp_name}-{agent_name}-{date}"
+    run_name = f"{args.exp.exp_name}-{agent_name}-{args.tasks.room_type_green}-{date}"
 
     if args.logging.wandb_log:
         create_wandb_run(run_name)
@@ -58,7 +60,7 @@ def main(args: DictConfig):
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
     env_orig_name = MinigridEnvNames.LRoom16
-    env_novel_name = get_env_novel_name(args.tasks.omt.room_type_green)
+    env_novel_name = get_env_novel_name(args.tasks.room_type_green)
     
     print(f"Running Object Memory Task with {agent_name} agent")
     print(f"Using device: {DEVICE}")
@@ -68,7 +70,7 @@ def main(args: DictConfig):
         agent_type=agent_type,
         env_novel_name=env_novel_name,
         env_orig_name=env_orig_name,
-        save_path=f"{RL_STORAGE}/{run_name}",
+        save_path=f"./{run_name}",
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,
@@ -85,7 +87,7 @@ def main(args: DictConfig):
         device=DEVICE,
     )
     testTrial = omt.getTestTrial(timesteps=omt.trajs_test * omt.seqdur)
-    torch.save(testTrial, f"{RL_STORAGE}/{run_name}/testTrial_{args.tasks.training.num_trajs}.pt")
+    torch.save(testTrial, f"./{run_name}/testTrial_{args.tasks.training.num_trajs}.pt")
 
     objectLearning = omt.quantifyObjectLearning(
         control_location=args.tasks.testing.control_location,
@@ -95,8 +97,8 @@ def main(args: DictConfig):
 
     # Display results
     if objectLearning is not None: # In case control or goal locations were never viewed
-        torch.save(objectLearning, f"{RL_STORAGE}/{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt")
-        print(f"Saved object learning results (traj {args.tasks.training.num_trajs}): {RL_STORAGE}/{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt.")
+        torch.save(objectLearning, f"./{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt")
+        print(f"Saved object learning results (traj {args.tasks.training.num_trajs}): ./{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt.")
         
         print("\nResults:")
         print(f"Goal modulation: {objectLearning['goalmodulation']:.4f}")
