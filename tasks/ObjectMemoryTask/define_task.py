@@ -195,20 +195,20 @@ class ObjectMemoryTask:
                     occ_fig.write_image(f"{self.save_path}/Occupancy_{traj_count}.png")
 
                     locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
-                    locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur + 1, 2)
+                    locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur, 2)
 
                     # Plotting Trajectories
-                    plotted_locs: Float[np.ndarray, "k seqdur+1 2"]
+                    plotted_locs: Float[np.ndarray, "k seqdur 2"]
                     fig, plotted_locs = plot_k_trajectories(
                         env=self.algo.env,
                         locs_tensor=locs_tensor,
                         k=1,
                         save_full_filename=f"{self.save_path}/SampleTrajectory_{traj_count}.png",
+                        traj_count=traj_count,
                     )
 
                     plt.close(fig)
                     torch.save(plotted_locs, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")
-                    print(f"Saved sample trajectory (traj {traj_count}): {self.save_path}/SampleTrajectory_{traj_count}.png")
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
         print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
