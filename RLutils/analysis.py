@@ -543,7 +543,7 @@ class OnPolicyAnalysis:
 
 
 # Distinct function
-def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="viridis"):
+def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="viridis") -> go.Figure:
     """
     Show state-occupancy counts (no action dimension).
     1×4 layout – one heat-map per head-direction.

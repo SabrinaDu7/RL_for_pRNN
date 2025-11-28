@@ -21,6 +21,7 @@ DEVICE = torch.device("cpu")
 # Plotting: Trajectories
 def plot_k_trajectories(
         env: FaramaMinigridShell,
+        traj_count: int,
         locs_tensor: Float[torch.Tensor, "n_trajectories seqdur 2"],
         k: int | None = None,
         save_full_filename: str | None = None
@@ -51,6 +52,7 @@ def plot_k_trajectories(
 
     plt.xticks([])
     plt.yticks([])
+    plt.title(f"Sample Trajectory after training on {traj_count} trajs")
 
     if save_full_filename is not None:
         plt.savefig(f"{save_full_filename}", dpi=200)
@@ -124,7 +126,10 @@ def plot_metric_vs_trajectories(
     ylabel: str,
     title: str | None = None,
     save_path: str | None = None,
-    run_names: list[str] | None = None
+    run_names: list[str] | None = None,
+    control_y_values: list[np.ndarray] | None = None,
+    plot_controls: bool = True,
+    transparency: float = 0,
 ) -> None:
     """
     Plot metric values vs trajectory count for multiple agent types.
@@ -138,6 +143,7 @@ def plot_metric_vs_trajectories(
         title: Optional title for the plot
         save_path: Optional path to save the figure
         run_names: Optional list of run/folder names to display at bottom of plot
+        control_y_values: Optional list of control metric values to plot as dotted lines
     """
 
     if len(x_values) != len(y_values) or len(x_values) != len(agent_labels):
@@ -149,6 +155,12 @@ def plot_metric_vs_trajectories(
     if run_names is not None and len(run_names) != len(agent_labels):
         raise ValueError(
             f"Length mismatch: run_names ({len(run_names)}) must match "
+            f"agent_labels ({len(agent_labels)})"
+        )
+
+    if control_y_values is not None and len(control_y_values) != len(agent_labels):
+        raise ValueError(
+            f"Length mismatch: control_y_values ({len(control_y_values)}) must match "
             f"agent_labels ({len(agent_labels)})"
         )
 
@@ -166,8 +178,28 @@ def plot_metric_vs_trajectories(
     # Create plot
     plt.figure(figsize=(10, 6))
 
+    lines = []
     for x, y, label in zip(x_values, y_values, agent_labels):
-        plt.plot(x[:min_len], y[:min_len], marker='o', label=label, linewidth=2)
+        line = plt.plot(x[:min_len], y[:min_len], marker='o', label=label, linewidth=1)
+        lines.append(line[0])
+
+    # Plot control lines (dotted) with matching colors
+    if control_y_values is not None:
+        if plot_controls:
+            for i, (x, y) in enumerate(zip(x_values, control_y_values)):
+                plt.plot(x[:min_len], y[:min_len],
+                        linestyle='--',
+                        color=lines[i].get_color(),
+                        linewidth=1)
+
+        # Plot difference lines (goal - control) with transparency
+        for i, (x, y_goal, y_control) in enumerate(zip(x_values, y_values, control_y_values)):
+            diff = y_goal[:min_len] - y_control[:min_len]
+            plt.plot(x[:min_len], diff,
+                     linestyle='-',
+                     color=lines[i].get_color(),
+                     linewidth=1,
+                     alpha=transparency)
 
     plt.xlabel(xlabel, fontsize=12)
     plt.ylabel(ylabel, fontsize=12)
@@ -175,7 +207,11 @@ def plot_metric_vs_trajectories(
     if title is not None:
         plt.title(title, fontsize=14)
 
-    plt.legend(fontsize=11)
+    if control_y_values is not None:
+        plt.legend(fontsize=8, title="Solid: Goal | Dashed: Control | Transparent: Diff")
+    else:
+        plt.legend(fontsize=11)
+
     plt.grid(True, alpha=0.3)
 
     # Add run names at bottom if provided
@@ -259,7 +295,13 @@ def plot_example_obs_sequence_panel(
     )
 
 # Generate Figures
-def figure_goal_modulation_vs_trajectories():
+def figure_goal_modulation_vs_trajectories(
+        rand_dir: str, 
+        curious_dir: str, 
+        num_datapoints: int, 
+        transparency: float = 0,
+        plot_controls: bool = True
+        ) -> None:
     """
     Generate a plot comparing goal modulation vs trajectory count
     for random and curious agents.
@@ -267,16 +309,18 @@ def figure_goal_modulation_vs_trajectories():
 
     # Extract goal modulation and trajectory counts for random agent
     seqdur = 256
-    num_datapoints = 25
-
-    rand_dir = f"{RL_STORAGE}/omt_rand_25-11-07-16-42-10"
-    rand_goalmod = extract_objectlearning_values("goalmodulation", rand_dir)
-    rand_traj = extract_objectlearning_values("traj_count", rand_dir)
+    # num_datapoints = 25
 
     # Extract the same for curious agent
-    curious_dir = f"{RL_STORAGE}/omt_curious_25-11-07-16-37-10"
+    # curious_dir = f"{RL_STORAGE}/omt_curious_25-11-07-16-37-10"
     curious_goalmod = extract_objectlearning_values("goalmodulation", curious_dir)
     curious_traj = extract_objectlearning_values("traj_count", curious_dir)
+    curious_ctlmod = extract_objectlearning_values("ctlmodulation_diffloc", curious_dir)
+
+    # rand_dir = f"{RL_STORAGE}/omt_rand_25-11-07-16-42-10"
+    rand_goalmod = extract_objectlearning_values("goalmodulation", rand_dir)
+    rand_traj = extract_objectlearning_values("traj_count", rand_dir)
+    rand_ctlmod = extract_objectlearning_values("ctlmodulation_diffloc", rand_dir)
 
     # Plot comparison
     plot_metric_vs_trajectories(
@@ -284,10 +328,13 @@ def figure_goal_modulation_vs_trajectories():
         y_values=[rand_goalmod[:num_datapoints], curious_goalmod[:num_datapoints]],
         agent_labels=["Random", "Curious"],
         xlabel="Trajectory Count",
-        ylabel="Goal Modulation",
+        ylabel="Pixel Change",
         title=f"Goal Modulation Over Training (Seqdur = {seqdur})",
         save_path=f"results/goalmodulation{num_datapoints}.png",
-        run_names=["omt_rand_25-11-07-16-42-10", "omt_curious_25-11-07-16-37-10"]
+        run_names=[rand_dir, curious_dir],
+        control_y_values=[rand_ctlmod[:num_datapoints], curious_ctlmod[:num_datapoints]],
+        transparency=transparency,
+        plot_controls=plot_controls,
     )
 
 
@@ -296,7 +343,8 @@ def figure_object_learning(env_name: MinigridEnvNames,
                            traj_num: int, 
                            save_folder: str, 
                            testTrial: dict | None = None,
-                           rl_storage: str = RL_STORAGE) -> None:
+                           rl_storage: str = RL_STORAGE,
+                           show: bool = False) -> None:
     """
     Generate object learning figure panels for a specific run.
     """
@@ -335,4 +383,8 @@ def figure_object_learning(env_name: MinigridEnvNames,
 
     plt.title(f'Object Learning after training on {traj_num} trajectories\nNovel Object Loc: {config.tasks.goal_loc}', fontsize=9, loc='right', y=6)
     plt.tight_layout()
-    saveFig(fig=plt.gcf(), savename="ObjectLearning_" + run_name, savepath=save_folder, filetype="png")
+    if show:
+        plt.show()
+    else:
+        saveFig(fig=plt.gcf(), savename="ObjectLearning_" + run_name, savepath=save_folder, filetype="png")
+        
