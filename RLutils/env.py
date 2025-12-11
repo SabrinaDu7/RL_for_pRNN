@@ -49,19 +49,25 @@ def get_env_name(env):
 def make_env(
     env_key: str,
     input_type: str,
+    agent_start_pos: tuple[int, int] | None = None,
+    agent_start_dir: int | None = None,
     seed=0,
     vid_folder="",
     vid_n_episodes=0,
     wrapper=None,
     render_mode="rgb_array",
     act_enc: str | None = None,
-    **kwargs,
+    **kwargs, # e.g., subroom_size and open_all_paths for FourRooms, size for LRoom
 ):
     assert input_type in AgentInputType
     assert env_key in MinigridEnvNames
     assert act_enc in ActionEncodingsEnum
 
-    env = gym.make(env_key, render_mode=render_mode)
+    env = gym.make(env_key, 
+                   agent_start_pos=agent_start_pos, 
+                   agent_start_dir=agent_start_dir,
+                   render_mode=render_mode,
+                   **kwargs)
 
     if input_type == "Visual_FO":
         # Not RGB one here because we want RL agent to have as much info as possible

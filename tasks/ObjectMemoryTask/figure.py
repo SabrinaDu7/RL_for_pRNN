@@ -330,7 +330,7 @@ def figure_goal_modulation_vs_trajectories(
         xlabel="Trajectory Count",
         ylabel="Pixel Change",
         title=f"Goal Modulation Over Training (Seqdur = {seqdur})",
-        save_path=f"results/goalmodulation{num_datapoints}.png",
+        save_path=None,
         run_names=[rand_dir, curious_dir],
         control_y_values=[rand_ctlmod[:num_datapoints], curious_ctlmod[:num_datapoints]],
         transparency=transparency,
@@ -381,7 +381,7 @@ def figure_object_learning(env_name: MinigridEnvNames,
         whichview=1,
     )
 
-    plt.title(f'Object Learning after training on {traj_num} trajectories\nNovel Object Loc: {config.tasks.goal_loc}', fontsize=9, loc='right', y=6)
+    plt.title(f'Object Learning after training on {traj_num} trajectories\nNovel Object Loc: {config.tasks.new_obj_pos}', fontsize=9, loc='right', y=6)
     plt.tight_layout()
     if show:
         plt.show()

@@ -178,9 +178,9 @@ def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
     env_rgb_wrapper = env_farama_shell.env
     env_order_enforcing = env_rgb_wrapper.env
     env_passive_checker = env_order_enforcing.env
-    env_LEnv_goal = env_passive_checker.env
+    env_goal = env_passive_checker.env
 
-    goal_loc = env_LEnv_goal.goal_pos
+    goal_loc = env_goal.goal_pos
     return goal_loc
 
 
