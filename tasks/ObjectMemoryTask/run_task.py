@@ -9,10 +9,12 @@ import datetime
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from prnn.utils import MinigridEnvNames
+from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
+from prnn.utils.Shell import FaramaMinigridShell
 from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
 from tasks.ObjectMemoryTask.figure import figure_object_learning
-from utils import get_wandb_env_vars, get_ckpt_env_vars, get_env_var, AgentType
+from utils import get_wandb_env_vars, get_ckpt_env_vars, get_env_var, AgentType, AgentInputType
+from RLutils import make_env
  
 # ===== Constants =====
 DEVICE = torch.device("cuda")
@@ -32,15 +34,16 @@ def create_wandb_run(run_name: str):
     )
     return run
 
-def get_env_novel_name(room_type: str) -> MinigridEnvNames:
+def get_novel_env(room_type: str) -> FaramaMinigridShell:
     if room_type == "line":
-        return MinigridEnvNames.LRoom16LineGreen
+        return make_env(env_key=MinigridEnvNames.LRoomLineGreen, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "plus":
-        return MinigridEnvNames.LRoom16PlusGreen
+        return make_env(env_key=MinigridEnvNames.LRoom, plus_color="green", input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "dot":
-        return MinigridEnvNames.LRoom16Goal
-    elif room_type == "extrinsic_goal":
-        return MinigridEnvNames.LRoom16ExtrinsicGoal
+        # LANDMINE: Hardcoded new object position
+        return make_env(env_key=MinigridEnvNames.LRoom, new_obj_pos=[7, 2], input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+    elif room_type == "goal":
+        return make_env(env_key=MinigridEnvNames.LRoomGoal, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     else:
         raise ValueError(f"Invalid room type: {room_type}")
 
@@ -59,17 +62,21 @@ def main(args: DictConfig):
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
-    env_orig_name = MinigridEnvNames.LRoom16
-    env_novel_name = get_env_novel_name(args.tasks.room_type_green)
+    # Get environments
+    env_orig_name = MinigridEnvNames.LRoom
+    env_orig = make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+    env_novel = get_novel_env(args.tasks.room_type_green)
+    assert env_novel.get_goal_loc() is None, "Novel environment cannot have extrinsic goal"
     
+    # Run task
     print(f"Running Object Memory Task with {agent_name} agent")
     print(f"Using device: {DEVICE}")
     
     omt = ObjectMemoryTask(
         args=args,
         agent_type=agent_type,
-        env_novel_name=env_novel_name,
-        env_orig_name=env_orig_name,
+        env_orig=env_orig,
+        env_novel=env_novel,
         save_path=f"./{run_name}",
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
@@ -106,7 +113,11 @@ def main(args: DictConfig):
 
         # Generate plots
         print(f"Generating plots in: {RESULTS_SAVE_FOLDER}")
-        figure_object_learning(env_name=env_orig_name, run_name=run_name, traj_num=args.tasks.training.num_trajs, save_folder=RESULTS_SAVE_FOLDER)
+        figure_object_learning(env_name=env_orig_name, 
+                               run_name=run_name, 
+                               traj_num=args.tasks.training.num_trajs, 
+                               save_folder=run_name,
+                               rl_storage=".",)
         print("Done!")
     
     else:

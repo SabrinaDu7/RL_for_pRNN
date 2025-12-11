@@ -9,7 +9,6 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 
 from RLutils import (
     get_pN,
-    make_env,
     get_SR_acmodel,
     get_obss_preprocessor,
     get_algo,
@@ -17,16 +16,12 @@ from RLutils import (
     PredictivePPOAlgo,
     get_occupancy_fig,
     get_agent,
-    get_goal_loc
 )
 
-from prnn.utils import (
-    MinigridEnvNames,
-    ActionEncodingsEnum,
-    save_pN,
-)
+from prnn.utils import save_pN
+from prnn.utils.Shell import FaramaMinigridShell
 from tasks.ObjectMemoryTask.figure import plot_k_trajectories
-from utils import AgentInputType, AgentType
+from utils import AgentType
 
 
 class ObjectMemoryTask:
@@ -34,8 +29,8 @@ class ObjectMemoryTask:
         self,
         args: DictConfig,
         agent_type: AgentType,
-        env_novel_name: MinigridEnvNames,
-        env_orig_name: MinigridEnvNames,
+        env_orig: FaramaMinigridShell,
+        env_novel: FaramaMinigridShell,
         device: torch.device,
         save_path: str,
         acmodel_status_ckpt: str,
@@ -44,14 +39,13 @@ class ObjectMemoryTask:
     ):
         seed(args.exp.seed)
 
-        self.env_novel_name = env_novel_name.value
-        self.env_novel = make_env(env_key=env_novel_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-        self.env_orig = make_env(env_key=env_orig_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-        
-        goal_loc = get_goal_loc(self.env_novel)
+        self.env_orig = env_orig
+        self.env_novel = env_novel
+
+        self.new_obj_pos = self.env_novel.get_new_obj_pos()
         with open_dict(args):
-            args.tasks.goal_loc = goal_loc
-        self.goal_loc = goal_loc if goal_loc is not None else [7, 2] 
+            args.tasks.new_obj_pos = self.new_obj_pos
+
         # CRITICAL: These rooms have no goal. So object learning figures are MEANINGLESS.
         # TODO: Just show predictions instead of object learning.
 
@@ -270,10 +264,10 @@ class ObjectMemoryTask:
         obs_np = self.pN_post.env_shell.pred2np(obs_pred, whichPhase=whichPhase)
         obs_notrain_np = self.pN_post.env_shell.pred2np(obs_pred_notrain, whichPhase=whichPhase)
         
-        locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.goal_loc, pos, HD)
+        locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.new_obj_pos, pos, HD)
         conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
 
-        locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(obs_notrain_np, self.goal_loc, pos, HD)
+        locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(obs_notrain_np, self.new_obj_pos, pos, HD)
         conobs_notrain, _, _ = get_obs_at_loc(obs_notrain_np, control_location, pos, HD)
 
         if locobs is None or conobs is None:
