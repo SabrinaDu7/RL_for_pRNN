@@ -6,6 +6,9 @@ omt-rand *EXTRA:
     uv run tasks/ObjectMemoryTask/run_task.py exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
 
 # Training
+train *EXTRA:
+    uv run trainRL_Adel.py exp.exp_name=pRNN predNet.pRNNtype=thRNN_5win {{EXTRA}}
+
 train-prev *EXTRA:
     uv run trainRL_Adel.py exp.exp_name=pRNN-prev predNet.pRNNtype=thRNN_5win_prevAct predNet.action_encoding=SpeedNextHD {{EXTRA}}
 

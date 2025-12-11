@@ -39,3 +39,10 @@ def get_logdir_env_var() -> str:
     """
     logdir = get_env_var("RL_STORAGE")
     return logdir
+
+
+def get_root_dir_env_var() -> str:
+    """Get and validate root directory environment variable.
+    """
+    root_dir = get_env_var("ROOT_DIR")
+    return root_dir
