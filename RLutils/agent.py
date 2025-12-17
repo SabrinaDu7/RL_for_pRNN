@@ -72,12 +72,13 @@ class Agent:
 
 
 class ActorCriticAgent:
-    def __init__(self, action_space, acmodel, prnn, device, pastSR=True):
+    def __init__(self, action_space, acmodel, prnn, device, argmax: bool, pastSR=True):
         self.action_space = action_space
         self.acmodel = acmodel
         self.prnn = prnn
         self.device = device
         self.pastSR = pastSR
+        self.argmax = argmax
         self.name = "ActorCritic Agent"
         assert pastSR is not ("prevAct" in str(prnn.pRNN))
 
@@ -125,8 +126,13 @@ class ActorCriticAgent:
             preprocessed_obs = preprocess_obss([obs[t]], device=self.device)
             with torch.no_grad():
                 dist, _ = self.acmodel(preprocessed_obs, SR=SR)
-                action = dist.sample()
-                act[t] = action.cpu().numpy()
+
+                if self.argmax:
+                    actions = dist.probs.max(1, keepdim=True)[1]
+                else:
+                    actions = dist.sample()
+
+                act[t] = actions.cpu().numpy()
 
             obs[t + 1] = env.step(act[t])[0]
             state["agent_pos"] = np.append(
@@ -144,7 +150,7 @@ class ActorCriticAgent:
             if includeRender:
                 render[t + 1] = env.render(mode=None)
 
-        self.prnn.pRNN.to("cpu")
+        self.prnn.pRNN.to("cpu") # LANDMINE: WHERE SETTING TO CPU AGAIN???
 
         act = np.array(act).reshape(-1)
         return obs, act, state, render
