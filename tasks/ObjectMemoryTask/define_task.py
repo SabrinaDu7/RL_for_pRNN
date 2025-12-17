@@ -92,11 +92,11 @@ class ObjectMemoryTask:
 
         self.agent_type = agent_type
         self.agent = get_agent(
-            self.env_novel, 
-            self.agent_type, 
-            self.ac_model, 
-            self.pN_post, 
-            device
+            env=self.env_novel, 
+            agent_Type=self.agent_type, 
+            ac_model=self.ac_model, 
+            prnn=self.pN_post, 
+            device=device
         )
 
         # Train the decoder
@@ -168,7 +168,15 @@ class ObjectMemoryTask:
             
             if index % analysis_interval == 0:
                 testing_tsteps = self.trajs_test * self.seqdur
-                
+
+                # Plotting Trajectories
+                self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
+                self.pN_post.plotSampleTrajectory(
+                        env=self.env_novel,
+                        agent=self.agent,
+                    ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
+                self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
+
                 if self.args.tasks.analysis.objectLearning:
                     # Object Learning Analysis
                     testTrial = self.getTestTrial(timesteps=testing_tsteps)
@@ -191,8 +199,7 @@ class ObjectMemoryTask:
                     locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
                     locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur, 2)
 
-                    # Plotting Trajectories
-                    plotted_locs: Float[np.ndarray, "k seqdur 2"]
+                    """plotted_locs: Float[np.ndarray, "k seqdur 2"]
                     fig, plotted_locs = plot_k_trajectories(
                         env=self.algo.env,
                         locs_tensor=locs_tensor,
@@ -202,7 +209,7 @@ class ObjectMemoryTask:
                     )
 
                     plt.close(fig)
-                    torch.save(plotted_locs, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")
+                    torch.save(plotted_locs, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")"""
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
         print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
@@ -225,6 +232,10 @@ class ObjectMemoryTask:
         
         self.pN_post.pRNN.eval()
         self.pN_control.pRNN.eval()
+        
+        if hasattr(self.agent, "acmodel"):
+            self.agent.acmodel.eval() # type: ignore
+            self.agent.argmax = True # type: ignore
 
         # Collect observation sequence in the environment
         obs, act, state, render = self.pN_post.collectObservationSequence(
@@ -245,6 +256,9 @@ class ObjectMemoryTask:
         self.pN_post.pRNN.to(original_device)
         self.pN_control.pRNN.to(original_device)
         self.pN_post.pRNN.train()
+        if hasattr(self.agent, "acmodel"):
+            self.agent.acmodel.train() # type: ignore
+            self.agent.argmax = False # type: ignore
 
         self.testTrial = objectTest
         return objectTest
