@@ -15,6 +15,7 @@ hydra:
 
 exp:
     env_name: MiniGrid-LRoom-v0 # Name of the environment to train on [MiniGrid-FakeLava-5x5-3x4-neg02-v0, MiniGrid-DonutLava-17x17-neg02-v0]
+    env_subroom_size: 8 # Size of subrooms for FourRooms env
     opt_return: 0.85 # Optimal return for the environment
     # wrapper: 
     #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
