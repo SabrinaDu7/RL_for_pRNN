@@ -12,7 +12,7 @@ from prnn.utils import (
 )
 
 import RLutils
-from RLutils import DEVICE, ACModelSR, PredictivePPOAlgo, ActorCriticAgent
+from RLutils import DEVICE, ACModel, ACModelSR, PredictivePPOAlgo, ActorCriticAgent
 from utils import (
     get_ckpt_env_vars, 
     load_statedict_from_acmodel_status, 
@@ -187,16 +187,27 @@ def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
 def get_agent(
         env: FaramaMinigridShell, 
         agent_Type: AgentType, 
-        ac_model: ACModelSR, 
-        pN_post: PredictiveNet, 
-        device: torch.device,
-        rand_act_prob: np.ndarray = RAND_ACT_PROBA
+        rand_act_prob: np.ndarray = RAND_ACT_PROBA,
+        prnn: PredictiveNet | None = None, 
+        device: torch.device | None = None,
+        ac_model: ACModel | None = None, 
+        argmax = False,
+        pastSR = True,
     ) -> ActorCriticAgent | RandomActionAgent:
 
     if agent_Type == AgentType.RANDOM:
         agent = RandomActionAgent(env.action_space, rand_act_prob)
     elif agent_Type == AgentType.AC:
-        agent = ActorCriticAgent(env.action_space, ac_model, pN_post, device)
+        assert ac_model is not None, "ACModel must be provided for ActorCriticAgent"
+        assert prnn is not None, "PredictiveNet must be provided for ActorCriticAgent"
+        assert device is not None, "Device must be provided for ActorCriticAgent"
+
+        agent = ActorCriticAgent(action_space=env.action_space, 
+                                 acmodel=ac_model, 
+                                 prnn=prnn, 
+                                 device=device, 
+                                 argmax=argmax,
+                                 pastSR=pastSR)
 
     return agent
 
