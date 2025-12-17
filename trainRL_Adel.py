@@ -6,6 +6,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import time
 import datetime
 import numpy as np
+from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
 
@@ -14,7 +15,7 @@ import hydra
 import wandb
 from tqdm import tqdm
 
-from utils import get_ckpt_env_vars, get_wandb_env_vars, StatusCkptKeys
+from utils import get_ckpt_env_vars, get_wandb_env_vars, StatusCkptKeys, AgentType
 import RLutils
 from RLutils import (
     DEVICE,
@@ -31,6 +32,7 @@ from RLutils import (
     FakePlaceCells,
     OnPolicyAnalysis,
     mutual_info_policy,
+    get_agent,
 )
 
 from prnn.utils import (
@@ -92,14 +94,14 @@ class RL_Trainer(object):
 
         print(f"Device: {DEVICE}\n")
 
-        # Load environment
+        # Load environment (default size = 16)
         env = RLutils.make_env(
-            args.exp.env_name,
-            args.exp.input_type,
-            args.exp.seed + 10000,
-            self.video_dir,
-            args.logging.video_log_freq,
+            env_key=args.exp.env_name,
+            input_type=args.exp.input_type,
+            seed=args.exp.seed + 10000,
             act_enc=args.predNet.action_encoding,
+            open_all_paths=False, # Only applicable for FourRooms env
+            subroom_size=args.exp.env_subroom_size, # Only applicable for FourRooms env
         )
         print("Environment loaded\n")
 
@@ -358,7 +360,8 @@ class RL_Trainer(object):
         # Create random agent for analysis
 
         action_probability = np.array([0.15, 0.15, 0.6, 0.1])
-        randomagent = RandomActionAgent(env.action_space, action_probability)
+        randomagent = get_agent(env=env, rand_act_prob=action_probability, agent_Type=AgentType.RANDOM)
+        ac_agent = get_agent(env=env, agent_Type=AgentType.AC, prnn=predictiveNet, device=DEVICE, ac_model=acmodel, pastSR=pastSR)
 
         # Train model
         num_frames = status[StatusCkptKeys.NUM_FRAMES.value]
@@ -396,6 +399,12 @@ class RL_Trainer(object):
                     num_frames_per_episode = RLutils.synthesize(
                         logs["num_frames_per_episode"]
                     )
+
+                    predictiveNet.plotSampleTrajectory(
+                            env=env,
+                            agent=ac_agent,
+                        ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
+                    predictiveNet.pRNN.to(DEVICE) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
 
                     if not args.exp.random_action_agent:
                         return_per_episode = RLutils.synthesize(
@@ -468,13 +477,12 @@ class RL_Trainer(object):
                 ):
                     if prnn_eval_bool and not args.exp.CANN:
                         predictiveNet.pRNN.to("cpu")
+
                         if args.exp.onpolicy_prnn_eval:
                             analysisagent = (
                                 randomagent
                                 if args.exp.random_action_agent
-                                else ActorCriticAgent(
-                                    env.action_space, acmodel, predictiveNet, DEVICE, pastSR
-                                )
+                                else ac_agent
                             )
 
                             _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
@@ -491,9 +499,7 @@ class RL_Trainer(object):
 
                         if args.exp.offpolicy_prnn_eval:
                             analysisagent = (
-                                ActorCriticAgent(
-                                    env.action_space, acmodel, predictiveNet, DEVICE, pastSR
-                                )
+                                ac_agent
                                 if args.exp.random_action_agent
                                 else randomagent
                             )
@@ -511,6 +517,7 @@ class RL_Trainer(object):
                             )
 
                         predictiveNet.pRNN.to(DEVICE)
+                        
                     if args.exp.analyze_agent_behav:
                         opa = OnPolicyAnalysis(algo, timesteps=25000)
                         if self.wandb_log:
