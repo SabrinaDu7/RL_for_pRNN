@@ -46,7 +46,6 @@ from prnn.utils import (
 )
 from utils import load_statedict_from_acmodel_status
 
-PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
 RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
 
@@ -108,8 +107,9 @@ class RL_Trainer(object):
         # Load training status
 
         if args.logging.load_acmodel:
+            prnn_ckpt, acmodel_status_ckpt = get_ckpt_env_vars()
             status = torch.load(
-                ACMODEL_STATUS_CKPT,
+                acmodel_status_ckpt,
                 map_location=DEVICE,
                 weights_only=False
             )
@@ -148,13 +148,14 @@ class RL_Trainer(object):
 
         # Load pRNN
         if args.logging.load_worldmodel:
-            load_pN(model_ckpt_filepath=PRNN_CKPT, 
+            prnn_ckpt, acmodel_status_ckpt = get_ckpt_env_vars()
+            load_pN(model_ckpt_filepath=prnn_ckpt, 
                     device=DEVICE,
                     pRNNtype=args.predNet.pRNNtype, 
                     predictive_net=predictiveNet)
             
             print("\n" + "=" * 10)
-            print(f"Existing pRNN model found at {PRNN_CKPT} and loaded from state dict")
+            print(f"Existing pRNN model found at {prnn_ckpt} and loaded from state dict")
             print("=" * 10 + "\n")
 
         print("pRNN model initialized\n")
@@ -224,7 +225,7 @@ class RL_Trainer(object):
                 status_key=StatusCkptKeys.MODEL_STATE,
                 device=DEVICE,
             )
-            print(f"Existing AC model found at {ACMODEL_STATUS_CKPT}")
+            print(f"Existing AC model found.")
             print("=" * 10 + "\n")
 
         acmodel.to(DEVICE)
