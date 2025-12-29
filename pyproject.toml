@@ -82,7 +82,7 @@ include = [
 
 [tool.uv.sources]
 minigrid = { path = "../minigrid", editable=true }
-prnn = { path = "../pRNN", editable=true }
+prnn = { path = "../pRNN-new", editable=true }
 
 [tool.pyright]
 venvPath = "."
@@ -90,7 +90,7 @@ venv = ".venv"
 include = ["RLutils", "tests", "utils", "tasks", "*.py"]
 extraPaths = [
     "../minigrid",
-    "../pRNN",
+    "../pRNN-new",
 ]
 
 [project.urls]
