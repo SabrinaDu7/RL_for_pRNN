@@ -65,12 +65,11 @@ class RL_Trainer(object):
         self.model_dir = RLutils.get_model_dir(self.model_name)
         RLutils.create_folders_if_necessary(self.model_dir)
 
-        self.video_dir = (
-            RLutils.get_video_dir(self.model_name)
-            if params.logging.video_log_freq != 0
-            else ""
-        )
-        RLutils.create_folders_if_necessary(self.video_dir)
+        if params.logging.video_log_freq != 0:
+            self.video_dir = RLutils.get_video_dir(self.model_name)
+            RLutils.create_folders_if_necessary(self.video_dir)
+        else:
+            self.video_dir = ""
 
         print("\n\n\nLOGGING TO: ", self.model_dir, "\n\n\n")
 
@@ -523,7 +522,12 @@ class RL_Trainer(object):
                         opa = OnPolicyAnalysis(algo, timesteps=25000)
                         if self.wandb_log:
                             wandb.log({"MI_policy_eval": opa.mi})
-                        RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
+                            wandb.log({"OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
+                            wandb.log({"OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
+                            wandb.log({"OPA_Error_Map": wandb.Plotly(opa.plot_occupancy())})
+
+                        else:
+                            RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
 
                 if args.logging.early_stop:
                     if (
