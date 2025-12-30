@@ -233,7 +233,6 @@ def plot_metric_vs_trajectories(
 def plot_obj_pixel_change_panel(objectLearning: dict) -> None:
     """
     Create a boxplot panel showing pixel changes at goal and control locations.
-    Overlays mean green channel changes with annotations.
 
     Args:
         objectLearning: Dictionary containing 'objectloc_deltaobs' and 'controlloc_deltaobs'
@@ -255,28 +254,6 @@ def plot_obj_pixel_change_panel(objectLearning: dict) -> None:
     plt.plot([3, 3], plt.ylim(), "k:")
     plt.xticks([1, 1.8, 2.2, 3.5, 4.3, 4.7], ["G", "R", "B", "G", "R", "B"])
     plt.ylabel("Change in Predicted Observation", fontsize=6)
-
-    # Calculate summary statistics for green channel
-    goalmodulation = np.mean(deltaobs_goal[:, 1])  # Mean green change at target
-    ctlmodulation = np.mean(deltaobs_ctl[:, 1])  # Mean green change at control
-
-    # Overlay mean values as red diamonds on green boxplots
-    plt.plot(1, goalmodulation, 'rD', markersize=8, zorder=10)
-    plt.plot(3.5, ctlmodulation, 'rD', markersize=8, zorder=10)
-
-    # Add text annotations with titles
-    ylim = plt.ylim()
-    y_top = ylim[1]
-    y_offset = (ylim[1] - ylim[0]) * 0.05  # 5% offset from top
-
-    plt.text(1.4, y_top - y_offset,
-             f'Change in G (target location)\nμ = {goalmodulation:.3f}',
-             ha='center', va='top', fontsize=6,
-             bbox=dict(boxstyle='round,pad=0.4', facecolor='yellow', alpha=0.5))
-    plt.text(4.1, y_top - y_offset,
-             f'Change in G (ctrl locations)\nμ = {ctlmodulation:.3f}',
-             ha='center', va='top', fontsize=6,
-             bbox=dict(boxstyle='round,pad=0.4', facecolor='yellow', alpha=0.5))
 
 
 def plot_example_obs_sequence_panel(
