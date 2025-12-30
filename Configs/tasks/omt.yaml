@@ -14,7 +14,7 @@ training:
 
 testing:
   trajs: 6 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
-  control_location: [4, 7]
+  control_location: [[4, 7], [2, 9], [4, 11], [3, 2]] # List of control locations.
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
 
 analysis:

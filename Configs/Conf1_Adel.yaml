@@ -85,7 +85,7 @@ predNet:
 
 logging:
     wandb_log: True
-    video_log_freq: 500 # Number of episodes between video logs (0: no videos)
+    video_log_freq: 0 # Number of episodes between video logs (0: no videos)
     log_interval: 1 # Number of updates between two logs
     analysis_interval: 200 # Number of updates between analysis events (0: no analysis)
     save_interval: 120 # Number of updates between two saves (0: don't save)
