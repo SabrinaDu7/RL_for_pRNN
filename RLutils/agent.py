@@ -94,7 +94,14 @@ class ActorCriticAgent:
 
         return SR
 
-    def getObservations(self, env, tsteps, reset=True, includeRender=False, **kwargs):
+    def getObservations(self, 
+                        env, 
+                        tsteps,
+                        reset=True, 
+                        includeRender=False,
+                        start_pos: tuple | None = None,
+                        start_dir: int | None = None, 
+                        **kwargs):
         self.prnn.pRNN.to(self.device)
         render = False
 
@@ -103,6 +110,7 @@ class ActorCriticAgent:
 
         if reset:
             obs[0] = env.reset()
+
         else:
             o = env.env.gen_obs()
             obs[0] = env.env.observation(o)
@@ -128,7 +136,7 @@ class ActorCriticAgent:
                 dist, _ = self.acmodel(preprocessed_obs, SR=SR)
 
                 if self.argmax:
-                    actions = dist.probs.max(1, keepdim=True)[1]
+                    actions = dist.probs.max(1)[1]
                 else:
                     actions = dist.sample()
 
