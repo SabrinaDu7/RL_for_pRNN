@@ -6,6 +6,7 @@ import wandb
 from jaxtyping import Float
 from tqdm import tqdm
 from omegaconf import DictConfig, OmegaConf, open_dict
+from typing import TypedDict, Optional, Iterable
 
 from RLutils import (
     get_pN,
@@ -16,12 +17,18 @@ from RLutils import (
     PredictivePPOAlgo,
     get_occupancy_fig,
     get_agent,
+    synthesize
 )
 
 from prnn.utils import save_pN
 from prnn.utils.Shell import FaramaMinigridShell
-from tasks.ObjectMemoryTask.figure import plot_k_trajectories
+from tasks.ObjectMemoryTask.figure import figure_object_learning, figure_goal_modulation_vs_trajectories
 from utils import AgentType
+
+class State(TypedDict):
+    agent_pos: Float[np.ndarray, "T+1 2"]
+    agent_dir: Float[np.ndarray, "T+1"]
+    SRs: Optional[Float[torch.Tensor, "(T+1) * hidden_size"]] # Not present with RandomActionAgent
 
 
 class ObjectMemoryTask:
@@ -58,8 +65,8 @@ class ObjectMemoryTask:
         self.trajs_test = args.tasks.testing.trajs
 
         # Create save directory and save config
-        os.makedirs(self.save_path, exist_ok=True)
-        OmegaConf.save(args, f"{self.save_path}/config.yaml")
+        # os.makedirs(self.save_path, exist_ok=True)
+        # OmegaConf.save(args, f"{self.save_path}/config.yaml")
 
         self.pN_control = get_pN(args=args, env=self.env_orig, device=device, pRNN_ckpt=prnn_ckpt)
         self.pN_post = self.pN_control.copy()
@@ -148,6 +155,9 @@ class ObjectMemoryTask:
             traj_count = index * self.trajs_per_batch
             step_count = traj_count * self.seqdur
 
+            if self.wandb_log:
+                wandb.log({"step_count": step_count})
+
             # 125 batches = 125 * 4 gradient steps,
             # 8 trajs per batch = 2048 steps per batch
 
@@ -159,12 +169,14 @@ class ObjectMemoryTask:
                 locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
                 
                 if self.wandb_log:
+                    cur_rewards = synthesize(exp_logs["curious_rewards"], abs=True)
+                    wandb.log({f"Train/cur_rewards": cur_rewards["mean"]})
                     for key, val in logs2.items():
-                        wandb.log({f"Train/{key}": val}, step=step_count)
+                        wandb.log({f"Train/{key}": val})
 
-            if index % saving_interval == 0:
-                print(f"Completed {index * self.trajs_per_batch} trajectories = {index * self.trajs_per_batch * self.seqdur} steps")
-                save_pN(self.pN_post, f"{self.save_path}/pN-{traj_count}.pt")
+            # if index % saving_interval == 0:
+                # print(f"Completed {index * self.trajs_per_batch} trajectories = {index * self.trajs_per_batch * self.seqdur} steps")
+                # save_pN(self.pN_post, f"{self.save_path}/pN-{traj_count}.pt")
             
             if index % analysis_interval == 0:
                 testing_tsteps = self.trajs_test * self.seqdur
@@ -179,37 +191,39 @@ class ObjectMemoryTask:
 
                 if self.args.tasks.analysis.objectLearning:
                     # Object Learning Analysis
-                    testTrial = self.getTestTrial(timesteps=testing_tsteps)
-                    objectLearning = self.quantifyObjectLearning(
-                        control_location=self.args.tasks.testing.control_location,
-                        whichPhase=self.args.tasks.testing.whichPhase,
-                        traj_count=traj_count,
-                    )
+                    with torch.no_grad():
+                        testTrial = self.getTestTrial(n_trajs=self.trajs_test)
+                        objectLearning = self.quantifyObjectLearning(
+                            control_location=self.args.tasks.testing.control_location,
+                            whichPhase=self.args.tasks.testing.whichPhase,
+                            traj_count=traj_count,
+                        )
                     if objectLearning is not None and testTrial is not None:
-                        torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
-                        torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
-                        print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                        # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
+                        # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
+                        # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                        
+                        if self.wandb_log:
+                            obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
+                                                               run_name=self.save_path, 
+                                                               traj_num=traj_count, 
+                                                               save_folder=self.save_path,
+                                                               objectLearning=objectLearning,
+                                                               testTrial=testTrial,
+                                                               rl_storage=".",
+                                                               config=self.args,
+                                                               pN=self.pN_post,
+                                                               show=False,
+                                                               save=False)
+                            
+                            wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
+                            wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
+                            wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
+                            wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
                 
-                if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy:
-
-                    # Occupancy Analysis
+                if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy and self.wandb_log:
                     occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
-                    occ_fig.write_image(f"{self.save_path}/Occupancy_{traj_count}.png")
-
-                    locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
-                    locs_tensor = torch.tensor(locs, device=device).reshape(self.trajs_per_batch, self.seqdur, 2)
-
-                    """plotted_locs: Float[np.ndarray, "k seqdur 2"]
-                    fig, plotted_locs = plot_k_trajectories(
-                        env=self.algo.env,
-                        locs_tensor=locs_tensor,
-                        k=1,
-                        save_full_filename=f"{self.save_path}/SampleTrajectory_{traj_count}.png",
-                        traj_count=traj_count,
-                    )
-
-                    plt.close(fig)
-                    torch.save(plotted_locs, f"{self.save_path}/SampleTrajectory_{traj_count}.pt")"""
+                    wandb.log({"Analysis/Occupancy": wandb.Plotly(occ_fig)})
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
         print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
@@ -221,8 +235,19 @@ class ObjectMemoryTask:
 
     def getTestTrial(
         self,
-        timesteps: int,
+        n_trajs: int,
     ):
+        # Type checking
+        render_size = self.env_orig.render_size
+        _, view_size, C = self.env_orig.obs_shape
+        B = n_trajs
+        T = self.seqdur
+        A = self.env_orig.getActSize()
+
+        obs: Float[torch.Tensor, "B T+1 X"] # NOTE: To check with Alex, what is X here? obs.shape=torch.Size([1, 257, 147])
+        act: Float[torch.Tensor, "B T A"] # Ex: act.shape=torch.Size([1, 256, 8]) for SpeedHD
+        state: State
+ 
         # Store original device before moving to CPU
         original_device = next(self.pN_post.pRNN.parameters()).device
 
@@ -234,30 +259,54 @@ class ObjectMemoryTask:
         self.pN_control.pRNN.eval()
         
         if hasattr(self.agent, "acmodel"):
-            self.agent.acmodel.eval() # type: ignore
-            self.agent.argmax = True # type: ignore
+            self.agent.acmodel.eval()  # type: ignore[attr-defined]
+            self.agent.argmax = True # type: ignore[attr-defined]
 
         # Collect observation sequence in the environment
-        obs, act, state, render = self.pN_post.collectObservationSequence(
-            env=self.env_orig, agent=self.agent, tsteps=timesteps, includeRender=True # Critical self.env_orig
-        )
+        all_obs = torch.zeros((B, T + 1, view_size * view_size * C), dtype=torch.float32)
+        all_obs_pred = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
+        all_obs_pred_no_train = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
 
-        obs_pred, obs_next, _ = self.pN_post.predict(obs, act)
-        obs_pred_notrain, _, _ = self.pN_control.predict(obs, act)
+        all_agent_pos = np.zeros((B, T + 1, 2), dtype=np.float32)
+        all_agent_dir = np.zeros((B, T + 1), dtype=np.int32)
+        all_renders = np.zeros((B, T + 1, render_size, render_size, C), dtype=np.uint8)
+
+        up_bounds = [12, 6]
+        low_bounds = [1, 1]
+
+        for n in range(B):
+            if n < 5:
+                self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(low_bounds, up_bounds)
+                self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
+
+            obs, act, state, render = self.pN_post.collectObservationSequence(
+                env=self.env_orig, agent=self.agent, tsteps= T, includeRender=True # Critical self.env_orig
+            )
+            obs_pred, obs_next, _ = self.pN_post.predict(obs, act) # TODO: Ask if we should have state as an input??
+            obs_pred_notrain, _, _ = self.pN_control.predict(obs, act)
+
+            all_obs[n, :, :] = obs
+            all_obs_pred[n, :, :] = obs_pred
+            all_obs_pred_no_train[n, :, :] = obs_pred_notrain
+            all_agent_pos[n, :, :] = state["agent_pos"]
+            all_agent_dir[n, :] = state["agent_dir"]
+            all_renders[n, :, :, :, :] = np.stack(render, axis=0)
 
         objectTest = {
-            "obs": obs,
-            "obs_pred": obs_pred,
-            "obs_pred_control": obs_pred_notrain,
-            "state": state,
-            "render": render,
+            "obs": all_obs,
+            "obs_pred": all_obs_pred,
+            "obs_pred_control": all_obs_pred_no_train,
+            "agent_pos": all_agent_pos,
+            "agent_dir": all_agent_dir,
+            "render": all_renders,
         }
 
         self.pN_post.pRNN.to(original_device)
         self.pN_control.pRNN.to(original_device)
         self.pN_post.pRNN.train()
+
         if hasattr(self.agent, "acmodel"):
-            self.agent.acmodel.train() # type: ignore
+            self.agent.acmodel.train()  # type: ignore[attr-defined]
             self.agent.argmax = False # type: ignore
 
         self.testTrial = objectTest
@@ -269,14 +318,20 @@ class ObjectMemoryTask:
             "You need to run trainNovelObject and getTestTrial first."
         )
 
-        pos = self.testTrial["state"]["agent_pos"][whichPhase:, :]
-        HD = self.testTrial["state"]["agent_dir"][whichPhase:]
-        obs_pred = self.testTrial["obs_pred"]
-        obs_pred_notrain = self.testTrial["obs_pred_control"]
+        pos = self.testTrial["agent_pos"][:, whichPhase:, :]
+        HD = self.testTrial["agent_dir"][:, whichPhase:]
+        obs_pred = self.testTrial["obs_pred"][:, whichPhase:, :]
+        obs_pred_notrain = self.testTrial["obs_pred_control"][:, whichPhase:, :]
+
+        B, T, X = obs_pred.shape
+        obs_pred = obs_pred.reshape(B * T, X).unsqueeze(dim=0)
+        obs_pred_notrain = obs_pred_notrain.reshape(B * T, X).unsqueeze(dim=0)
+        pos = pos.reshape(B * (T + 1), 2)
+        HD = HD.reshape(B * (T + 1))
 
         # Get predicted pixel values at the object/control location for trained and control pRNNs
-        obs_np = self.pN_post.env_shell.pred2np(obs_pred, whichPhase=whichPhase)
-        obs_notrain_np = self.pN_post.env_shell.pred2np(obs_pred_notrain, whichPhase=whichPhase)
+        obs_np = self.pN_post.env_shell.pred2np(obs_pred)
+        obs_notrain_np = self.pN_post.env_shell.pred2np(obs_pred_notrain)
         
         locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.new_obj_pos, pos, HD)
         conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
@@ -347,7 +402,7 @@ def get_view_coords(i, j, pos, HD, agent_view_size=7):
     vx = rx * lx + ry * ly
     vy = -(dx * lx + dy * ly)
 
-    return vx, vy
+    return int(vx), int(vy)
 
 
 def get_obs_at_loc(obs, goal_loc, pos, HD):
@@ -359,7 +414,6 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
     for tt in range(obs.shape[0]):
         # Get egocentric coordinates of the goal/control loc
         # Check that these coordinates are in the agent's 7x7 view
-
         vx, vy = get_view_coords(i, j, pos[tt, :], HD[tt])
         if (vx >= 0) & (vx < 7) & (vy >= 0) & (vy < 7):
             locobs.append(obs[tt, vy, vx, :])

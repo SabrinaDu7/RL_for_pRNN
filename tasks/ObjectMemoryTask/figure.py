@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import numpy as np
 import torch
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 from jaxtyping import Float
 
 import warnings
@@ -130,7 +130,7 @@ def plot_metric_vs_trajectories(
     control_y_values: list[np.ndarray] | None = None,
     plot_controls: bool = True,
     transparency: float = 0,
-) -> None:
+) -> Figure:
     """
     Plot metric values vs trajectory count for multiple agent types.
 
@@ -226,7 +226,7 @@ def plot_metric_vs_trajectories(
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Figure saved to {save_path}")
 
-    plt.show()
+    return plt.gcf()
 
 
 # Figure: Object Learning Panels
@@ -256,6 +256,37 @@ def plot_obj_pixel_change_panel(objectLearning: dict) -> None:
     plt.ylabel("Change in Predicted Observation", fontsize=6)
 
 
+def flatten(render: Float[np.ndarray, "B T+1 render_size render_size C"], 
+            obs: Float[torch.Tensor, "B T+1 FOV*FOV*C"], 
+            obs_pred: Float[torch.Tensor, "B T FOV*FOV*C"], 
+            obs_pred_notrain: Float[torch.Tensor, "B T FOV*FOV*C"],
+            ) -> tuple[
+                Float[np.ndarray, "B*T render_size render_size C"],
+                Float[torch.Tensor, "1 B*T FOV*FOV*C"],
+                Float[torch.Tensor, "1 B*T FOV*FOV*C"],
+                Float[torch.Tensor, "1 B*T FOV*FOV*C"]
+            ]:
+    
+    # Get dimensions
+    B = render.shape[0]
+    T = obs_pred.shape[1]  # Number of prediction timesteps
+
+    # Flatten batch dimension to match how quantifyObjectLearning flattens them
+    # IMPORTANT: Only use first T timesteps of render/obs to align with predictions
+    # render: (B, T+1, ...) -> (B, T, ...) -> (B*T, ...)
+
+    render_flat = render[:, :T, ...].reshape(B * T, *render.shape[2:])
+
+    # obs: (B, T+1, X) -> (B, T, X) -> (B*T, X) then process with pred2np
+    obs_flat = obs[:, :T, :].reshape(B * T, obs.shape[2]).unsqueeze(dim=0)
+
+    # obs_pred: (B, T, X) -> (B*T, X) then process with pred2np
+    obs_pred_flat = obs_pred.reshape(B * T, obs_pred.shape[2]).unsqueeze(dim=0)
+    obs_pred_notrain_flat = obs_pred_notrain.reshape(B * T, obs_pred_notrain.shape[2]).unsqueeze(dim=0)
+
+    return render_flat, obs_flat, obs_pred_flat, obs_pred_notrain_flat
+
+
 def plot_example_obs_sequence_panel(
     objectLearning: dict,
     testTrial: dict,
@@ -273,25 +304,34 @@ def plot_example_obs_sequence_panel(
         firstrow: First row index for plotting (default=3)
         whichview: Which view timepoint to center on (default=1)
     """
-    render = testTrial["render"]
-    obs = testTrial["obs"]
-    obs_pred = testTrial["obs_pred"]
-    obs_pred_notrain = testTrial["obs_pred_control"]
+
+    # Get arrays from testTrial - shape (B, T+1/T, ...)
+    render = testTrial["render"]  # (B, T+1, render_size, render_size, C)
+    obs = testTrial["obs"]  # (B, T+1, X)
+    obs_pred = testTrial["obs_pred"]  # (B, T, X)
+    obs_pred_notrain = testTrial["obs_pred_control"]  # (B, T, X)
+
+    if isinstance(render, np.ndarray):
+        render_flat, obs_flat, obs_pred_flat, obs_pred_notrain_flat = flatten(render, obs, obs_pred, obs_pred_notrain)
+    else:
+        render_flat, obs_flat, obs_pred_flat, obs_pred_notrain_flat = render, obs, obs_pred, obs_pred_notrain
 
     inviewtimes = objectLearning["inviewtimes"]
     extimes = range(inviewtimes[whichview] - 2, inviewtimes[whichview] + 5)
 
-    pN.plotSequence(render, extimes, firstrow, label="State", show_axis=True)
-    pN.plotSequence(pN.env_shell.pred2np(obs), extimes, firstrow + 1, label="True Obs", show_axis=True)
+    # Plot using flattened sequences
+    # All sequences now have the same flattened length (B*T) with aligned indices
+    pN.plotSequence(render_flat, extimes, firstrow, label="State", show_axis=True)
+    pN.plotSequence(pN.env_shell.pred2np(obs_flat), extimes, firstrow + 1, label="True Obs", show_axis=True)
     pN.plotSequence(
-        pN.env_shell.pred2np(obs_pred_notrain),
+        pN.env_shell.pred2np(obs_pred_notrain_flat),
         extimes,
         firstrow + 2,
         label="Pred (Ctrl)",
         show_axis=True
     )
     pN.plotSequence(
-        pN.env_shell.pred2np(obs_pred), extimes, firstrow + 3, label="Pred (Exp)", show_axis=True
+        pN.env_shell.pred2np(obs_pred_flat), extimes, firstrow + 3, label="Pred (Exp)", show_axis=True
     )
 
 # Generate Figures
@@ -301,7 +341,7 @@ def figure_goal_modulation_vs_trajectories(
         num_datapoints: int, 
         transparency: float = 0,
         plot_controls: bool = True
-        ) -> None:
+        ) -> Figure:
     """
     Generate a plot comparing goal modulation vs trajectory count
     for random and curious agents.
@@ -323,7 +363,7 @@ def figure_goal_modulation_vs_trajectories(
     rand_ctlmod = extract_objectlearning_values("ctlmodulation_diffloc", rand_dir)
 
     # Plot comparison
-    plot_metric_vs_trajectories(
+    fig = plot_metric_vs_trajectories(
         x_values=[rand_traj[:num_datapoints], curious_traj[:num_datapoints]],
         y_values=[rand_goalmod[:num_datapoints], curious_goalmod[:num_datapoints]],
         agent_labels=["Random", "Curious"],
@@ -336,15 +376,20 @@ def figure_goal_modulation_vs_trajectories(
         transparency=transparency,
         plot_controls=plot_controls,
     )
+    return fig
 
 
-def figure_object_learning(env_name: MinigridEnvNames, 
+def figure_object_learning(env_name: MinigridEnvNames | FaramaMinigridShell, 
                            run_name: str, 
                            traj_num: int, 
                            save_folder: str, 
                            testTrial: dict | None = None,
+                           objectLearning: dict | None = None,
+                           pN: PredictiveNet | None = None,
                            rl_storage: str = RL_STORAGE,
-                           show: bool = False) -> None:
+                           config: DictConfig | None = None,
+                           show: bool = False,
+                           save: bool = False) -> Figure:
     """
     Generate object learning figure panels for a specific run.
     """
@@ -353,15 +398,28 @@ def figure_object_learning(env_name: MinigridEnvNames,
     # Setup
     plt.figure(figsize=(12, 8))
     run_filepath = Path(rl_storage) / Path(run_name)
-    config = OmegaConf.load(run_filepath / "config.yaml")
 
     # Loading components
-    objectLearning_dict_file = run_filepath / f"objectLearning_{traj_num}.pt"
-    object_learning_dict = torch.load(objectLearning_dict_file, weights_only=False)
+    if config is None:
+        config = OmegaConf.load(run_filepath / "config.yaml") # pyright: ignore[reportAssignmentType]
+        assert config is not None
 
-    env = make_env(env_key=env_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-    prnn_ckpt = str(run_filepath / f"pN-{traj_num}.pt")
-    predictiveNet = get_pN(args=config, env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
+    if objectLearning is None:
+        objectLearning_dict_file = run_filepath / f"objectLearning_{traj_num}.pt"
+        object_learning_dict = torch.load(objectLearning_dict_file, weights_only=False)
+    else:
+        object_learning_dict = objectLearning
+
+    if isinstance(env_name, MinigridEnvNames):
+        env = make_env(env_key=env_name.value, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+    else:
+        env = env_name
+
+    if pN is None:
+        prnn_ckpt = str(run_filepath / f"pN-{traj_num}.pt")
+        predictiveNet = get_pN(args=config, env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
+    else:
+        predictiveNet = pN
     
     if testTrial is None:
         test_trial_file = run_filepath / f"testTrial_{traj_num}.pt"
@@ -369,7 +427,6 @@ def figure_object_learning(env_name: MinigridEnvNames,
     else:
         test_trial_dict = testTrial
     
-
     # Plotting
     plt.subplot(4, 3, 1)
     plot_obj_pixel_change_panel(object_learning_dict)
@@ -385,6 +442,8 @@ def figure_object_learning(env_name: MinigridEnvNames,
     plt.tight_layout()
     if show:
         plt.show()
-    else:
+    if save:
         saveFig(fig=plt.gcf(), savename="ObjectLearning_" + run_name, savepath=save_folder, filetype="png")
+    
+    return plt.gcf()
         

@@ -32,6 +32,8 @@ def create_wandb_run(run_name: str):
         project=WANDB_PROJECT,
         name=run_name,
     )
+    wandb.define_metric("step_count")
+    wandb.define_metric("Analysis/*", step_metric="step_count")
     return run
 
 def get_novel_env(room_type: str) -> FaramaMinigridShell:
@@ -77,7 +79,7 @@ def main(args: DictConfig):
         agent_type=agent_type,
         env_orig=env_orig,
         env_novel=env_novel,
-        save_path=f"./{run_name}",
+        save_path=f"{run_name}",
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,
@@ -93,7 +95,7 @@ def main(args: DictConfig):
         continueTraining=args.tasks.training.continueTraining,
         device=DEVICE,
     )
-    testTrial = omt.getTestTrial(timesteps=omt.trajs_test * omt.seqdur)
+    testTrial = omt.getTestTrial(n_trajs=omt.trajs_test)
     torch.save(testTrial, f"./{run_name}/testTrial_{args.tasks.training.num_trajs}.pt")
 
     objectLearning = omt.quantifyObjectLearning(
