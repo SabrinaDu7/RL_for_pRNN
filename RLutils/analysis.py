@@ -173,7 +173,7 @@ class EnvironmentFeaturesAnalysis:
             )
             with torch.no_grad():
                 _, _, data["h"] = self.prnn.predict(
-                    prnn_obs.to(DEVICE), prnn_act.to(devDEVICEice)
+                    prnn_obs.to(DEVICE), prnn_act.to(DEVICE)
                 )
 
         else:
