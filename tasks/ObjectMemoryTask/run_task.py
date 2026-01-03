@@ -3,7 +3,7 @@ import wandb
 import time
 import warnings
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import torch
 import datetime
 
@@ -61,6 +61,7 @@ def main(args: DictConfig):
 
     if args.logging.wandb_log:
         create_wandb_run(run_name)
+        wandb.config.update(OmegaConf.to_container(args, resolve=True))
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
@@ -95,36 +96,7 @@ def main(args: DictConfig):
         continueTraining=args.tasks.training.continueTraining,
         device=DEVICE,
     )
-    testTrial = omt.getTestTrial(n_trajs=omt.trajs_test)
-    torch.save(testTrial, f"./{run_name}/testTrial_{args.tasks.training.num_trajs}.pt")
-
-    objectLearning = omt.quantifyObjectLearning(
-        control_location=args.tasks.testing.control_location,
-        whichPhase=args.tasks.testing.whichPhase,
-        traj_count=args.tasks.training.num_trajs,
-    )
-
-    # Display results
-    if objectLearning is not None: # In case control or goal locations were never viewed
-        torch.save(objectLearning, f"./{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt")
-        print(f"Saved object learning results (traj {args.tasks.training.num_trajs}): ./{run_name}/objectLearning_{args.tasks.training.num_trajs}.pt.")
-        
-        print("\nResults:")
-        print(f"Goal modulation: {objectLearning['goalmodulation']:.4f}")
-        print(f"Control modulation: {objectLearning['ctlmodulation_diffloc']:.4f}")
-
-        # Generate plots
-        print(f"Generating plots in: {RESULTS_SAVE_FOLDER}")
-        figure_object_learning(env_name=env_orig_name, 
-                               run_name=run_name, 
-                               traj_num=args.tasks.training.num_trajs, 
-                               save_folder=run_name,
-                               rl_storage=".",)
-        print("Done!")
     
-    else:
-        print("Object learning results could not be computed due to lack of views of goal or control locations during test trial.")
-
     if args.logging.wandb_log:
         wandb.finish()
 
