@@ -183,51 +183,51 @@ class ObjectMemoryTask:
                 # save_pN(self.pN_post, f"{self.save_path}/pN-{traj_count}.pt")
             
             if index % analysis_interval == 0:
-                testing_tsteps = self.trajs_test * self.seqdur
-
-                # Plotting Trajectories
-                if self.traj_fig:
-                    self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
-                    self.pN_post.plotSampleTrajectory(
-                            env=self.env_novel,
-                            agent=self.agent,
-                        ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
-                    self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
-
-                # Object Learning Analysis
                 with torch.no_grad():
+                    testing_tsteps = self.trajs_test * self.seqdur
+
+                    # Plotting Trajectories
+                    if self.traj_fig:
+                        self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
+                        self.pN_post.plotSampleTrajectory(
+                                env=self.env_novel,
+                                agent=self.agent,
+                            ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
+                        self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
+
+                    # Object Learning Analysis
                     testTrial = self.getTestTrial(n_trajs=self.trajs_test)
                     objectLearning = self.quantifyObjectLearning(
                         control_location=self.args.tasks.testing.control_location,
                         whichPhase=self.args.tasks.testing.whichPhase,
                         traj_count=traj_count,
                     )
-                if objectLearning is not None and testTrial is not None:
-                    # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
-                    # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
-                    # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
-                    wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
-                    wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
-                    wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
-                    
-                    if self.wandb_log and self.oL_fig:
-                        obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
-                                                            run_name=self.save_path, 
-                                                            traj_num=traj_count, 
-                                                            save_folder=self.save_path,
-                                                            objectLearning=objectLearning,
-                                                            testTrial=testTrial,
-                                                            rl_storage=".",
-                                                            config=self.args,
-                                                            pN=self.pN_post,
-                                                            show=False,
-                                                            save=False)
+                    if objectLearning is not None and testTrial is not None:
+                        # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
+                        # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
+                        # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                        wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
+                        wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
+                        wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
                         
-                        wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
-                
-                if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy and self.wandb_log:
-                    occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
-                    wandb.log({"Analysis/Occupancy": wandb.Plotly(occ_fig)})
+                        if self.wandb_log and self.oL_fig:
+                            obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
+                                                                run_name=self.save_path, 
+                                                                traj_num=traj_count, 
+                                                                save_folder=self.save_path,
+                                                                objectLearning=objectLearning,
+                                                                testTrial=testTrial,
+                                                                rl_storage=".",
+                                                                config=self.args,
+                                                                pN=self.pN_post,
+                                                                show=False,
+                                                                save=False)
+                            
+                            wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
+                    
+                    if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy and self.wandb_log:
+                        occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
+                        wandb.log({"Analysis/Occupancy": wandb.Plotly(occ_fig)})
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
         print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
