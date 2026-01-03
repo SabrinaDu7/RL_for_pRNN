@@ -26,14 +26,18 @@ RESULTS_SAVE_FOLDER = "results"
 TIME = time.strftime("%m%d-%H%M")
 
 # ===== Helper functions =====
-def create_wandb_run(run_name: str):
+def create_wandb_run(run_name: str, args: DictConfig):
+    group_name = "-".join(run_name.rsplit("-", 1)[:-1])
     run = wandb.init(
         entity=WANDB_ENTITY,
         project=WANDB_PROJECT,
         name=run_name,
+        group=group_name,
     )
+    wandb.config.update(OmegaConf.to_container(args, resolve=True))
     wandb.define_metric("step_count")
     wandb.define_metric("Analysis/*", step_metric="step_count")
+
     return run
 
 def get_novel_env(room_type: str) -> FaramaMinigridShell:
@@ -60,8 +64,7 @@ def main(args: DictConfig):
     run_name = f"{args.exp.exp_name}-{agent_name}-{args.tasks.room_type_green}-{date}"
 
     if args.logging.wandb_log:
-        create_wandb_run(run_name)
-        wandb.config.update(OmegaConf.to_container(args, resolve=True))
+        create_wandb_run(run_name, args)
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
@@ -74,6 +77,7 @@ def main(args: DictConfig):
     # Run task
     print(f"Running Object Memory Task with {agent_name} agent")
     print(f"Using device: {DEVICE}")
+    print(f"Object Learning Figure: {args.tasks.analysis.objLearning_fig}")
     
     omt = ObjectMemoryTask(
         args=args,
