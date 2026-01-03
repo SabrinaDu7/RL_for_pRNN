@@ -275,9 +275,9 @@ class ObjectMemoryTask:
         low_bounds = [1, 1]
 
         for n in range(B):
-            if n < 5:
-                self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(low_bounds, up_bounds)
-                self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
+
+            self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(low_bounds, up_bounds)
+            self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
 
             obs, act, state, render = self.pN_post.collectObservationSequence(
                 env=self.env_orig, agent=self.agent, tsteps= T, includeRender=True # Critical self.env_orig
