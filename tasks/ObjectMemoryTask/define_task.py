@@ -60,6 +60,10 @@ class ObjectMemoryTask:
         self.save_path = save_path
         self.wandb_log = args.logging.wandb_log
 
+        # Analysis
+        self.oL_fig = self.args.tasks.analysis.objLearning_fig
+        self.traj_fig = self.args.tasks.analysis.traj_fig
+
         self.seqdur = args.predNet.seqdur # steps
         self.trajs_per_batch = args.rl.trajs_per_batch
         self.trajs_test = args.tasks.testing.trajs
@@ -182,44 +186,44 @@ class ObjectMemoryTask:
                 testing_tsteps = self.trajs_test * self.seqdur
 
                 # Plotting Trajectories
-                self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
-                self.pN_post.plotSampleTrajectory(
-                        env=self.env_novel,
-                        agent=self.agent,
-                    ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
-                self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
+                if self.traj_fig:
+                    self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
+                    self.pN_post.plotSampleTrajectory(
+                            env=self.env_novel,
+                            agent=self.agent,
+                        ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
+                    self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
 
-                if self.args.tasks.analysis.objectLearning:
-                    # Object Learning Analysis
-                    with torch.no_grad():
-                        testTrial = self.getTestTrial(n_trajs=self.trajs_test)
-                        objectLearning = self.quantifyObjectLearning(
-                            control_location=self.args.tasks.testing.control_location,
-                            whichPhase=self.args.tasks.testing.whichPhase,
-                            traj_count=traj_count,
-                        )
-                    if objectLearning is not None and testTrial is not None:
-                        # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
-                        # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
-                        # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                # Object Learning Analysis
+                with torch.no_grad():
+                    testTrial = self.getTestTrial(n_trajs=self.trajs_test)
+                    objectLearning = self.quantifyObjectLearning(
+                        control_location=self.args.tasks.testing.control_location,
+                        whichPhase=self.args.tasks.testing.whichPhase,
+                        traj_count=traj_count,
+                    )
+                if objectLearning is not None and testTrial is not None:
+                    # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
+                    # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
+                    # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                    wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
+                    wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
+                    wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
+                    
+                    if self.wandb_log and self.oL_fig:
+                        obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
+                                                            run_name=self.save_path, 
+                                                            traj_num=traj_count, 
+                                                            save_folder=self.save_path,
+                                                            objectLearning=objectLearning,
+                                                            testTrial=testTrial,
+                                                            rl_storage=".",
+                                                            config=self.args,
+                                                            pN=self.pN_post,
+                                                            show=False,
+                                                            save=False)
                         
-                        if self.wandb_log:
-                            obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
-                                                               run_name=self.save_path, 
-                                                               traj_num=traj_count, 
-                                                               save_folder=self.save_path,
-                                                               objectLearning=objectLearning,
-                                                               testTrial=testTrial,
-                                                               rl_storage=".",
-                                                               config=self.args,
-                                                               pN=self.pN_post,
-                                                               show=False,
-                                                               save=False)
-                            
-                            wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
-                            wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
-                            wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
-                            wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
+                        wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
                 
                 if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy and self.wandb_log:
                     occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
@@ -280,7 +284,7 @@ class ObjectMemoryTask:
             self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
 
             obs, act, state, render = self.pN_post.collectObservationSequence(
-                env=self.env_orig, agent=self.agent, tsteps= T, includeRender=True # Critical self.env_orig
+                env=self.env_orig, agent=self.agent, tsteps= T, includeRender=self.oL_fig # Critical self.env_orig
             )
             obs_pred, obs_next, _ = self.pN_post.predict(obs, act) # TODO: Ask if we should have state as an input??
             obs_pred_notrain, _, _ = self.pN_control.predict(obs, act)
@@ -290,7 +294,8 @@ class ObjectMemoryTask:
             all_obs_pred_no_train[n, :, :] = obs_pred_notrain
             all_agent_pos[n, :, :] = state["agent_pos"]
             all_agent_dir[n, :] = state["agent_dir"]
-            all_renders[n, :, :, :, :] = np.stack(render, axis=0)
+            if self.oL_fig:
+                all_renders[n, :, :, :, :] = np.stack(render, axis=0)
 
         objectTest = {
             "obs": all_obs,
@@ -298,7 +303,7 @@ class ObjectMemoryTask:
             "obs_pred_control": all_obs_pred_no_train,
             "agent_pos": all_agent_pos,
             "agent_dir": all_agent_dir,
-            "render": all_renders,
+            "render": all_renders if self.oL_fig else None,
         }
 
         self.pN_post.pRNN.to(original_device)

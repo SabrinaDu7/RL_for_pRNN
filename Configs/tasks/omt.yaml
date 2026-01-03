@@ -18,5 +18,6 @@ testing:
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
 
 analysis:
-  objectLearning: True
+  objLearning_fig: True
+  traj_fig: True
   occupancy: True
