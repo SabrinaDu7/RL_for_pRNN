@@ -279,7 +279,7 @@ class ObjectMemoryTask:
 
         for n in range(B):
 
-            if self.args.tasks.testing.start_near_obj:
+            if not self.args.tasks.testing.start_random:
                 self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
                 self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
 

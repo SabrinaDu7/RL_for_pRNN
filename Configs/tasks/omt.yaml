@@ -16,7 +16,7 @@ testing:
   trajs: 6 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
   ctrl_locs: [[2, 5], [4, 7], [11, 3], [13, 5]]
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
-  start_near_obj: False
+  start_random: False
   start_up_bound: [12, 6]
   start_low_bound: [1, 1]
 
