@@ -26,8 +26,7 @@ RESULTS_SAVE_FOLDER = "results"
 TIME = time.strftime("%m%d-%H%M")
 
 # ===== Helper functions =====
-def create_wandb_run(run_name: str, args: DictConfig):
-    group_name = "-".join(run_name.rsplit("-", 1)[:-1])
+def create_wandb_run(run_name: str, group_name:str, args: DictConfig):
     run = wandb.init(
         entity=WANDB_ENTITY,
         project=WANDB_PROJECT,
@@ -61,10 +60,12 @@ def main(args: DictConfig):
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
     date = datetime.datetime.now().strftime("%m%d-%H%M%S")
     agent_name = "cur" if args.exp.curious_agent else "rand"
-    run_name = f"{args.exp.exp_name}-{agent_name}-{args.tasks.room_type_green}-{date}"
+    ctrls = "-ctrls" if len(args.tasks.testing.ctrl_locs) > 2 else ""
+    group_name = f"{args.exp.exp_name}-{agent_name}-{args.tasks.room_type_green}{ctrls}"
+    run_name = f"{group_name}-{date}"
 
     if args.logging.wandb_log:
-        create_wandb_run(run_name, args)
+        create_wandb_run(run_name, group_name, args)
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 

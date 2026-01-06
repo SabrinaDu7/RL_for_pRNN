@@ -198,11 +198,11 @@ class ObjectMemoryTask:
                     # Object Learning Analysis
                     testTrial = self.getTestTrial(n_trajs=self.trajs_test)
                     objectLearning = self.quantifyObjectLearning(
-                        control_location=self.args.tasks.testing.control_location,
+                        ctrl_locs=self.args.tasks.testing.ctrl_locs,
                         whichPhase=self.args.tasks.testing.whichPhase,
                         traj_count=traj_count,
                     )
-                    if objectLearning is not None and testTrial is not None:
+                    if objectLearning is not None and testTrial is not None and self.wandb_log:
                         # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
                         # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
                         # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
@@ -318,7 +318,7 @@ class ObjectMemoryTask:
         return objectTest
 
 
-    def quantifyObjectLearning(self, control_location: list[int], whichPhase: int, traj_count: int) -> dict[str, np.ndarray | np.float32 | int] | None:
+    def quantifyObjectLearning(self, ctrl_locs: list[list[int]], whichPhase: int, traj_count: int) -> dict[str, np.ndarray | np.float32 | int] | None:
         assert self.testTrial is not None, (
             "You need to run trainNovelObject and getTestTrial first."
         )
@@ -339,23 +339,30 @@ class ObjectMemoryTask:
         obs_notrain_np = self.pN_post.env_shell.pred2np(obs_pred_notrain)
         
         locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.new_obj_pos, pos, HD)
-        conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
-
         locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(obs_notrain_np, self.new_obj_pos, pos, HD)
-        conobs_notrain, _, _ = get_obs_at_loc(obs_notrain_np, control_location, pos, HD)
 
-        if locobs is None or conobs is None:
+        if locobs is None:
             print("No views of the goal or control location were found during the test trial.")
             return None
-
+        
         objectloc_deltaobs = locobs - locobs_notrain
-        controlloc_deltaobs = conobs - conobs_notrain
-
         goalmodulation = np.mean(objectloc_deltaobs[:, 1])
         ctlmodulation_diffcolor = np.mean(
             np.concatenate((objectloc_deltaobs[:, 0], objectloc_deltaobs[:, 2]))
         )
-        ctlmodulation_diffloc = np.mean(controlloc_deltaobs[:, 1])
+
+        ctl_mods = []
+        for control_location in ctrl_locs:
+            conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
+            conobs_notrain, _, _ = get_obs_at_loc(obs_notrain_np, control_location, pos, HD)
+
+            if conobs is not None:
+                controlloc_deltaobs = conobs - conobs_notrain
+                ctlmodulation_diffloc = np.mean(controlloc_deltaobs[:, 1]) # TODO: Do we just want to control for change in green at cntrl locs?
+                ctl_mods.append(ctlmodulation_diffloc)
+
+        print(f"{ctl_mods=}")
+        ctlmodulation_diffloc = np.mean(ctl_mods)
 
         objectLearning = {
             "inviewtimes": inviewtimes,
