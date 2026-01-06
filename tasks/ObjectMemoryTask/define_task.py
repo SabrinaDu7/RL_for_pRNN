@@ -63,6 +63,8 @@ class ObjectMemoryTask:
         # Analysis
         self.oL_fig = self.args.tasks.analysis.objLearning_fig
         self.traj_fig = self.args.tasks.analysis.traj_fig
+        self.start_up_bound = self.args.tasks.testing.start_up_bound
+        self.start_low_bound = self.args.tasks.testing.start_low_bound
 
         self.seqdur = args.predNet.seqdur # steps
         self.trajs_per_batch = args.rl.trajs_per_batch
@@ -275,13 +277,10 @@ class ObjectMemoryTask:
         all_agent_dir = np.zeros((B, T + 1), dtype=np.int32)
         all_renders = np.zeros((B, T + 1, render_size, render_size, C), dtype=np.uint8)
 
-        up_bounds = [12, 6]
-        low_bounds = [1, 1]
-
         for n in range(B):
 
             if self.args.tasks.testing.start_near_obj:
-                self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(low_bounds, up_bounds)
+                self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
                 self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
 
             obs, act, state, render = self.pN_post.collectObservationSequence(
