@@ -308,16 +308,13 @@ class ObjectMemoryTask:
             obs, act, state, render = self.pN_post.collectObservationSequence(
                 env=self.env_orig, agent=self.agent, tsteps= T, includeRender=self.oL_fig # Critical self.env_orig
             )
+
+            # TODO: Ask if pN should start from the same random state for both trained and control nets. This is what happens internally if randInit=True
             h_state = self.pN_post.pRNN.generate_noise((0, 0.03), (1, 1, 500))
             h_state = self.pN_post.pRNN.rnn.cell.actfun(h_state)
 
-            self.pN_post.trainNoiseMeanStd = (0.0, 0.0)
-            self.pN_control.trainNoiseMeanStd = (0.0, 0.0)
-
             obs_pred, obs_next, _ = self.pN_post.predict(obs, act, state=h_state, randInit=False) # TODO: Ask if we should have state as an input??
             obs_pred_notrain, _, _ = self.pN_control.predict(obs, act, state=h_state, randInit=False)
-
-            assert torch.allclose(obs_pred, obs_pred_notrain) is True, f"{obs_pred[0]=}\n {obs_pred_notrain[0]=}\n They should be equal before training."
 
             all_obs[n, :, :] = obs
             all_obs_pred[n, :, :] = obs_pred
