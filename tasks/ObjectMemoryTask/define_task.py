@@ -142,6 +142,28 @@ class ObjectMemoryTask:
         continueTraining: bool,
         device,
     ):
+        with torch.no_grad():
+            if self.wandb_log:
+                testTrial = self.getTestTrial(n_trajs=self.trajs_test)
+                objectLearning = self.quantifyObjectLearning(
+                    ctrl_locs=self.args.tasks.testing.ctrl_locs,
+                    whichPhase=self.args.tasks.testing.whichPhase,
+                    traj_count=0,
+                )
+
+                # Initial Object Learning Figure
+                obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
+                                                                        run_name=self.save_path, 
+                                                                        traj_num=0, 
+                                                                        save_folder=self.save_path,
+                                                                        objectLearning=objectLearning,
+                                                                        testTrial=testTrial,
+                                                                        rl_storage=".",
+                                                                        config=self.args,
+                                                                        pN=self.pN_post,
+                                                                        show=False,
+                                                                        save=False)
+                wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
 
         # Update the learning rate
         oldlr = [0.0 for i in lrgroups]
@@ -158,7 +180,7 @@ class ObjectMemoryTask:
 
         for index in tqdm(range(num_batches)): 
 
-            traj_count = index * self.trajs_per_batch
+            traj_count = (index + 1) * self.trajs_per_batch
             step_count = traj_count * self.seqdur
 
             if self.wandb_log:
@@ -286,8 +308,16 @@ class ObjectMemoryTask:
             obs, act, state, render = self.pN_post.collectObservationSequence(
                 env=self.env_orig, agent=self.agent, tsteps= T, includeRender=self.oL_fig # Critical self.env_orig
             )
-            obs_pred, obs_next, _ = self.pN_post.predict(obs, act) # TODO: Ask if we should have state as an input??
-            obs_pred_notrain, _, _ = self.pN_control.predict(obs, act)
+            h_state = self.pN_post.pRNN.generate_noise((0, 0.03), (1, 1, 500))
+            h_state = self.pN_post.pRNN.rnn.cell.actfun(h_state)
+
+            self.pN_post.trainNoiseMeanStd = (0.0, 0.0)
+            self.pN_control.trainNoiseMeanStd = (0.0, 0.0)
+
+            obs_pred, obs_next, _ = self.pN_post.predict(obs, act, state=h_state, randInit=False) # TODO: Ask if we should have state as an input??
+            obs_pred_notrain, _, _ = self.pN_control.predict(obs, act, state=h_state, randInit=False)
+
+            assert torch.allclose(obs_pred, obs_pred_notrain) is True, f"{obs_pred[0]=}\n {obs_pred_notrain[0]=}\n They should be equal before training."
 
             all_obs[n, :, :] = obs
             all_obs_pred[n, :, :] = obs_pred
