@@ -164,6 +164,7 @@ class ObjectMemoryTask:
                                                                         show=False,
                                                                         save=False)
                 wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
+                plt.close()
 
         # Update the learning rate
         oldlr = [0.0 for i in lrgroups]
@@ -217,6 +218,7 @@ class ObjectMemoryTask:
                                 env=self.env_novel,
                                 agent=self.agent,
                             ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
+
                         self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
 
                     # Object Learning Analysis
@@ -233,6 +235,7 @@ class ObjectMemoryTask:
                         wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
                         wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
                         wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
+                        wandb.log({"Analysis/Avg Distance Travelled": objectLearning["avg_dist"]})
                         
                         if self.wandb_log and self.oL_fig:
                             obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
@@ -350,6 +353,13 @@ class ObjectMemoryTask:
             "You need to run trainNovelObject and getTestTrial first."
         )
 
+        start_pos = self.testTrial["agent_pos"][:, :, 0]
+        end_pos = self.testTrial["agent_pos"][:, :, -1]
+        avg_dist = torch.mean(get_dist_travelled(
+            start_locs=torch.tensor(start_pos, dtype=torch.float32),
+            end_locs=torch.tensor(end_pos, dtype=torch.float32)
+        )) # Average distance travelled across all test trajectories
+
         pos = self.testTrial["agent_pos"][:, whichPhase:, :]
         HD = self.testTrial["agent_dir"][:, whichPhase:]
         obs_pred = self.testTrial["obs_pred"][:, whichPhase:, :]
@@ -403,6 +413,7 @@ class ObjectMemoryTask:
             "ctlmodulation_diffcolor": ctlmodulation_diffcolor,
             "ctlmodulation_diffloc": ctlmodulation_diffloc,
             "traj_count": traj_count,
+            "avg_dist": avg_dist.item(),
         }
         self.objectLearning = objectLearning
         return objectLearning
@@ -457,7 +468,7 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
             locobs.append(obs[tt, vy, vx, :])
             viewtimes.append(tt)
             viewcoords.append([vx, vy])
-    
+
     if locobs == []:
         # No views of the location were found
         return None, None, None
@@ -466,3 +477,17 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
     viewtimes = np.stack(viewtimes, axis=0)
     viewcoords = np.stack(viewcoords, axis=0)
     return locobs, viewtimes, viewcoords
+
+
+def get_dist_travelled(
+    start_locs: Float[torch.Tensor, "B 2"],
+    end_locs: Float[torch.Tensor, "B 2"]
+) -> Float[torch.Tensor, "B"]:
+    """
+    Calculate L1 distance between start and end locations.
+
+    Since the agent can only move horizontally and vertically in the grid,
+    the distance is the sum of absolute differences in x and y coordinates.
+    """
+    dists = torch.abs(end_locs - start_locs).sum(dim=1)
+    return dists

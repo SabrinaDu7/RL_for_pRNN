@@ -1,7 +1,7 @@
 defaults:
     - _self_  
 
-room_type_green: "line" # Options: "line", "plus", "dot", "extrinsic_goal"
+room_type_green: "dot" # Options: "line", "plus", "dot", "extrinsic_goal"
 
 training:
   num_trajs: 3000 # trajectories to train on in novel env
