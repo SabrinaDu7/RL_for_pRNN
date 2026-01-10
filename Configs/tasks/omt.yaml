@@ -17,8 +17,8 @@ testing:
   ctrl_locs: [[2, 5], [4, 7], [11, 3], [13, 5]]
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
   start_random: False
-  start_up_bound: [12, 6]
-  start_low_bound: [1, 1]
+  start_up_bound: [12, 6] # [8, 14] for away
+  start_low_bound: [1, 1] # [1, 7] for away
 
 analysis:
   objLearning_fig: True

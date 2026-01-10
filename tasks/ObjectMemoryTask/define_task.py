@@ -236,6 +236,7 @@ class ObjectMemoryTask:
                         wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
                         wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
                         wandb.log({"Analysis/Avg Distance Travelled": objectLearning["avg_dist"]})
+                        print(f"objectLearning[\"avg_dist\"]: {objectLearning['avg_dist']}")
                         
                         if self.wandb_log and self.oL_fig:
                             obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
@@ -353,12 +354,13 @@ class ObjectMemoryTask:
             "You need to run trainNovelObject and getTestTrial first."
         )
 
-        start_pos = self.testTrial["agent_pos"][:, :, 0]
-        end_pos = self.testTrial["agent_pos"][:, :, -1]
+        start_pos = self.testTrial["agent_pos"][:, 0, :]
+        end_pos = self.testTrial["agent_pos"][:, -1, :]
         avg_dist = torch.mean(get_dist_travelled(
             start_locs=torch.tensor(start_pos, dtype=torch.float32),
             end_locs=torch.tensor(end_pos, dtype=torch.float32)
         )) # Average distance travelled across all test trajectories
+        print(f"{start_pos=}, {end_pos=}, {avg_dist=}")
 
         pos = self.testTrial["agent_pos"][:, whichPhase:, :]
         HD = self.testTrial["agent_dir"][:, whichPhase:]
