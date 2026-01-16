@@ -15,6 +15,7 @@ from RLutils.agent import (
 # Algorithm classes
 from RLutils.algo import (
     compare_trajs,
+    get_dist_travelled,
     PredictivePPOAlgo,
     thetaPPOalgo,
     SingleThetaPPOalgo,
@@ -98,6 +99,7 @@ __all__ = [
     "EnvironmentFeaturesAnalysis",
     "OnPolicyAnalysis",
     "get_occupancy_fig",
+    "get_dist_travelled",
     # Env
     "episode_video_trigger",
     "make_env",

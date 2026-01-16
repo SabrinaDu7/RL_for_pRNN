@@ -49,7 +49,7 @@ def get_env_name(env):
             break
     return " -> ".join(names)
 
-def get_subroom_id(agent_pos: Integer[torch.Tensor, "B 2"], subroom_size: int) -> Integer[torch.Tensor, "B"]:
+def get_subroom_id(agent_pos: Integer[torch.Tensor, "T 2"], subroom_size: int) -> Integer[torch.Tensor, "B"]:
     """Helper method to get the subroom ID based on agent position and subroom size."""
 
     col = (agent_pos[:, 0] > subroom_size).long()

@@ -17,7 +17,8 @@ from RLutils import (
     PredictivePPOAlgo,
     get_occupancy_fig,
     get_agent,
-    synthesize
+    synthesize,
+    get_dist_travelled,
 )
 
 from prnn.utils import save_pN
@@ -479,17 +480,3 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
     viewtimes = np.stack(viewtimes, axis=0)
     viewcoords = np.stack(viewcoords, axis=0)
     return locobs, viewtimes, viewcoords
-
-
-def get_dist_travelled(
-    start_locs: Float[torch.Tensor, "B 2"],
-    end_locs: Float[torch.Tensor, "B 2"]
-) -> Float[torch.Tensor, "B"]:
-    """
-    Calculate L1 distance between start and end locations.
-
-    Since the agent can only move horizontally and vertically in the grid,
-    the distance is the sum of absolute differences in x and y coordinates.
-    """
-    dists = torch.abs(end_locs - start_locs).sum(dim=1)
-    return dists

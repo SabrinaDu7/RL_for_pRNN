@@ -4,6 +4,7 @@
 import torch
 import math
 import numpy as np
+from jaxtyping import Float
 
 from scipy.stats import entropy
 from torch_ac.format import default_preprocess_obss
@@ -25,6 +26,19 @@ def check_large_jump(loc0: tuple, loc1: tuple):
 def compare_trajs(traj1, traj2):
     delta = (traj1 == traj2).cumprod()
     return delta.sum() / len(delta)
+
+def get_dist_travelled(
+    start_locs: Float[torch.Tensor, "B 2"],
+    end_locs: Float[torch.Tensor, "B 2"]
+) -> Float[torch.Tensor, "B"]:
+    """
+    Calculate L1 distance between start and end locations.
+
+    Since the agent can only move horizontally and vertically in the grid,
+    the distance is the sum of absolute differences in x and y coordinates.
+    """
+    dists = torch.abs(end_locs - start_locs).sum(dim=1)
+    return dists
 
 
 class PredictivePPOAlgo:
@@ -293,7 +307,7 @@ class PredictivePPOAlgo:
                 self.init_SR()
                 self.last_observations.append(self.obs)
 
-                dist_travelled = sum(torch.abs(init_loc - torch.tensor(self.loc)))
+                dist_travelled = get_dist_travelled(init_loc.unsqueeze(0), torch.tensor(self.loc).unsqueeze(0)).item()
                 self.obs = self.env.reset() # Now the agent is in completely new position
                 self.loc = self.agent_pos()
                 self.log_episode_return = 0
@@ -615,6 +629,7 @@ class PredictivePPOAlgo:
         numtrials = math.ceil(self.num_frames / self.prnn_seqdur)
 
         log_curr_seqdurs = []
+        subroom_ids = []
         for bb in range(numtrials):
             curr_seqdur = min(
                 self.prnn_seqdur, self.num_frames - (bb) * self.prnn_seqdur
@@ -633,8 +648,13 @@ class PredictivePPOAlgo:
             self.pN.numTrainingEpochs += 1
 
             # Collect location info
-            locs_array = state["agent_pos"][:-1, :]
+            locs_array = state["agent_pos"][:-1, :] # Shape np.ndarray [seqdur, 2]
             loc_list_current = [tuple(thisloc) for thisloc in locs_array]
+            subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self.env.env.unwrapped.subroom_size))
+            
+            init_pos = state["agent_pos"][0, :]
+            final_pos = state["agent_pos"][-1, :]
+            dist_travelled = get_dist_travelled(torch.tensor(init_pos).unsqueeze(0), torch.tensor(final_pos).unsqueeze(0)).item()
 
             startidx = bb * self.prnn_seqdur
             endidx = min(self.num_frames, (bb + 1) * self.prnn_seqdur)
@@ -660,6 +680,8 @@ class PredictivePPOAlgo:
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
             "locs": self.locs,
+            "subroom_ids": subroom_ids,
+            "dist_travelled": dist_travelled,
         }
 
     def _get_batches_starting_indexes(self):
