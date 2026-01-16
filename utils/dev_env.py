@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 
 from utils.enums import AgentType
+from prnn.utils import MinigridEnvNames
 
 load_dotenv()  # Load variables from .env
 
@@ -17,11 +18,18 @@ def get_env_var(var_name: str) -> str:
     return value
 
 
-def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC) -> tuple[str, str]:
+def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC, env_type: MinigridEnvNames = MinigridEnvNames.LRoom) -> tuple[str, str]:
     """Get and validate checkpoint-related environment variables.
     """
-    prnn_ckpt = get_env_var("PRNN_CUR_CKPT") if agent_type == AgentType.AC  else get_env_var("PRNN_RAND_CKPT")
-    acmodel_status_ckpt = get_env_var("ACMODEL_CUR_CKPT") if agent_type == AgentType.AC else get_env_var("ACMODEL_RAND_CKPT")
+    if env_type == MinigridEnvNames.FourRoomsObjs:
+        prnn_ckpt_name = "PRNN_FOURROOM"
+        acmodel_ckpt_name = "ACMODEL_FOURROOM"
+    else:
+        prnn_ckpt_name = "PRNN"
+        acmodel_ckpt_name = "ACMODEL"
+
+    prnn_ckpt = get_env_var(f"{prnn_ckpt_name}_CUR_CKPT") if agent_type == AgentType.AC  else get_env_var("PRNN_RAND_CKPT")
+    acmodel_status_ckpt = get_env_var(f"{acmodel_ckpt_name}_CUR_CKPT") if agent_type == AgentType.AC else get_env_var("ACMODEL_RAND_CKPT")
 
     return prnn_ckpt, acmodel_status_ckpt
 
