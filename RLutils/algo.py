@@ -246,7 +246,7 @@ class PredictivePPOAlgo:
             self.obss.append(self.obs)
             self.obs = obs
             self.locs.append(self.loc)
-            self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self.env.env.subroom_size).item())
+            self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self.env.env.unwrapped.subroom_size).item())
             self.loc = loc
 
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
