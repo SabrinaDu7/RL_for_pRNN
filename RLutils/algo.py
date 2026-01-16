@@ -12,6 +12,7 @@ from scipy.spatial.distance import cosine
 from scipy.linalg import toeplitz
 
 from prnn.utils import PredictiveNet
+from RLutils.env import get_subroom_id
 
 def check_large_jump(loc0: tuple, loc1: tuple):
     x0, y0 = loc0
@@ -205,13 +206,19 @@ class PredictivePPOAlgo:
         self.done_indices = [0]
         self.last_observations = []
         self.locs = []
+        self.subroom_ids = []
         self.obss = []
         obs = None
 
+        dist_travelled = 0
+        init_loc = torch.tensor(self.loc)
         for i in range(self.num_frames):
             # Do one agent-environment interaction
 
             action, dist, value, memory, det_action = self.next_experience()
+
+            if self.prnn_seqdur > 0 and i % self.prnn_seqdur == 0: # First loc of traj
+                init_loc = torch.tensor(self.agent_pos())
 
             # CAREFUL: obs = observation after taking action whereas self.obs is before taking action
             obs, reward, terminated, truncated, _ = self.env.step(det_action)
@@ -239,6 +246,7 @@ class PredictivePPOAlgo:
             self.obss.append(self.obs)
             self.obs = obs
             self.locs.append(self.loc)
+            self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self.env.env.subroom_size).item())
             self.loc = loc
 
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
@@ -284,6 +292,8 @@ class PredictivePPOAlgo:
                     self.pN.reset_state(device=str(self.device))
                 self.init_SR()
                 self.last_observations.append(self.obs)
+
+                dist_travelled = sum(torch.abs(init_loc - torch.tensor(self.loc)))
                 self.obs = self.env.reset() # Now the agent is in completely new position
                 self.loc = self.agent_pos()
                 self.log_episode_return = 0
@@ -422,6 +432,8 @@ class PredictivePPOAlgo:
             "loc_entropy_5": loc_entropy_5,
             "joint_dist": joint_probabilities,
             "locs": self.locs,
+            "subroom_ids": self.subroom_ids,
+            "dist_travelled": dist_travelled,
         }
 
         self.log_return = []

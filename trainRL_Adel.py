@@ -93,6 +93,13 @@ class RL_Trainer(object):
         print(f"Device: {DEVICE}\n")
 
         # Load environment (default size = 16)
+        agent_start_pos = None
+        agent_start_dir = None
+
+        if 'FourRooms' in args.exp.env_name:
+            agent_start_pos=(1, 1)
+            agent_start_dir=1
+
         env = RLutils.make_env(
             env_key=args.exp.env_name,
             input_type=args.exp.input_type,
@@ -100,6 +107,8 @@ class RL_Trainer(object):
             act_enc=args.predNet.action_encoding,
             open_all_paths=False, # Only applicable for FourRooms env
             subroom_size=args.exp.env_subroom_size, # Only applicable for FourRooms env
+            agent_start_pos=agent_start_pos,
+            agent_start_dir=agent_start_dir,
         )
         print("Environment loaded\n")
 
@@ -468,6 +477,8 @@ class RL_Trainer(object):
 
                     if self.wandb_log:
                         wandb.log(dict(zip(header, data)))
+                        wandb.log({"subroom_ids": wandb.Histogram(logs["subroom_ids"])})
+                        wandb.log({"dist_travelled": logs["dist_travelled"]})
 
                 # Do analysis
 

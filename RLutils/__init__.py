@@ -35,6 +35,7 @@ from RLutils.env import (
     make_env,
     ResetWrapper,
     HDObsWrapper,
+    get_subroom_id,
 )
 
 # Format/preprocessing functions and classes
@@ -102,6 +103,7 @@ __all__ = [
     "make_env",
     "ResetWrapper",
     "HDObsWrapper",
+    "get_subroom_id",
     # Format
     "get_obss_preprocessor",
     "preprocess_images",
