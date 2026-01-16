@@ -21,6 +21,7 @@ DEVICE = "cpu" # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def plot_isomap(
         args: DictConfig,
         agent_type: AgentType,
+        env_type: MinigridEnvNames,
         prnn_name: str,
         save_path: Path | None = None,
         timesteps_wake: int = 5000,
@@ -33,16 +34,18 @@ def plot_isomap(
     print(f"Using device: {DEVICE}")
 
     # Get checkpoint paths
-    prnn_cur_ckpt, acmodel_ckpt = get_ckpt_env_vars(agent_type=AgentType.AC)
-    prnn_rand_ckpt, _ = get_ckpt_env_vars(agent_type=AgentType.RANDOM)
+    prnn_cur_ckpt, acmodel_ckpt = get_ckpt_env_vars(agent_type=AgentType.AC, env_type=env_type)
+    prnn_rand_ckpt, _ = get_ckpt_env_vars(agent_type=AgentType.RANDOM, env_type=env_type)
     prnn_ckpt = prnn_cur_ckpt if prnn_name == "cur" else prnn_rand_ckpt
 
     # Create environment (standard LRoom without novel objects)
     print("Creating environment...")
     env = make_env(
-        env_key=MinigridEnvNames.LRoomLineGreen, 
+        env_key=env_type, 
         new_obj_pos=[7, 2], 
-        input_type=AgentInputType.H_PO.value, 
+        input_type=AgentInputType.H_PO.value,
+        agent_start_dir=1,
+        agent_start_pos=(1, 1), 
         act_enc=ActionEncodingsEnum.SpeedHD.value)
 
     # Load predictive network
@@ -70,9 +73,9 @@ def plot_isomap(
         ac_model=ac_model,
         device=torch.device(DEVICE)
     )
-    if agent_type == AgentType.AC:
+    """if agent_type == AgentType.AC:
         agent.acmodel.eval()  # type: ignore[attr-defined]
-        agent.argmax = True # type: ignore
+        agent.argmax = True # type: ignore"""
 
     # Generate Isomap figure
     print(f"Generating Isomap with {timesteps_wake} wake steps and {timesteps_sleep} sleep steps...")
@@ -103,13 +106,14 @@ def plot_isomap(
 
 @hydra.main(config_path="../Configs", config_name="Conf1_Adel")
 def main(args: DictConfig):
-    agent_type = AgentType.AC
+    agent_type = AgentType.RANDOM
     prnn_name = "rand"
     agent_name = "cur" if agent_type == AgentType.AC else "rand"
 
     plot_isomap(
         args,
         agent_type=agent_type,
+        env_type=MinigridEnvNames.FourRoomsObjs,
         prnn_name=prnn_name,
         save_path=Path(f"isomap_{prnn_name}_prnn_{agent_name}_agent.png"),
         timesteps_wake=5000,
