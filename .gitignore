@@ -10,5 +10,6 @@ RLutils/__pycache__/*
 .python*
 results/*
 omt-*/
+*.png
 
 wandb/*
