@@ -7,10 +7,10 @@ omt-rand *EXTRA:
 
 # Training
 train-rand-fourroom *EXTRA:
-    uv run trainRL_Adel.py exp.exp_name=pRNN_fourroom exp.env_name=MiniGrid-FourRooms-Objects-v0 predNet.pRNNtype=thRNN_5win exp.curious_agent=False exp.random_action_agent=True {{EXTRA}}
+    uv run trainRL_Adel.py exp.start_rand=False exp.exp_name=pRNN_fourroom exp.env_name=MiniGrid-FourRooms-Objects-v0 predNet.pRNNtype=thRNN_5win exp.curious_agent=False exp.random_action_agent=True {{EXTRA}}
 
 train-fourroom *EXTRA:
-    uv run trainRL_Adel.py exp.exp_name=pRNN_fourroom exp.env_name=MiniGrid-FourRooms-Objects-v0 predNet.pRNNtype=thRNN_5win {{EXTRA}}
+    uv run trainRL_Adel.py exp.start_rand=False exp.exp_name=pRNN_fourroom exp.env_name=MiniGrid-FourRooms-Objects-v0 predNet.pRNNtype=thRNN_5win {{EXTRA}}
 
 train EXP_NAME *EXTRA:
     uv run trainRL_Adel.py exp.exp_name=pRNN{{EXP_NAME}} predNet.pRNNtype=thRNN_5win {{EXTRA}}

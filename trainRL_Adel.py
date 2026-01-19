@@ -96,7 +96,7 @@ class RL_Trainer(object):
         agent_start_pos = None
         agent_start_dir = None
 
-        if 'FourRooms' in args.exp.env_name:
+        if 'FourRooms' in args.exp.env_name and not args.exp.start_rand:
             agent_start_pos=(1, 1)
             agent_start_dir=1
 
