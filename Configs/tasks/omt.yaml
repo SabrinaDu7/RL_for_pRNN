@@ -13,7 +13,7 @@ training:
   continueTraining: False
 
 testing:
-  trajs: 6 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
+  trajs: 8 # trajectories to inspect for test trial. Must be smaller than trajs_per_batch in training for now
   ctrl_locs: [[2, 5], [4, 7], [11, 3], [13, 5]]
   whichPhase: 0 # which phase to analyze in quantifyObjectLearning
   start_random: False

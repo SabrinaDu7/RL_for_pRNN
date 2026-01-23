@@ -1,9 +1,22 @@
 # Run experiments
-omt *EXTRA:
-    uv run tasks/ObjectMemoryTask/run_task.py {{EXTRA}}
+omt-start-near *EXTRA:
+    uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=False {{EXTRA}}
 
-omt-rand *EXTRA:
-    uv run tasks/ObjectMemoryTask/run_task.py exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
+omt-start-away *EXTRA:
+    uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=False tasks.testing.start_up_bound=[8, 14] tasks.testing.start_low_bound=[1,7] {{EXTRA}}
+
+omt-start-rand *EXTRA:
+    uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=True tasks.testing.start_up_bound=[] tasks.testing.start_low_bound=[] {{EXTRA}}
+
+omt-rand-start-near *EXTRA:
+    just omt-start-near exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
+
+omt-rand-start-away *EXTRA:
+    just omt-start-away exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
+
+omt-rand-start-rand *EXTRA:
+    just omt-start-rand exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
+
 
 # Training
 train-rand-fourroom *EXTRA:
