@@ -32,6 +32,24 @@ def synthesize(array, signs=False, abs=False):
         d["abs_mean"] = np.nanmean(np.abs(array))
     return d
 
+def mean_by_action(values: np.ndarray, actions: np.ndarray) -> dict:
+    """Compute mean values separated by action type.
+
+    Args:
+        values: Array of values (e.g., advantages, rewards)
+        actions: Array of action indices (0=turn_left, 1=turn_right, 2=forward, 3=stay_put)
+
+    Returns:
+        Dict with keys "turn_left", "turn_right", "forward", "stay_put" and mean values
+    """
+    action_names = ["turn_left", "turn_right", "forward", "stay_put"]
+    result = {}
+    for i, name in enumerate(action_names):
+        filtered = values[actions == i]
+        result[name] = float(np.mean(filtered)) if len(filtered) > 0 else 0.0
+    return result
+
+
 def grid_to_pixel_coords(grid_coords: np.ndarray, tile_size: int = 32) -> np.ndarray:
     """
     Convert FaramaMinigrid grid coordinates to pixel coordinates for plotting on rendered image.

@@ -196,13 +196,17 @@ class ObjectMemoryTask:
             else:
                 exps, exp_logs = self.algo.collect_experiences()
                 logs2 = self.algo.update_parameters(exps=exps, update_params=True)
-                locs = exp_logs["locs"] # Locations visited during last training batch (ie last 8 trajs)
                 
                 if self.wandb_log:
                     cur_rewards = synthesize(exp_logs["curious_rewards"], abs=True)
                     wandb.log({f"Train/cur_rewards": cur_rewards["mean"]})
+                    wandb.log({f"Train/cur_rewards": cur_rewards["std"]})
                     for key, val in logs2.items():
                         wandb.log({f"Train/{key}": val})
+                    
+                    for key, val in exp_logs.items():                                                                                                                        
+                        if key.startswith("avg_adv") or key.startswith("curious_reward"):                                                                                                                       
+                            wandb.log({f"Train/{key}": val})  
 
             # if index % saving_interval == 0:
                 # print(f"Completed {index * self.trajs_per_batch} trajectories = {index * self.trajs_per_batch * self.seqdur} steps")
@@ -361,7 +365,6 @@ class ObjectMemoryTask:
             start_locs=torch.tensor(start_pos, dtype=torch.float32),
             end_locs=torch.tensor(end_pos, dtype=torch.float32)
         )) # Average distance travelled across all test trajectories
-        print(f"{start_pos=}, {end_pos=}, {avg_dist=}")
 
         pos = self.testTrial["agent_pos"][:, whichPhase:, :]
         HD = self.testTrial["agent_dir"][:, whichPhase:]

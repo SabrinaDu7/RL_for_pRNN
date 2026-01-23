@@ -14,6 +14,7 @@ from scipy.linalg import toeplitz
 
 from prnn.utils import PredictiveNet
 from RLutils.env import get_subroom_id
+from RLutils.other import mean_by_action
 
 def check_large_jump(loc0: tuple, loc1: tuple):
     x0, y0 = loc0
@@ -217,6 +218,7 @@ class PredictivePPOAlgo:
         )
 
         # The lists below are only relevant if pRNN is being trained
+        logs = {}
         self.done_indices = [0]
         self.last_observations = []
         self.locs = []
@@ -260,7 +262,8 @@ class PredictivePPOAlgo:
             self.obss.append(self.obs)
             self.obs = obs
             self.locs.append(self.loc)
-            self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self.env.env.unwrapped.subroom_size).item())
+            if hasattr(self.env.env.unwrapped, "subroom_size"):
+                self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self.env.env.unwrapped.subroom_size).item())
             self.loc = loc
 
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
@@ -322,9 +325,9 @@ class PredictivePPOAlgo:
             self.last_observations.append(self.obs)
 
         # Calculate curious rewards
+        actions_preformatted = self.actions.cpu().numpy()
         if self.curious_agent:
             with torch.no_grad():
-                actions_preformatted = self.actions.cpu().numpy()
                 MSEs = torch.zeros(self.num_frames, device=self.device)
 
                 for idx in range(1, len(self.done_indices)):
@@ -341,6 +344,10 @@ class PredictivePPOAlgo:
                     MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1) 
 
                 self.curious_rewards = MSEs
+                # Separate curious rewards by action type
+                curious_by_action = mean_by_action(MSEs.cpu().numpy(), actions_preformatted)
+                logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
+                
 
         # Calculate intrinsic rewards
         if self.intrinsic:
@@ -432,7 +439,10 @@ class PredictivePPOAlgo:
 
         # Log some values
 
-        logs = {
+        # Compute average advantages by action type
+        adv_by_action = mean_by_action(self.advantages.cpu().numpy(), actions_preformatted)
+
+        new_logs = {
             "return_per_episode": self.log_return,
             "reshaped_return_per_episode": self.log_reshaped_return,
             "num_frames_per_episode": self.log_num_frames,
@@ -448,7 +458,9 @@ class PredictivePPOAlgo:
             "locs": self.locs,
             "subroom_ids": self.subroom_ids,
             "dist_travelled": dist_travelled,
+            **{f"avg_adv_{k}": v for k, v in adv_by_action.items()},
         }
+        logs.update(new_logs)
 
         self.log_return = []
         self.log_reshaped_return = []
