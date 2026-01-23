@@ -133,6 +133,11 @@ class ObjectMemoryTask:
         )
         return decoder
 
+    def set_start_pos(self):
+        if not self.args.tasks.testing.start_random:
+            self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
+            self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
+
     def trainNovelObject(
         self,
         lr_trials: int,
@@ -294,6 +299,7 @@ class ObjectMemoryTask:
             self.agent.acmodel.eval()  # type: ignore[attr-defined]
             self.agent.argmax = True # type: ignore[attr-defined]
         
+        self.set_start_pos()
         opa = OnPolicyAnalysis(self.algo, timesteps=int(T * 30))
         if self.wandb_log:
             wandb.log({"Eval/MI_policy": opa.mi})
@@ -318,10 +324,7 @@ class ObjectMemoryTask:
 
         for n in range(B):
 
-            if not self.args.tasks.testing.start_random:
-                self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
-                self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
-
+            self.set_start_pos()
             obs, act, state, render = self.pN_post.collectObservationSequence(
                 env=self.env_orig, agent=self.agent, tsteps= T, includeRender=self.oL_fig # Critical self.env_orig
             )
