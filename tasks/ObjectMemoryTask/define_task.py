@@ -19,6 +19,7 @@ from RLutils import (
     get_agent,
     synthesize,
     get_dist_travelled,
+    OnPolicyAnalysis,
 )
 
 from prnn.utils import save_pN
@@ -257,10 +258,7 @@ class ObjectMemoryTask:
                                                                 save=False)
                             
                             wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
-                    
-                    if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy and self.wandb_log:
-                        occ_fig = get_occupancy_fig(self.algo, timesteps=testing_tsteps)
-                        wandb.log({"Analysis/Occupancy": wandb.Plotly(occ_fig)})
+
 
         save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
         print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
@@ -288,17 +286,27 @@ class ObjectMemoryTask:
         # Store original device before moving to CPU
         original_device = next(self.pN_post.pRNN.parameters()).device
 
-        # Ensure that pN's are on cpu since using numpy
-        self.pN_post.pRNN.to(torch.device("cpu"))
-        self.pN_control.pRNN.to(torch.device("cpu"))
-        
+        # Setting to eval mode
         self.pN_post.pRNN.eval()
         self.pN_control.pRNN.eval()
         
         if hasattr(self.agent, "acmodel"):
             self.agent.acmodel.eval()  # type: ignore[attr-defined]
             self.agent.argmax = True # type: ignore[attr-defined]
+        
+        opa = OnPolicyAnalysis(self.algo, timesteps=int(T * 30))
+        if self.wandb_log:
+            wandb.log({"Eval/MI_policy": opa.mi})
+            wandb.log({"Eval/OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
+            wandb.log({"Eval/OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
 
+            if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy :
+                wandb.log({"Eval/OPA_Occupancy": wandb.Plotly(opa.plot_occupancy())})
+        
+        # Ensure that pN's are on cpu since using numpy
+        self.pN_post.pRNN.to(torch.device("cpu"))
+        self.pN_control.pRNN.to(torch.device("cpu"))
+        
         # Collect observation sequence in the environment
         all_obs = torch.zeros((B, T + 1, view_size * view_size * C), dtype=torch.float32)
         all_obs_pred = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
@@ -319,6 +327,7 @@ class ObjectMemoryTask:
             )
 
             # TODO: Ask if pN should start from the same random state for both trained and control nets. This is what happens internally if randInit=True
+            # Experimental decision
             h_state = self.pN_post.pRNN.generate_noise((0, 0.03), (1, 1, 500))
             h_state = self.pN_post.pRNN.rnn.cell.actfun(h_state)
 
