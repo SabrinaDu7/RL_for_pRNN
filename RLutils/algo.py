@@ -662,7 +662,8 @@ class PredictivePPOAlgo:
             # Collect location info
             locs_array = state["agent_pos"][:-1, :] # Shape np.ndarray [seqdur, 2]
             loc_list_current = [tuple(thisloc) for thisloc in locs_array]
-            subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self.env.env.unwrapped.subroom_size))
+            if hasattr(self.env.env.unwrapped, "subroom_size"):
+                subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self.env.env.unwrapped.subroom_size))
             
             init_pos = state["agent_pos"][0, :]
             final_pos = state["agent_pos"][-1, :]
