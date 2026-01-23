@@ -46,7 +46,7 @@ from prnn.utils import (
 )
 from utils import load_statedict_from_acmodel_status
 
-WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
+WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars(omt=False)
 RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
 
 class RL_Trainer(object):
@@ -535,7 +535,7 @@ class RL_Trainer(object):
                             wandb.log({"MI_policy_eval": opa.mi})
                             wandb.log({"OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
                             wandb.log({"OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
-                            wandb.log({"OPA_Error_Map": wandb.Plotly(opa.plot_occupancy())})
+                            wandb.log({"OPA_Occupancy_Map": wandb.Plotly(opa.plot_occupancy())})
 
                         else:
                             RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)

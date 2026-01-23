@@ -34,11 +34,11 @@ def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC, env_type: MinigridEn
     return prnn_ckpt, acmodel_status_ckpt
 
 
-def get_wandb_env_vars() -> tuple[str, str]:
+def get_wandb_env_vars(omt: bool) -> tuple[str, str]:
     """Get and validate Weights & Biases environment variables.
     """
     wandb_entity = get_env_var("WANDB_ENTITY")
-    wandb_project = get_env_var("WANDB_PROJECT")
+    wandb_project = get_env_var("WANDB_PROJECT_OMT" if omt else "WANDB_PROJECT")
     return wandb_entity, wandb_project
 
 

@@ -19,7 +19,7 @@ from RLutils import make_env
 # ===== Constants =====
 DEVICE = torch.device("cuda")
 
-WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars()
+WANDB_ENTITY, WANDB_PROJECT_OMT = get_wandb_env_vars(omt=True)
 RL_STORAGE = get_env_var("RL_STORAGE")
 
 RESULTS_SAVE_FOLDER = "results"
@@ -29,7 +29,7 @@ TIME = time.strftime("%m%d-%H%M")
 def create_wandb_run(run_name: str, group_name:str, args: DictConfig):
     run = wandb.init(
         entity=WANDB_ENTITY,
-        project=WANDB_PROJECT,
+        project=WANDB_PROJECT_OMT,
         name=run_name,
         group=group_name,
     )
@@ -60,8 +60,7 @@ def main(args: DictConfig):
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
     date = datetime.datetime.now().strftime("%m%d-%H%M%S")
     agent_name = "cur" if args.exp.curious_agent else "rand"
-    ctrls = "-ctrls" if len(args.tasks.testing.ctrl_locs) > 2 else ""
-    group_name = f"{args.exp.exp_name}-{agent_name}-{args.tasks.room_type_green}{ctrls}"
+    group_name = f"{args.exp.exp_name}-{agent_name}-{args.tasks.room_type_green}"
     run_name = f"{group_name}-{date}"
 
     if args.logging.wandb_log:
