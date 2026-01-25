@@ -158,7 +158,8 @@ def test_load_actor_critic_agent(prnn_ckpt: str, ac_status_ckpt: str):
         action_space=env.action_space,
         acmodel=acmodel,
         prnn=predNet,
-        device=DEVICE
+        device=DEVICE,
+        argmax=False,
     )
     
     # Test agent can generate observations
@@ -188,7 +189,7 @@ def test_pRNN_sRSA():
     # Build the wrapper agent that uses the AC model and the predictive net
     action_probability = numpy.array([0.15, 0.15, 0.6, 0.1])
     randomagent = RandomActionAgent(env.action_space, action_probability)
-    ac_agent = ActorCriticAgent(env.action_space, acmodel, predictiveNet, device=DEVICE)
+    ac_agent = ActorCriticAgent(env.action_space, acmodel, predictiveNet, device=DEVICE, argmax=False)
 
     # Run the spatial-representation analysis
     _, SI_on, _, sRSA_on = predictiveNet.calculateSpatialRepresentation(

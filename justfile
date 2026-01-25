@@ -3,7 +3,7 @@ omt-start-near *EXTRA:
     uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=False {{EXTRA}}
 
 omt-start-away *EXTRA:
-    uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=False tasks.testing.start_up_bound=[8, 14] tasks.testing.start_low_bound=[1,7] {{EXTRA}}
+    uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=False tasks.testing.start_up_bound=[8,14] tasks.testing.start_low_bound=[1,7] {{EXTRA}}
 
 omt-start-rand *EXTRA:
     uv run tasks/ObjectMemoryTask/run_task.py tasks.testing.start_random=True tasks.testing.start_up_bound=[] tasks.testing.start_low_bound=[] {{EXTRA}}
