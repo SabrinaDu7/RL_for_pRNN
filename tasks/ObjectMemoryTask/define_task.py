@@ -151,26 +151,25 @@ class ObjectMemoryTask:
     ):
         with torch.no_grad():
             if self.wandb_log:
-                testTrial = self.getTestTrial(n_trajs=self.trajs_test)
-                objectLearning = self.quantifyObjectLearning(
+                self.objectLearning = self.quantifyObjectLearning(
                     ctrl_locs=self.args.tasks.testing.ctrl_locs,
                     whichPhase=self.args.tasks.testing.whichPhase,
                     traj_count=0,
                 )
 
                 # Initial Object Learning Figure
-                obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
+                self.obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
                                                                         run_name=self.save_path, 
                                                                         traj_num=0, 
                                                                         save_folder=self.save_path,
-                                                                        objectLearning=objectLearning,
-                                                                        testTrial=testTrial,
+                                                                        objectLearning=self.objectLearning,
+                                                                        testTrial=self.testTrial,
                                                                         rl_storage=".",
                                                                         config=self.args,
                                                                         pN=self.pN_post,
                                                                         show=False,
                                                                         save=False)
-                wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
+                wandb.log({"Analysis/ObjectLearning": wandb.Image(self.obj_learn_fig)})
                 plt.close()
 
         # Update the learning rate
