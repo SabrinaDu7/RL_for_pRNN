@@ -355,6 +355,8 @@ class RL_Trainer(object):
                 pastSR,
                 args.exp.curious_agent,
                 args.rl.k_curious,
+                args.rl.use_rnd,
+                args.rl.rnd_output_dim,
             )
 
         if StatusCkptKeys.OPTIMIZER_STATE.value in status:

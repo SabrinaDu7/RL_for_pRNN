@@ -34,6 +34,9 @@ train-prev *EXTRA:
 train-prev-rand *EXTRA:
     uv run trainRL_Adel.py exp.exp_name=pRNN-prev predNet.pRNNtype=thRNN_5win_prevAct predNet.action_encoding=SpeedNextHD exp.curious_agent=False exp.random_action_agent=True {{EXTRA}}
 
+train-rnd *EXTRA:
+    uv run trainRL_Adel.py exp.exp_name=pRNN-rnd exp.curious_agent=True rl.use_rnd=True {{EXTRA}}
+
 # Formatting and testing
 lint:
     uv run ruff format .

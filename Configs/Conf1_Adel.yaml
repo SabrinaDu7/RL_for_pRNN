@@ -63,6 +63,8 @@ rl:
     cann_input_width: 100
     k_int: 1 # Coefficient for intrinsic reward. Only relevant if exp.intrinsic is True
     k_curious: 1 # Coeffecient for curious reward. Only relevant if exp.curious_agent is True
+    use_rnd: False  # Use Random Network Distillation for curiosity rewards
+    rnd_output_dim: 128  # Output dimension of random feature network
     eval_type: rewards
     value_type: single
 

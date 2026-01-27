@@ -15,6 +15,7 @@ from scipy.linalg import toeplitz
 from prnn.utils import PredictiveNet
 from RLutils.env import get_subroom_id
 from RLutils.other import mean_by_action
+from RLutils.rnd import RandomFeatureNetwork
 
 def check_large_jump(loc0: tuple, loc1: tuple):
     x0, y0 = loc0
@@ -75,6 +76,8 @@ class PredictivePPOAlgo:
         pastSR=False,
         curious_agent=False,
         k_curious=1,
+        use_rnd=False,
+        rnd_output_dim=128,
     ):
         """
         Initializes a `BaseAlgo` instance.
@@ -135,6 +138,15 @@ class PredictivePPOAlgo:
         self.pastSR = pastSR
         self.curious_agent = curious_agent
         self.k_curious = k_curious
+        self.use_rnd = use_rnd
+        self.rnd_output_dim = rnd_output_dim
+        _, view_size, C = self.env.obs_shape
+
+        if self.use_rnd:
+            self.rnd_net = self._init_rnd_net(view_size * view_size * C) # view_size * view_size * C is obs_pred shape
+        else:
+            self.rnd_net = None
+
         assert pastSR ^ ("Next" in str(env.encodeAction))
 
         if hasattr(self.env, "loc_mask"):
@@ -189,6 +201,10 @@ class PredictivePPOAlgo:
         self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
         self.batch_num = 0
         print("All done")
+
+    def _init_rnd_net(self, input_dim: int) -> RandomFeatureNetwork:
+        """Lazily initialize RND network on first use."""
+        return RandomFeatureNetwork(input_dim, self.rnd_output_dim).to(self.device)
 
     def collect_experiences(self, return_joint_distribution=False):
         """Collects rollouts and computes advantages.
@@ -341,7 +357,14 @@ class PredictivePPOAlgo:
 
                     obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
                     obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
-                    MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1) 
+
+                    if self.use_rnd:
+                        assert self.rnd_net is not None, "RND network not initialized."
+                        pred_features = self.rnd_net(obs_pred)
+                        target_features = self.rnd_net(obs_next)
+                        MSEs[start_episode:end_episode] = ((pred_features - target_features) ** 2).mean(dim=1)
+                    else:
+                        MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1) 
 
                 self.curious_rewards = MSEs
                 # Separate curious rewards by action type
