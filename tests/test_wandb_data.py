@@ -6,12 +6,25 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+import json
+import os
+
+import numpy as np
+import plotly.graph_objects as go
+
 from scripts.wandb_data import (
+    OccupancyData,
     _build_filters,
+    _download_and_extract,
+    _extract_heatmap_grids,
     _fetch_history,
+    _fetch_plotly_file,
     _resolve_config_value,
+    _scan_occupancy_refs,
     _unwrap_wandb_config,
+    fetch_occupancy_grids,
     fetch_run_traces,
+    plot_occupancy_average,
     plot_traces,
 )
 
@@ -123,11 +136,26 @@ def test_build_filters_both():
 # ---------------------------------------------------------------------------
 
 @dataclass
+class MockFile:
+    """Stand-in for a wandb File object."""
+    name: str
+    _content: bytes
+
+    def download(self, root: str = ".", replace: bool = False) -> str:
+        path = os.path.join(root, self.name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(self._content)
+        return path
+
+
+@dataclass
 class MockRun:
     """Lightweight stand-in for a wandb Run."""
     name: str
     config: dict
     _history: list[dict] = field(default_factory=list)
+    _files: dict[str, MockFile] = field(default_factory=dict)
 
     def scan_history(
         self,
@@ -155,6 +183,9 @@ class MockRun:
                 for row in self._history[:samples]
             ]
         return pd.DataFrame(rows)
+
+    def file(self, name: str) -> MockFile:
+        return self._files[name]
 
 
 def _make_mock_api(runs: list[MockRun]):
@@ -464,3 +495,317 @@ def test_plot_traces_no_multiindex():
     with pytest.raises(ValueError, match="must have a MultiIndex"):
         plot_traces(df, group_keys=["group"], colors=["red"])
     plt.close("all")
+
+
+# ---------------------------------------------------------------------------
+# _extract_heatmap_grids
+# ---------------------------------------------------------------------------
+
+def _make_plotly_json(grids: list[np.ndarray]) -> dict:
+    """Build a minimal Plotly JSON dict with heatmap traces from z-arrays."""
+    return {
+        "data": [
+            {"type": "heatmap", "z": g.tolist()} for g in grids
+        ],
+        "layout": {},
+    }
+
+
+def test_extract_heatmap_grids_basic():
+    g0 = np.arange(6).reshape(2, 3).astype(float)
+    g1 = np.arange(6, 12).reshape(2, 3).astype(float)
+    plotly_json = _make_plotly_json([g0, g1])
+
+    result = _extract_heatmap_grids(plotly_json)
+
+    assert result.shape == (2, 2, 3)
+    np.testing.assert_array_equal(result[0], g0)
+    np.testing.assert_array_equal(result[1], g1)
+
+
+def test_extract_heatmap_grids_no_heatmaps():
+    plotly_json = {"data": [{"type": "scatter", "x": [1], "y": [2]}]}
+    with pytest.raises(ValueError, match="No heatmap traces"):
+        _extract_heatmap_grids(plotly_json)
+
+
+def test_extract_heatmap_grids_mixed_trace_types():
+    """Only heatmap traces are extracted; other trace types are ignored."""
+    g0 = np.ones((3, 3))
+    plotly_json = {
+        "data": [
+            {"type": "scatter", "x": [1], "y": [2]},
+            {"type": "heatmap", "z": g0.tolist()},
+            {"type": "bar", "x": [1], "y": [2]},
+        ],
+        "layout": {},
+    }
+    result = _extract_heatmap_grids(plotly_json)
+    assert result.shape == (1, 3, 3)
+    np.testing.assert_array_equal(result[0], g0)
+
+
+def test_extract_heatmap_grids_roundtrip():
+    """Build a Plotly figure exactly like get_occupancy_fig and verify roundtrip."""
+    from plotly.subplots import make_subplots
+
+    occ = np.random.rand(4, 14, 14)
+    fig = make_subplots(rows=1, cols=4)
+    for hd in range(4):
+        fig.add_trace(
+            go.Heatmap(z=occ[hd].T, showscale=False),
+            row=1, col=hd + 1,
+        )
+
+    # Serialize to JSON dict (same format WandB stores)
+    plotly_json = json.loads(fig.to_json())
+    result = _extract_heatmap_grids(plotly_json)
+
+    assert result.shape == (4, 14, 14)
+    for hd in range(4):
+        np.testing.assert_array_almost_equal(result[hd], occ[hd].T)
+
+
+# ---------------------------------------------------------------------------
+# _fetch_plotly_file
+# ---------------------------------------------------------------------------
+
+def test_fetch_plotly_file(tmp_path):
+    expected = {"data": [{"type": "heatmap", "z": [[1, 2], [3, 4]]}]}
+    media_path = "media/plotly/test.plotly.json"
+
+    run = MockRun(
+        name="r",
+        config={},
+        _files={media_path: MockFile(media_path, json.dumps(expected).encode())},
+    )
+
+    result = _fetch_plotly_file(run, media_path, str(tmp_path))
+    assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# _scan_occupancy_refs / _download_and_extract
+# ---------------------------------------------------------------------------
+
+def test_scan_occupancy_refs_collects_refs():
+    media_ref_1 = {"_type": "plotly-file", "path": "media/plotly/a.json"}
+    media_ref_2 = {"_type": "plotly-file", "path": "media/plotly/b.json"}
+    run = MockRun(
+        name="r",
+        config={},
+        _history=[
+            {"_step": 10, "occ": media_ref_1},
+            {"_step": 20, "occ": media_ref_2},
+        ],
+    )
+
+    refs = _scan_occupancy_refs(run, metric="occ", step_key="_step")
+
+    assert len(refs) == 2
+    assert refs[0] == (10, media_ref_1)
+    assert refs[1] == (20, media_ref_2)
+
+
+def test_scan_occupancy_refs_skips_missing_metric():
+    run = MockRun(
+        name="r",
+        config={},
+        _history=[
+            {"_step": 0, "other_metric": 1.0},
+            {"_step": 1},
+        ],
+    )
+
+    refs = _scan_occupancy_refs(run, metric="occ", step_key="_step")
+    assert refs == []
+
+
+def test_download_and_extract_file_reference(tmp_path):
+    """Handles WandB file-reference dicts."""
+    grid = np.ones((4, 3, 3))
+    plotly_json = _make_plotly_json([grid[hd] for hd in range(4)])
+    media_path = "media/plotly/occ.plotly.json"
+
+    run = MockRun(
+        name="r",
+        config={},
+        _files={media_path: MockFile(media_path, json.dumps(plotly_json).encode())},
+    )
+
+    result = _download_and_extract(
+        run, {"_type": "plotly-file", "path": media_path}, str(tmp_path),
+    )
+
+    assert result is not None
+    np.testing.assert_array_equal(result, grid)
+
+
+def test_download_and_extract_inline_data():
+    """Handles inline Plotly JSON data."""
+    grid = np.arange(9).reshape(1, 3, 3).astype(float)
+    plotly_json = _make_plotly_json([grid[0]])
+
+    run = MockRun(name="r", config={})
+    result = _download_and_extract(run, plotly_json, "/unused")
+
+    assert result is not None
+    np.testing.assert_array_equal(result[0], grid[0])
+
+
+def test_download_and_extract_unknown_format():
+    """Returns None for unrecognised media references."""
+    run = MockRun(name="r", config={})
+    result = _download_and_extract(run, {"_type": "unknown"}, "/unused")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# fetch_occupancy_grids (mocked)
+# ---------------------------------------------------------------------------
+
+def _make_occ_mock_run(
+    name: str,
+    config: dict,
+    step_grids: list[tuple[int, np.ndarray]],
+) -> MockRun:
+    """Build a MockRun with occupancy Plotly files at given steps."""
+    history = []
+    files = {}
+    for step, grid in step_grids:
+        plotly_json = _make_plotly_json([grid[hd] for hd in range(grid.shape[0])])
+        media_path = f"media/plotly/occ_{step}.plotly.json"
+        history.append({
+            "_step": step,
+            "Eval/OPA_Occupancy": {"_type": "plotly-file", "path": media_path},
+        })
+        files[media_path] = MockFile(media_path, json.dumps(plotly_json).encode())
+    return MockRun(name=name, config=config, _history=history, _files=files)
+
+
+def test_fetch_occupancy_grids_single_run():
+    grid = np.random.rand(4, 3, 3)
+    mock_runs = [_make_occ_mock_run("r1", {}, [(10, grid)])]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        data = fetch_occupancy_grids(entity="e", project="p")
+
+    assert isinstance(data, OccupancyData)
+    assert list(data.grids.keys()) == [10]
+    assert data.grids[10].shape == (1, 4, 3, 3)
+    np.testing.assert_array_almost_equal(data.grids[10][0], grid)
+    assert data.run_names == ["r1"]
+
+
+def test_fetch_occupancy_grids_multiple_runs():
+    g1 = np.ones((4, 3, 3))
+    g2 = np.ones((4, 3, 3)) * 2
+    mock_runs = [
+        _make_occ_mock_run("r1", {}, [(10, g1)]),
+        _make_occ_mock_run("r2", {}, [(10, g2)]),
+    ]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        data = fetch_occupancy_grids(entity="e", project="p")
+
+    assert data.grids[10].shape == (2, 4, 3, 3)
+    # Average should be 1.5
+    avg = np.nanmean(data.grids[10], axis=0)
+    np.testing.assert_array_almost_equal(avg, np.ones((4, 3, 3)) * 1.5)
+
+
+def test_fetch_occupancy_grids_mismatched_steps():
+    """Runs with different steps produce NaN-padded arrays."""
+    g1 = np.ones((4, 2, 2))
+    g2 = np.ones((4, 2, 2)) * 3
+    mock_runs = [
+        _make_occ_mock_run("r1", {}, [(10, g1)]),
+        _make_occ_mock_run("r2", {}, [(10, g2), (20, g2)]),
+    ]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        data = fetch_occupancy_grids(entity="e", project="p")
+
+    assert sorted(data.grids.keys()) == [10, 20]
+    # Step 10: both runs have data
+    assert not np.any(np.isnan(data.grids[10]))
+    # Step 20: only run r2 has data, r1 should be NaN
+    assert np.all(np.isnan(data.grids[20][0]))  # r1 missing
+    np.testing.assert_array_almost_equal(data.grids[20][1], g2)  # r2 present
+
+
+def test_fetch_occupancy_grids_no_runs_raises():
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api([])):
+        with pytest.raises(ValueError, match="No runs found"):
+            fetch_occupancy_grids(entity="e", project="p")
+
+
+def test_fetch_occupancy_grids_no_data_raises():
+    """Runs exist but none have occupancy data."""
+    mock_runs = [MockRun(name="r1", config={}, _history=[])]
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        with pytest.raises(ValueError, match="No occupancy data"):
+            fetch_occupancy_grids(entity="e", project="p")
+
+
+def test_fetch_occupancy_grids_with_config_keys():
+    g = np.zeros((4, 2, 2))
+    mock_runs = [
+        _make_occ_mock_run("r1", {"exp": {"seed": 1}}, [(5, g)]),
+    ]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        data = fetch_occupancy_grids(
+            entity="e", project="p", config_keys=["exp.seed"],
+        )
+
+    assert data.config_keys == ["exp.seed"]
+    assert data.config_values == [(1,)]
+
+
+def test_fetch_occupancy_grids_filters_passed_through():
+    mock_api = _make_mock_api([
+        _make_occ_mock_run("r", {}, [(0, np.zeros((4, 2, 2)))]),
+    ])
+    with patch("scripts.wandb_data.wandb.Api", return_value=mock_api):
+        fetch_occupancy_grids(
+            entity="e",
+            project="p",
+            filters={"config.exp.seed": 5},
+            group="grp",
+        )
+
+    mock_api.runs.assert_called_once_with(
+        path="e/p",
+        filters={"$and": [{"config.exp.seed": 5}, {"group": "grp"}]},
+    )
+
+
+# ---------------------------------------------------------------------------
+# plot_occupancy_average
+# ---------------------------------------------------------------------------
+
+def test_plot_occupancy_average_returns_figure():
+    avg = {
+        10: np.random.rand(4, 3, 3),
+        20: np.random.rand(4, 3, 3),
+    }
+    fig = plot_occupancy_average(avg)
+
+    assert isinstance(fig, go.Figure)
+    # 2 steps x 4 HDs = 8 heatmap traces
+    heatmaps = [t for t in fig.data if t.type == "heatmap"]
+    assert len(heatmaps) == 8
+
+
+def test_plot_occupancy_average_subset_steps():
+    avg = {
+        10: np.random.rand(4, 3, 3),
+        20: np.random.rand(4, 3, 3),
+        30: np.random.rand(4, 3, 3),
+    }
+    fig = plot_occupancy_average(avg, steps=[10, 30])
+
+    heatmaps = [t for t in fig.data if t.type == "heatmap"]
+    # 2 steps x 4 HDs = 8
+    assert len(heatmaps) == 8

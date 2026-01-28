@@ -1,10 +1,18 @@
 """Utilities for fetching WandB run traces into pandas DataFrames."""
+import base64
+import json
+import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from typing import Any
 
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import wandb
 
 # Fetching from wandb functions
@@ -303,7 +311,379 @@ def plot_traces(
     return ax
 
 
+# ---------------------------------------------------------------------------
+# Occupancy heatmap fetching
+# ---------------------------------------------------------------------------
+
+
+def _decode_plotly_z(z) -> np.ndarray:
+    """Decode a Plotly heatmap ``z`` field into a numpy array.
+
+    Handles two serialization formats:
+
+    * **List-of-lists** (older Plotly / plain JSON): ``[[1, 2], [3, 4]]``
+    * **Binary dict** (Plotly v6+): ``{"dtype": "f8", "bdata": "...", "shape": "3, 3"}``
+
+    Args:
+        z: The ``z`` value from a Plotly heatmap trace dict.
+
+    Returns:
+        2-D numpy array of floats.
+    """
+    if isinstance(z, dict) and "bdata" in z:
+        raw = base64.b64decode(z["bdata"])
+        dtype = np.dtype(z["dtype"])
+        shape = tuple(int(s) for s in z["shape"].split(","))
+        return np.frombuffer(raw, dtype=dtype).reshape(shape).astype(float)
+    return np.array(z, dtype=float)
+
+
+def _extract_heatmap_grids(plotly_json: dict) -> np.ndarray:
+    """Extract z-arrays from all Heatmap traces in a Plotly JSON dict.
+
+    Args:
+        plotly_json: A deserialized Plotly JSON object with a ``"data"`` key
+            containing trace dicts.
+
+    Returns:
+        np.ndarray of shape ``(n_traces, H, W)`` containing the z values
+        from each Heatmap trace, in order.
+
+    Raises:
+        ValueError: If no heatmap traces are found.
+    """
+    grids = []
+    for trace in plotly_json["data"]:
+        if trace.get("type") == "heatmap":
+            grids.append(_decode_plotly_z(trace["z"]))
+    if not grids:
+        raise ValueError("No heatmap traces found in Plotly JSON")
+    return np.stack(grids, axis=0)
+
+
+def _fetch_plotly_file(run, media_path: str, tmp_dir: str) -> dict:
+    """Download and parse a Plotly JSON file from a WandB run.
+
+    Args:
+        run: A wandb Run object (from the public API).
+        media_path: The path to the plotly JSON file within the run
+            (e.g., ``"media/plotly/OPA_Occupancy_2360_abc.plotly.json"``).
+        tmp_dir: Temporary directory to download the file into.
+
+    Returns:
+        Parsed JSON dict (the Plotly figure data).
+    """
+    run.file(media_path).download(root=tmp_dir, replace=True)
+    full_path = os.path.join(tmp_dir, media_path)
+    with open(full_path) as f:
+        return json.load(f)
+
+
+def _scan_occupancy_refs(
+    run,
+    metric: str,
+    step_key: str,
+) -> list[tuple[int, dict]]:
+    """Scan a run's history to collect Plotly media references.
+
+    This is the fast first phase — no file downloads, just collecting
+    the ``(step, media_ref)`` pairs from ``scan_history``.
+
+    Args:
+        run: A wandb Run object.
+        metric: The metric key (e.g., ``"Eval/OPA_Occupancy"``).
+        step_key: The step key to use for indexing.
+
+    Returns:
+        List of ``(step_value, media_ref_dict)`` pairs.
+    """
+    refs: list[tuple[int, dict]] = []
+    for row in run.scan_history(keys=[step_key, metric]):
+        if metric not in row or step_key not in row:
+            continue
+        media_ref = row[metric]
+        if isinstance(media_ref, dict):
+            refs.append((int(row[step_key]), media_ref))
+    return refs
+
+
+def _download_and_extract(
+    run,
+    media_ref: dict,
+    tmp_dir: str,
+) -> np.ndarray | None:
+    """Download a single Plotly file and extract its heatmap grids.
+
+    Args:
+        run: A wandb Run object (needed for ``run.file()``).
+        media_ref: The media reference dict from ``scan_history``.
+        tmp_dir: Temporary directory for downloads.
+
+    Returns:
+        Array of shape ``(n_traces, H, W)``, or ``None`` if the
+        reference format is not recognised.
+    """
+    if "path" in media_ref:
+        plotly_json = _fetch_plotly_file(run, media_ref["path"], tmp_dir)
+    elif "data" in media_ref:
+        plotly_json = media_ref
+    else:
+        return None
+    return _extract_heatmap_grids(plotly_json)
+
+
+@dataclass
+class OccupancyData:
+    """Container for fetched occupancy grid data across runs."""
+
+    grids: dict[int, np.ndarray]
+    """Mapping from step value to array of shape ``(n_runs, 4, H, W)``."""
+
+    run_names: list[str]
+    """Run names in the order they appear along axis 0 of each grid array."""
+
+    config_values: list[tuple] | None
+    """Config values per run (one tuple per run), or None if no config_keys."""
+
+    config_keys: list[str]
+    """The config keys that were requested."""
+
+    hd_labels: list[str] = field(
+        default_factory=lambda: ["→", "↓", "←", "↑"]
+    )
+    """Head-direction labels matching axis 1 of each grid array."""
+
+
+def fetch_occupancy_grids(
+    entity: str,
+    project: str,
+    metric: str = "Eval/OPA_Occupancy",
+    step_key: str = "_step",
+    config_keys: list[str] | None = None,
+    filters: dict | None = None,
+    group: str | None = None,
+    max_workers: int = 32,
+) -> OccupancyData:
+    """Fetch occupancy heatmap grids from WandB runs and stack across runs.
+
+    Downloads Plotly JSON files for *metric* from all matching runs,
+    extracts the heatmap z-arrays, and stacks them by step.
+
+    Uses a two-phase parallel strategy for speed:
+
+    1. **Scan** all run histories in parallel to collect Plotly file refs.
+    2. **Download** all files in parallel with up to *max_workers* threads.
+
+    Args:
+        entity: WandB entity (team or user).
+        project: WandB project name.
+        metric: The metric key for the logged Plotly occupancy figure.
+        step_key: The step key used as the x-axis. Defaults to ``"_step"``.
+            Note that ``Eval/*`` metrics use WandB's auto-incrementing
+            ``_step``, not ``step_count``.
+        config_keys: Optional list of dot-separated config keys to resolve
+            per run (e.g., ``["exp.seed"]``).
+        filters: Optional WandB API filters dict (MongoDB query format).
+        group: Optional WandB group name to filter by.
+        max_workers: Maximum number of parallel threads for scanning and
+            downloading.  Defaults to 32 (I/O-bound work).
+
+    Returns:
+        An :class:`OccupancyData` instance whose ``grids`` maps each step
+        value to an array of shape ``(n_runs, 4, H, W)``.  Runs missing
+        data at a given step are filled with ``NaN``.
+
+    Raises:
+        ValueError: If no runs match the provided filters, or if no
+            occupancy data is found in any run.
+    """
+    from tqdm import tqdm
+
+    if config_keys is None:
+        config_keys = []
+
+    merged_filters = _build_filters(filters, group)
+
+    api = wandb.Api(timeout=29)
+    runs = api.runs(path=f"{entity}/{project}", filters=merged_filters)
+    runs_list = list(runs)
+    if not runs_list:
+        raise ValueError(
+            f"No runs found for entity='{entity}', project='{project}' "
+            f"with filters={merged_filters}"
+        )
+
+    n_runs = len(runs_list)
+    workers = min(max_workers, n_runs)
+
+    # -- Phase 1: scan histories to collect file refs + config values ------
+    def _scan_run(run):
+        config_vals = tuple(
+            _resolve_config_value(run.config, key) for key in config_keys
+        )
+        refs = _scan_occupancy_refs(run, metric, step_key)
+        return run.name, config_vals, refs
+
+    scan_results: list = [None] * n_runs
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_scan_run, run): i
+            for i, run in enumerate(runs_list)
+        }
+        for future in tqdm(
+            as_completed(futures), total=n_runs, desc="Scanning runs"
+        ):
+            scan_results[futures[future]] = future.result()
+
+    run_names = [r[0] for r in scan_results]
+    config_values = [r[1] for r in scan_results] if config_keys else None
+    # per_run_refs[i] = [(step, media_ref), ...]
+    per_run_refs = [r[2] for r in scan_results]
+
+    total_files = sum(len(refs) for refs in per_run_refs)
+    if total_files == 0:
+        raise ValueError("No occupancy data found in any run.")
+
+    # -- Phase 2: download and extract all files in parallel ---------------
+    # Build a flat list of download tasks: (run_idx, step, run, media_ref)
+    download_tasks = []
+    for run_idx, refs in enumerate(per_run_refs):
+        run = runs_list[run_idx]
+        for step, media_ref in refs:
+            download_tasks.append((run_idx, step, run, media_ref))
+
+    # results_map[run_idx] = [(step, grid), ...]
+    results_map: dict[int, list[tuple[int, np.ndarray]]] = {
+        i: [] for i in range(n_runs)
+    }
+    sample_grid = None
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        def _do_download(task):
+            run_idx, step, run, media_ref = task
+            # Use run-specific subdirectory to avoid path collisions
+            run_tmp = os.path.join(tmp_dir, str(run_idx))
+            os.makedirs(run_tmp, exist_ok=True)
+            grid = _download_and_extract(run, media_ref, run_tmp)
+            return run_idx, step, grid
+
+        dl_workers = min(max_workers, len(download_tasks))
+        with ThreadPoolExecutor(max_workers=dl_workers) as pool:
+            futures = [pool.submit(_do_download, t) for t in download_tasks]
+            for future in tqdm(
+                as_completed(futures), total=len(futures),
+                desc="Downloading heatmaps",
+            ):
+                run_idx, step, grid = future.result()
+                if grid is not None:
+                    results_map[run_idx].append((step, grid))
+                    if sample_grid is None:
+                        sample_grid = grid
+
+    if sample_grid is None:
+        raise ValueError("No occupancy data found in any run.")
+
+    # -- Phase 3: assemble into per-step arrays ----------------------------
+    all_entries = [results_map[i] for i in range(n_runs)]
+    all_steps = sorted({s for entries in all_entries for s, _ in entries})
+    grids: dict[int, np.ndarray] = {}
+    for step in all_steps:
+        step_array = np.full((n_runs, *sample_grid.shape), np.nan)
+        for run_idx, entries in enumerate(all_entries):
+            for s, g in entries:
+                if s == step:
+                    step_array[run_idx] = g
+                    break
+        grids[step] = step_array
+
+    return OccupancyData(
+        grids=grids,
+        run_names=run_names,
+        config_values=config_values,
+        config_keys=config_keys,
+    )
+
+
+def plot_occupancy_average(
+    avg_grids: dict[int, np.ndarray],
+    steps: list[int] | None = None,
+    scale: str = "viridis",
+    title: str = "Average Occupancy",
+) -> go.Figure:
+    """Plot cross-run average occupancy heatmaps.
+
+    Creates a grid of heatmaps: one row per requested step, 4 columns
+    for head directions.
+
+    Args:
+        avg_grids: Dict mapping step to ``np.ndarray`` of shape
+            ``(4, H, W)`` (one grid per head direction).
+        steps: Which steps to plot. If ``None``, plots all steps.
+        scale: Plotly colorscale name.
+        title: Figure title.
+
+    Returns:
+        A ``plotly.graph_objects.Figure`` with the heatmap grid.
+    """
+    if steps is None:
+        steps = sorted(avg_grids.keys())
+
+    hd_labels = ["→", "↓", "←", "↑"]
+    n_steps = len(steps)
+
+    fig = make_subplots(
+        rows=n_steps,
+        cols=4,
+        horizontal_spacing=0.02,
+        vertical_spacing=min(0.05, 0.15 / max(n_steps - 1, 1)),
+        column_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)],
+        row_titles=[f"Step {s}" for s in steps],
+    )
+
+    for row_idx, step in enumerate(steps):
+        grid = avg_grids[step]  # (4, H, W)
+        for hd in range(4):
+            fig.add_trace(
+                go.Heatmap(z=grid[hd], showscale=False, colorscale=scale),
+                row=row_idx + 1,
+                col=hd + 1,
+            )
+
+    fig.update_xaxes(showticklabels=False, constrain="domain")
+    fig.update_yaxes(showticklabels=False, autorange="reversed", constrain="domain")
+    # Anchor each y-axis to its own x-axis so aspect ratios are independent.
+    for row_idx in range(n_steps):
+        for col_idx in range(4):
+            ax_id = row_idx * 4 + col_idx + 1
+            suffix = "" if ax_id == 1 else str(ax_id)
+            fig.update_layout(
+                **{f"yaxis{suffix}": dict(scaleanchor=f"x{suffix}", scaleratio=1)}
+            )
+    fig.update_layout(
+        height=300 * n_steps,
+        width=1400,
+        title=title,
+        title_x=0.5,
+    )
+
+    return fig
+
+
 if __name__ == "__main__":
+
+    data = fetch_occupancy_grids(                                                                                                                                
+      entity="blake-richards",                                                                                                                                 
+      project="curious-george-omt",                                                                                                                            
+      metric="Eval/OPA_Occupancy",
+      group="test"                                                                                                                             
+      # step_key defaults to "_step" (correct for Eval/* metrics)                                            
+    )                                                                                                                                                            
+                                                                                                                                                                                                                                                                   
+    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}
+    print(avg[3])                                                                                
+    fig = plot_occupancy_average(avg)                                                                                                                            
+    fig.write_image("occupancy_rand.png")
+
     df = fetch_run_traces(
         entity="blake-richards",
         project="curious-george-omt",

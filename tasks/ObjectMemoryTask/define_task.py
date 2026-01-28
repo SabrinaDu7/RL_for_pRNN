@@ -247,7 +247,6 @@ class ObjectMemoryTask:
                         wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
                         wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
                         wandb.log({"Analysis/Avg Distance Travelled": objectLearning["avg_dist"]})
-                        print(f"objectLearning[\"avg_dist\"]: {objectLearning['avg_dist']}")
                         
                         if self.wandb_log and self.oL_fig:
                             obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
@@ -306,7 +305,7 @@ class ObjectMemoryTask:
             wandb.log({"Eval/OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
             wandb.log({"Eval/OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
 
-            if self.agent_type == AgentType.AC and self.args.tasks.analysis.occupancy :
+            if self.args.tasks.analysis.occupancy :
                 wandb.log({"Eval/OPA_Occupancy": wandb.Plotly(opa.plot_occupancy())})
         
         # Ensure that pN's are on cpu since using numpy
