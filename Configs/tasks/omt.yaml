@@ -2,6 +2,7 @@ defaults:
     - _self_  
 
 room_type_green: "dot" # Options: "line", "plus", "dot", "extrinsic_goal"
+new_obj_loc: [7, 2]
 
 training:
   num_trajs: 3000 # trajectories to train on in novel env

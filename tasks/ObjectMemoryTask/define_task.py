@@ -52,6 +52,7 @@ class ObjectMemoryTask:
         self.env_novel = env_novel
 
         self.new_obj_pos = self.env_novel.get_new_obj_pos()
+        print(f"New object position in novel environment: {self.new_obj_pos}")
         with open_dict(args):
             args.tasks.new_obj_pos = self.new_obj_pos
 

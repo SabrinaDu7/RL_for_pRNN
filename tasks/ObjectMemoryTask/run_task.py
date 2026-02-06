@@ -39,14 +39,14 @@ def create_wandb_run(run_name: str, group_name:str, args: DictConfig):
 
     return run
 
-def get_novel_env(room_type: str) -> FaramaMinigridShell:
+def get_novel_env(room_type: str, obj_pos: list[int] = [7, 2]) -> FaramaMinigridShell:
     if room_type == "line":
         return make_env(env_key=MinigridEnvNames.LRoomLineGreen, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "plus":
         return make_env(env_key=MinigridEnvNames.LRoom, plus_color="green", input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "dot":
         # LANDMINE: Hardcoded new object position
-        return make_env(env_key=MinigridEnvNames.LRoom, new_obj_pos=[7, 2], input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        return make_env(env_key=MinigridEnvNames.LRoom, new_obj_pos=obj_pos, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "goal":
         return make_env(env_key=MinigridEnvNames.LRoomGoal, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     else:
@@ -71,7 +71,7 @@ def main(args: DictConfig):
     # Get environments
     env_orig_name = MinigridEnvNames.LRoom
     env_orig = make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-    env_novel = get_novel_env(args.tasks.room_type_green)
+    env_novel = get_novel_env(args.tasks.room_type_green, obj_pos=args.tasks.new_obj_loc)
     assert env_novel.get_goal_loc() is None, "Novel environment cannot have extrinsic goal"
     
     # Run task
