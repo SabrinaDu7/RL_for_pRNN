@@ -24,8 +24,11 @@ from scripts.wandb_data import (
     _unwrap_wandb_config,
     fetch_occupancy_grids,
     fetch_run_traces,
+    load_occupancy,
     plot_occupancy_average,
     plot_traces,
+    runs_per_step,
+    save_occupancy,
 )
 
 
@@ -809,3 +812,93 @@ def test_plot_occupancy_average_subset_steps():
     heatmaps = [t for t in fig.data if t.type == "heatmap"]
     # 2 steps x 4 HDs = 8
     assert len(heatmaps) == 8
+
+
+# ---------------------------------------------------------------------------
+# runs_per_step
+# ---------------------------------------------------------------------------
+
+def test_runs_per_step_all_same():
+    """All runs log at the same steps."""
+    entries = [[(0, "a"), (1, "b")], [(0, "c"), (1, "d")]]
+    assert runs_per_step(entries) == {0: 2, 1: 2}
+
+
+def test_runs_per_step_partial_overlap():
+    """Runs with partially overlapping steps."""
+    entries = [
+        [(1, "a"), (2, "b")],
+        [(2, "c"), (3, "d")],
+    ]
+    assert runs_per_step(entries) == {1: 1, 2: 2, 3: 1}
+
+
+def test_runs_per_step_no_overlap():
+    """Runs with completely disjoint steps."""
+    entries = [[(0, "a")], [(5, "b")]]
+    assert runs_per_step(entries) == {0: 1, 5: 1}
+
+
+def test_runs_per_step_empty_list():
+    """No runs at all."""
+    assert runs_per_step([]) == {}
+
+
+# ---------------------------------------------------------------------------
+# save_occupancy / load_occupancy
+# ---------------------------------------------------------------------------
+
+def _make_occupancy_data() -> OccupancyData:
+    """Build a small OccupancyData for save/load tests."""
+    rng = np.random.default_rng(42)
+    g10 = rng.random((3, 4, 5, 5))        # 3 runs, 4 HDs, 5x5 grid
+    g20 = rng.random((3, 4, 5, 5))
+    g20[2] = np.nan                         # run 2 missing at step 20
+    return OccupancyData(
+        grids={10: g10, 20: g20},
+        run_names=["run_a", "run_b", "run_c"],
+        config_values=[(1,), (2,), (3,)],
+        config_keys=["exp.seed"],
+    )
+
+
+def test_save_load_roundtrip(tmp_path):
+    """Save then load produces identical OccupancyData."""
+    original = _make_occupancy_data()
+    save_occupancy(original, "test_occ", output_dir=tmp_path)
+    loaded = load_occupancy("test_occ", output_dir=tmp_path)
+
+    assert loaded.run_names == original.run_names
+    assert loaded.config_keys == original.config_keys
+    assert loaded.config_values == original.config_values
+    assert loaded.hd_labels == original.hd_labels
+    assert sorted(loaded.grids.keys()) == sorted(original.grids.keys())
+    for step in original.grids:
+        np.testing.assert_array_almost_equal(
+            loaded.grids[step], original.grids[step],
+        )
+
+
+def test_save_load_no_config(tmp_path):
+    """Roundtrip works when config_values is None."""
+    data = OccupancyData(
+        grids={0: np.ones((1, 4, 3, 3))},
+        run_names=["r1"],
+        config_values=None,
+        config_keys=[],
+    )
+    save_occupancy(data, "no_cfg", output_dir=tmp_path)
+    loaded = load_occupancy("no_cfg", output_dir=tmp_path)
+
+    assert loaded.config_values is None
+    assert loaded.config_keys == []
+    np.testing.assert_array_equal(loaded.grids[0], data.grids[0])
+
+
+def test_save_creates_files(tmp_path):
+    """Save creates grids.parquet and metadata.json."""
+    data = _make_occupancy_data()
+    out = save_occupancy(data, "check_files", output_dir=tmp_path)
+
+    assert (out / "grids.parquet").exists()
+    assert (out / "metadata.json").exists()

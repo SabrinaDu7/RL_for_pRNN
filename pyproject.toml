@@ -39,6 +39,7 @@ dependencies = [
     "ultraplot>=1.0.3",
     "ipykernel>=6.31.0",
     "tyro>=1.0.4",
+    "pyarrow>=21.0.0",
 ]
 
 [dependency-groups]

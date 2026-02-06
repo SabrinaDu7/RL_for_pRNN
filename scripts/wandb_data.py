@@ -189,7 +189,7 @@ def fetch_run_traces(
 
     merged_filters = _build_filters(filters, group)
 
-    api = wandb.Api()
+    api = wandb.Api(timeout=29)
     runs = api.runs(path=f"{entity}/{project}", filters=merged_filters)
 
     runs_list = list(runs)
@@ -504,7 +504,7 @@ def fetch_occupancy_grids(
 
     merged_filters = _build_filters(filters, group)
 
-    api = wandb.Api(timeout=29)
+    api = wandb.Api(timeout=69)
     runs = api.runs(path=f"{entity}/{project}", filters=merged_filters)
     runs_list = list(runs)
     if not runs_list:
@@ -514,6 +514,7 @@ def fetch_occupancy_grids(
         )
 
     n_runs = len(runs_list)
+    print(f"Found {n_runs} runs matching filters.")
     workers = min(max_workers, n_runs)
 
     # -- Phase 1: scan histories to collect file refs + config values ------
@@ -585,13 +586,25 @@ def fetch_occupancy_grids(
 
     # -- Phase 3: assemble into per-step arrays ----------------------------
     all_entries = [results_map[i] for i in range(n_runs)]
-    all_steps = sorted({s for entries in all_entries for s, _ in entries})
+    all_steps = set()
+    for entries in all_entries:
+        all_steps.update({step for step, _ in entries})
+    all_steps = sorted(all_steps)
+
+    all_steps_new = set(all_steps[:-1]) # Include last step by default
+    for i, step in enumerate(all_steps[:-1]):
+        if not (all_steps[i] + 10 > all_steps[i + 1]):
+            all_steps_new.add(step)
+    
+    print(f"Original steps: {all_steps}")
+    print(f"Filtered steps: {sorted(all_steps_new)}")
+
     grids: dict[int, np.ndarray] = {}
-    for step in all_steps:
+    for step in all_steps_new:
         step_array = np.full((n_runs, *sample_grid.shape), np.nan)
         for run_idx, entries in enumerate(all_entries):
             for s, g in entries:
-                if s == step:
+                if s == step or s + 10 > step:
                     step_array[run_idx] = g
                     break
         grids[step] = step_array
@@ -602,6 +615,24 @@ def fetch_occupancy_grids(
         config_values=config_values,
         config_keys=config_keys,
     )
+
+
+def runs_per_step(
+    all_entries: list[list[tuple]],
+) -> dict[int, int]:
+    """Count how many runs have data at each step.
+
+    Args:
+        all_entries: Per-run list of ``(step, value)`` tuples, as built by
+            :func:`fetch_occupancy_grids`.
+
+    Returns:
+        Dictionary ``{step: n_runs}`` sorted by step.
+    """
+    from collections import Counter
+
+    counts = Counter(step for entries in all_entries for step, _ in entries)
+    return dict(sorted(counts.items()))
 
 
 def plot_occupancy_average(
@@ -675,14 +706,13 @@ if __name__ == "__main__":
       entity="blake-richards",                                                                                                                                 
       project="curious-george-omt",                                                                                                                            
       metric="Eval/OPA_Occupancy",
-      group="test"                                                                                                                             
+      group="omt-cur-dot",                                                                                                                      
       # step_key defaults to "_step" (correct for Eval/* metrics)                                            
     )                                                                                                                                                            
                                                                                                                                                                                                                                                                    
-    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}
-    print(avg[3])                                                                                
+    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
     fig = plot_occupancy_average(avg)                                                                                                                            
-    fig.write_image("occupancy_rand.png")
+    fig.write_image("occupancy.png")
 
     df = fetch_run_traces(
         entity="blake-richards",
