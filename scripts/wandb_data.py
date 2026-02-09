@@ -591,10 +591,10 @@ def fetch_occupancy_grids(
         all_steps.update({step for step, _ in entries})
     all_steps = sorted(all_steps)
 
-    all_steps_new = set(all_steps[:-1]) # Include last step by default
-    for i, step in enumerate(all_steps[:-1]):
-        if not (all_steps[i] + 10 > all_steps[i + 1]):
-            all_steps_new.add(step)
+    all_steps_new = {all_steps[-1]}  # Always include the last step
+    for i in range(len(all_steps) - 1):
+        if all_steps[i + 1] - all_steps[i] >= 10:
+            all_steps_new.add(all_steps[i])
     
     print(f"Original steps: {all_steps}")
     print(f"Filtered steps: {sorted(all_steps_new)}")
@@ -604,7 +604,7 @@ def fetch_occupancy_grids(
         step_array = np.full((n_runs, *sample_grid.shape), np.nan)
         for run_idx, entries in enumerate(all_entries):
             for s, g in entries:
-                if s == step or s + 10 > step:
+                if s == step:
                     step_array[run_idx] = g
                     break
         grids[step] = step_array
@@ -706,13 +706,14 @@ if __name__ == "__main__":
       entity="blake-richards",                                                                                                                                 
       project="curious-george-omt",                                                                                                                            
       metric="Eval/OPA_Occupancy",
-      group="omt-cur-dot",                                                                                                                      
+      group="omt-cur-dot",  
+      filters={"config.tasks.new_obj_loc": [7, 11]},   # or [7, 11] or [14, 7] depending on which condition you want to filter for                                                                                                                 
       # step_key defaults to "_step" (correct for Eval/* metrics)                                            
     )                                                                                                                                                            
                                                                                                                                                                                                                                                                    
     avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
     fig = plot_occupancy_average(avg)                                                                                                                            
-    fig.write_image("occupancy.png")
+    fig.write_image("occupancy_711.png")
 
     df = fetch_run_traces(
         entity="blake-richards",
@@ -720,7 +721,7 @@ if __name__ == "__main__":
         metric="Analysis/Avg Distance Travelled",
         step_key="step_count",
         config_keys=["tasks.testing.start_low_bound", "exp.curious_agent"],
-        samples=20, # Goal minus ctrl only has 15 datapoints per trace
+        samples=15, # Goal minus ctrl only has 15 datapoints per trace
     )
 
     ax = plot_traces(                                                                           
