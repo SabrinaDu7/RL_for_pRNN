@@ -19,16 +19,18 @@ from scripts.wandb_data import (
     _extract_heatmap_grids,
     _fetch_history,
     _fetch_plotly_file,
+    _histogram_to_subroom_counts,
     _resolve_config_value,
     _scan_occupancy_refs,
     _unwrap_wandb_config,
     fetch_occupancy_grids,
     fetch_run_traces,
-    load_occupancy,
+    fetch_subroom_counts,
     plot_occupancy_average,
+    plot_subroom_percentage,
     plot_traces,
+    prob_roi,
     runs_per_step,
-    save_occupancy,
 )
 
 
@@ -844,61 +846,315 @@ def test_runs_per_step_empty_list():
     assert runs_per_step([]) == {}
 
 
+
+# NOTE: save_occupancy / load_occupancy tests removed — functions not yet in source.
+
+
 # ---------------------------------------------------------------------------
-# save_occupancy / load_occupancy
+# _histogram_to_subroom_counts
 # ---------------------------------------------------------------------------
 
-def _make_occupancy_data() -> OccupancyData:
-    """Build a small OccupancyData for save/load tests."""
-    rng = np.random.default_rng(42)
-    g10 = rng.random((3, 4, 5, 5))        # 3 runs, 4 HDs, 5x5 grid
-    g20 = rng.random((3, 4, 5, 5))
-    g20[2] = np.nan                         # run 2 missing at step 20
-    return OccupancyData(
-        grids={10: g10, 20: g20},
-        run_names=["run_a", "run_b", "run_c"],
-        config_values=[(1,), (2,), (3,)],
-        config_keys=["exp.seed"],
-    )
+def test_histogram_to_subroom_counts_perfect_bins():
+    """Bins perfectly aligned with integer subroom IDs."""
+    # Simulate wandb.Histogram output for data [0, 0, 1, 2, 3, 3]
+    # With bins exactly at integer boundaries
+    hist = {
+        "bins": [-0.5, 0.5, 1.5, 2.5, 3.5],
+        "values": [2, 1, 1, 2],
+    }
+    counts = _histogram_to_subroom_counts(hist, n_subrooms=4)
+    np.testing.assert_array_equal(counts, [2, 1, 1, 2])
 
 
-def test_save_load_roundtrip(tmp_path):
-    """Save then load produces identical OccupancyData."""
-    original = _make_occupancy_data()
-    save_occupancy(original, "test_occ", output_dir=tmp_path)
-    loaded = load_occupancy("test_occ", output_dir=tmp_path)
+def test_histogram_to_subroom_counts_fine_bins():
+    """Many fine bins (like wandb's default 64) correctly summed per subroom."""
+    # Create 64 bins spanning 0 to 3, put all mass in the bin around subroom 2
+    edges = np.linspace(0, 3, 65)
+    values = np.zeros(64)
+    # Bins whose center is closest to 2.0
+    centers = (edges[:-1] + edges[1:]) / 2
+    for i, c in enumerate(centers):
+        if round(c) == 2:
+            values[i] = 5.0
+    hist = {"bins": edges.tolist(), "values": values.tolist()}
+    counts = _histogram_to_subroom_counts(hist, n_subrooms=4)
+    assert counts[2] == values.sum()
+    assert counts[0] == 0
+    assert counts[1] == 0
+    assert counts[3] == 0
 
-    assert loaded.run_names == original.run_names
-    assert loaded.config_keys == original.config_keys
-    assert loaded.config_values == original.config_values
-    assert loaded.hd_labels == original.hd_labels
-    assert sorted(loaded.grids.keys()) == sorted(original.grids.keys())
-    for step in original.grids:
-        np.testing.assert_array_almost_equal(
-            loaded.grids[step], original.grids[step],
+
+def test_histogram_to_subroom_counts_out_of_range():
+    """Bins outside [0, n_subrooms) are ignored."""
+    hist = {
+        "bins": [-1.5, -0.5, 0.5, 1.5],
+        "values": [10, 5, 3],
+    }
+    counts = _histogram_to_subroom_counts(hist, n_subrooms=4)
+    # center -1.0 -> round=-1 -> out of range, ignored
+    # center 0.0 -> subroom 0
+    # center 1.0 -> subroom 1
+    np.testing.assert_array_equal(counts, [5, 3, 0, 0])
+
+
+# ---------------------------------------------------------------------------
+# fetch_subroom_counts (mocked)
+# ---------------------------------------------------------------------------
+
+import torch
+
+
+def _make_hist_dict(subroom_counts: list[float]) -> dict:
+    """Build a minimal wandb Histogram dict from per-subroom counts.
+
+    Creates bins aligned at integer boundaries so that
+    _histogram_to_subroom_counts recovers the original counts exactly.
+    """
+    n = len(subroom_counts)
+    bins = [i - 0.5 for i in range(n + 1)]
+    return {"_type": "histogram", "bins": bins, "values": subroom_counts}
+
+
+def test_fetch_subroom_counts_basic():
+    """Single run, exactly last_n entries."""
+    n_steps = 5
+    history = []
+    for t in range(n_steps):
+        history.append({
+            "_step": t,
+            "subroom_ids": _make_hist_dict([t, t + 1, t + 2, t + 3]),
+        })
+    mock_runs = [MockRun(name="r1", config={}, _history=history)]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        result = fetch_subroom_counts(
+            entity="e", project="p", last_n=5,
         )
 
-
-def test_save_load_no_config(tmp_path):
-    """Roundtrip works when config_values is None."""
-    data = OccupancyData(
-        grids={0: np.ones((1, 4, 3, 3))},
-        run_names=["r1"],
-        config_values=None,
-        config_keys=[],
+    assert result.shape == (1, 5, 4)
+    # Check first timestep
+    np.testing.assert_array_almost_equal(
+        result[0, 0].numpy(), [0, 1, 2, 3],
     )
-    save_occupancy(data, "no_cfg", output_dir=tmp_path)
-    loaded = load_occupancy("no_cfg", output_dir=tmp_path)
-
-    assert loaded.config_values is None
-    assert loaded.config_keys == []
-    np.testing.assert_array_equal(loaded.grids[0], data.grids[0])
 
 
-def test_save_creates_files(tmp_path):
-    """Save creates grids.parquet and metadata.json."""
-    data = _make_occupancy_data()
-    out = save_occupancy(data, "check_files", output_dir=tmp_path)
+def test_fetch_subroom_counts_truncates_to_last_n():
+    """More entries than last_n → keeps only the last last_n."""
+    history = [
+        {"_step": t, "subroom_ids": _make_hist_dict([t, 0, 0, 0])}
+        for t in range(10)
+    ]
+    mock_runs = [MockRun(name="r1", config={}, _history=history)]
 
-    assert (out / "grids.parquet").exists()
-    assert (out / "metadata.json").exists()
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        result = fetch_subroom_counts(entity="e", project="p", last_n=3)
+
+    assert result.shape == (1, 3, 4)
+    # Should have steps 7, 8, 9 (the last 3)
+    np.testing.assert_array_almost_equal(result[0, 0, 0].item(), 7)
+    np.testing.assert_array_almost_equal(result[0, 1, 0].item(), 8)
+    np.testing.assert_array_almost_equal(result[0, 2, 0].item(), 9)
+
+
+def test_fetch_subroom_counts_pads_short_runs():
+    """Runs with fewer than last_n entries are front-padded with NaN."""
+    history = [
+        {"_step": 0, "subroom_ids": _make_hist_dict([1, 2, 3, 4])},
+    ]
+    mock_runs = [MockRun(name="r1", config={}, _history=history)]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        result = fetch_subroom_counts(entity="e", project="p", last_n=3)
+
+    assert result.shape == (1, 3, 4)
+    # First 2 rows should be NaN (padding)
+    assert torch.isnan(result[0, 0]).all()
+    assert torch.isnan(result[0, 1]).all()
+    # Last row has actual data
+    np.testing.assert_array_almost_equal(result[0, 2].numpy(), [1, 2, 3, 4])
+
+
+def test_fetch_subroom_counts_multiple_runs():
+    """Multiple runs stacked along dim 0."""
+    h1 = [{"_step": 0, "subroom_ids": _make_hist_dict([1, 0, 0, 0])}]
+    h2 = [{"_step": 0, "subroom_ids": _make_hist_dict([0, 0, 0, 2])}]
+    mock_runs = [
+        MockRun(name="r1", config={}, _history=h1),
+        MockRun(name="r2", config={}, _history=h2),
+    ]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        result = fetch_subroom_counts(entity="e", project="p", last_n=1)
+
+    assert result.shape == (2, 1, 4)
+    np.testing.assert_array_almost_equal(result[0, 0].numpy(), [1, 0, 0, 0])
+    np.testing.assert_array_almost_equal(result[1, 0].numpy(), [0, 0, 0, 2])
+
+
+def test_fetch_subroom_counts_no_runs_raises():
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api([])):
+        with pytest.raises(ValueError, match="No runs found"):
+            fetch_subroom_counts(entity="e", project="p")
+
+
+# ---------------------------------------------------------------------------
+# plot_subroom_percentage
+# ---------------------------------------------------------------------------
+
+def test_plot_subroom_percentage_returns_axes():
+    # 2 runs, 3 timesteps, 4 rooms — uniform visits
+    counts = torch.tensor([
+        [[10, 10, 10, 10], [20, 20, 20, 20], [5, 5, 5, 5]],
+        [[8, 8, 8, 8], [12, 12, 12, 12], [6, 6, 6, 6]],
+    ], dtype=torch.float)
+    ax = plot_subroom_percentage(counts)
+    assert isinstance(ax, plt.Axes)
+    # 4 bars
+    assert len(ax.patches) == 4
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_values():
+    """All visits in room 0 → 100% room 0, 0% elsewhere."""
+    counts = torch.tensor([
+        [[10, 0, 0, 0], [10, 0, 0, 0]],
+    ], dtype=torch.float)
+    ax = plot_subroom_percentage(counts)
+    heights = [p.get_height() for p in ax.patches]
+    assert heights[0] == pytest.approx(100.0)
+    for h in heights[1:]:
+        assert h == pytest.approx(0.0)
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_custom_labels():
+    counts = torch.ones((1, 2, 3))
+    ax = plot_subroom_percentage(counts, room_labels=["A", "B", "C"])
+    labels = [t.get_text() for t in ax.get_xticklabels()]
+    assert labels == ["A", "B", "C"]
+    plt.close("all")
+
+
+# ---------------------------------------------------------------------------
+# prob_roi
+# ---------------------------------------------------------------------------
+#
+# Grid format (from the full pipeline):
+#   get_occupancy_fig builds occ[hd, x-1, y-1], shape (4, W-2, H-2).
+#   It logs go.Heatmap(z=occ[hd].T), which transposes to (H-2, W-2).
+#   fetch_occupancy_grids reads z back as-is, stacks → (4, H-2, W-2).
+#   data.grids[step] has shape (n_runs, 4, H-2, W-2).
+#
+# So grid[run, hd, i, j] corresponds to MiniGrid position (x=j+1, y=i+1).
+# target_loc = (x, y) in MiniGrid 1-based coordinates.
+
+
+def _make_grid_items(occ_array: np.ndarray) -> dict:
+    """Wrap a (1, 4, H, W) occupancy array as a single-step grid_items dict."""
+    return {0: occ_array}
+
+
+def _grid_for_minigrid_pos(mg_x: int, mg_y: int, room_w: int, room_h: int) -> np.ndarray:
+    """
+    Return a (1, 4, H-2, W-2) grid with all occupancy at MiniGrid (mg_x, mg_y).
+    Grid indices: row = mg_y - 1, col = mg_x - 1.
+    """
+    grid = np.zeros((1, 4, room_h - 2, room_w - 2))
+    grid[0, :, mg_y - 1, mg_x - 1] = 1.0
+    return grid
+
+
+def test_prob_roi_full_probability_at_target():
+    """All occupancy at target location → probability ≈ 1."""
+    mg_x, mg_y = 7, 2
+    room_w, room_h = 16, 16
+    grid = _grid_for_minigrid_pos(mg_x, mg_y, room_w, room_h)
+    result = prob_roi(
+        grid_items=_make_grid_items(grid),
+        radius=1,
+        target_loc=[mg_x, mg_y],
+        sorted_steps=[0],
+    )
+    assert result.shape == (1, 1)
+    assert result[0, 0].item() == pytest.approx(1.0)
+
+
+def test_prob_roi_zero_probability_wrong_location():
+    """All occupancy at target, but ROI centred elsewhere → probability ≈ 0."""
+    mg_x, mg_y = 7, 2
+    room_w, room_h = 16, 16
+    grid = _grid_for_minigrid_pos(mg_x, mg_y, room_w, room_h)
+    # Wrong location far from the actual object
+    wrong_loc = [mg_x + 8, mg_y + 8]
+    result = prob_roi(
+        grid_items=_make_grid_items(grid),
+        radius=1,
+        target_loc=wrong_loc,
+        sorted_steps=[0],
+    )
+    assert result[0, 0].item() == pytest.approx(0.0)
+
+
+def test_prob_roi_axis_not_swapped():
+    """
+    Verify x and y are not swapped.
+    Place occupancy at (mg_x=3, mg_y=10) — asymmetric so a swap is detectable.
+    ROI at (3, 10) should give prob ≈ 1; ROI at swapped (10, 3) should give 0.
+    """
+    mg_x, mg_y = 3, 10
+    room_w, room_h = 16, 16
+    grid = _grid_for_minigrid_pos(mg_x, mg_y, room_w, room_h)
+
+    result_correct = prob_roi(
+        grid_items=_make_grid_items(grid),
+        radius=0.5,
+        target_loc=[mg_x, mg_y],
+        sorted_steps=[0],
+    )
+    result_swapped = prob_roi(
+        grid_items=_make_grid_items(grid),
+        radius=0.5,
+        target_loc=[mg_y, mg_x],  # intentionally swapped
+        sorted_steps=[0],
+    )
+
+    assert result_correct[0, 0].item() == pytest.approx(1.0)
+    assert result_swapped[0, 0].item() == pytest.approx(0.0)
+
+
+def test_prob_roi_off_by_one_not_present():
+    """
+    MiniGrid position (mg_x, mg_y) maps to grid index (mg_y-1, mg_x-1).
+    If the -1 offset were missing, (mg_x, mg_y)=(2,2) would look for index (2,2)
+    instead of (1,1), causing a miss. Verify the correct index is hit.
+    """
+    mg_x, mg_y = 2, 2  # grid index should be (1, 1), not (2, 2)
+    room_w, room_h = 16, 16
+    grid = _grid_for_minigrid_pos(mg_x, mg_y, room_w, room_h)
+
+    result = prob_roi(
+        grid_items=_make_grid_items(grid),
+        radius=0.5,
+        target_loc=[mg_x, mg_y],
+        sorted_steps=[0],
+    )
+    assert result[0, 0].item() == pytest.approx(1.0)
+
+
+def test_prob_roi_multiple_steps():
+    """Output shape is (n_trajs, n_steps) and values are correct per step."""
+    mg_x, mg_y = 5, 5
+    room_w, room_h = 12, 12
+    grid_on = _grid_for_minigrid_pos(mg_x, mg_y, room_w, room_h)   # all mass at target
+    grid_off = _grid_for_minigrid_pos(mg_x + 4, mg_y, room_w, room_h)  # all mass elsewhere
+
+    grid_items = {0: grid_on, 100: grid_off}
+    result = prob_roi(
+        grid_items=grid_items,
+        radius=1,
+        target_loc=[mg_x, mg_y],
+        sorted_steps=[0, 100],
+    )
+    assert result.shape == (1, 2)
+    assert result[0, 0].item() == pytest.approx(1.0)  # step 0: on target
+    assert result[0, 1].item() == pytest.approx(0.0)  # step 100: off target
