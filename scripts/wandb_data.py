@@ -6,6 +6,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
+import torch
 
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
@@ -189,7 +190,7 @@ def fetch_run_traces(
 
     merged_filters = _build_filters(filters, group)
 
-    api = wandb.Api(timeout=29)
+    api = wandb.Api(timeout=59)
     runs = api.runs(path=f"{entity}/{project}", filters=merged_filters)
 
     runs_list = list(runs)
@@ -233,15 +234,16 @@ def fetch_run_traces(
     return df
 
 # Plotting functions
-
 def plot_traces(
     df: pd.DataFrame,
     group_keys: list[str],
     colors: list[str],
     use_se: bool = True,
     ax: Axes | None = None,
+    labels: list[str] | None = None,
     ylabel: str = "",
     xlabel: str = "Step",
+    figsize: tuple[float, float] = (10, 6),
 ) -> Axes:
     """Plot mean +/- spread for each group defined by config key combinations.
 
@@ -290,23 +292,27 @@ def plot_traces(
         )
 
     if ax is None:
-        _, ax = plt.subplots()
+        _, ax = plt.subplots(figsize=figsize)
 
     steps = df.columns.values
 
-    for (group_label, group_df), color in zip(grouped, colors):
+    for i, ((group_label, group_df), color) in enumerate(zip(grouped, colors)):
         mean = group_df.mean()
         std = group_df.std()
         n = group_df.count()  # non-NaN count per step
         spread = std / n.pow(0.5) if use_se else std
 
-        label = str(group_label)
+        if labels is not None:
+            label = labels[i]
+        else:
+            label = str(group_label)
         ax.plot(steps, mean, color=color, label=label)
         ax.fill_between(steps, mean - spread, mean + spread, color=color, alpha=0.2)
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.6)
+    # ax.legend()
 
     return ax
 
@@ -585,6 +591,7 @@ def fetch_occupancy_grids(
         raise ValueError("No occupancy data found in any run.")
 
     # -- Phase 3: assemble into per-step arrays ----------------------------
+    THRESH = 20
     all_entries = [results_map[i] for i in range(n_runs)]
     all_steps = set()
     for entries in all_entries:
@@ -593,11 +600,8 @@ def fetch_occupancy_grids(
 
     all_steps_new = {all_steps[-1]}  # Always include the last step
     for i in range(len(all_steps) - 1):
-        if all_steps[i + 1] - all_steps[i] >= 10:
+        if all_steps[i + 1] - all_steps[i] >= THRESH:
             all_steps_new.add(all_steps[i])
-    
-    print(f"Original steps: {all_steps}")
-    print(f"Filtered steps: {sorted(all_steps_new)}")
 
     grids: dict[int, np.ndarray] = {}
     for step in all_steps_new:
@@ -640,6 +644,7 @@ def plot_occupancy_average(
     steps: list[int] | None = None,
     scale: str = "viridis",
     title: str = "Average Occupancy",
+    label_steps: list[int] | None = None,
 ) -> go.Figure:
     """Plot cross-run average occupancy heatmaps.
 
@@ -668,14 +673,15 @@ def plot_occupancy_average(
         horizontal_spacing=0.02,
         vertical_spacing=min(0.05, 0.15 / max(n_steps - 1, 1)),
         column_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)],
-        row_titles=[f"Step {s}" for s in steps],
+        row_titles=[f"Step {s}" for s in (label_steps if label_steps is not None else steps)],
     )
 
     for row_idx, step in enumerate(steps):
         grid = avg_grids[step]  # (4, H, W)
         for hd in range(4):
+            # Colorbar per subplot
             fig.add_trace(
-                go.Heatmap(z=grid[hd], showscale=False, colorscale=scale),
+                go.Heatmap(z=grid[hd], showscale=True, colorscale=scale, zmin=0, zmax=np.nanmax(grid)),
                 row=row_idx + 1,
                 col=hd + 1,
             )
@@ -688,7 +694,7 @@ def plot_occupancy_average(
             ax_id = row_idx * 4 + col_idx + 1
             suffix = "" if ax_id == 1 else str(ax_id)
             fig.update_layout(
-                **{f"yaxis{suffix}": dict(scaleanchor=f"x{suffix}", scaleratio=1)}
+                **{f"yaxis{suffix}": dict(scaleanchor=f"x{suffix}", scaleratio=1)} #type: ignore
             )
     fig.update_layout(
         height=300 * n_steps,
@@ -699,38 +705,245 @@ def plot_occupancy_average(
 
     return fig
 
+def prob_roi(grid_items, radius, target_loc, sorted_steps):
+    """
+    Computes the probability of occupancy within a radius R of a target location.
+    P = occupancy(x, y) / total_occupancy
+    
+    Args:
+        grid_items: Dictionary mapping steps to numpy arrays of shape (num_trajs, 4, H, W).
+                    Matches the output of data.grids.items().
+        radius: Float/Int defining the L2 distance (radius) for the ROI.
+        target_loc: Tuple (x, y) in MiniGrid coordinates (x = horizontal, y = vertical).
+                    MiniGrid uses 1-based coordinates starting from (1, 1).
+
+    Returns:
+        torch.Tensor: Shape [num_trajs, num_steps] containing the occupancy probability.
+    """
+
+    # Get metadata from the first entry
+    first_step_data = grid_items[sorted_steps[0]]
+    num_trajs, num_hd, height, width = first_step_data.shape
+    num_steps = len(sorted_steps)
+
+    # The grids are fetched from WandB Plotly figures where z = occ[hd].T.
+    # The original occ has shape (4, W-2, H-2) indexed as occ[hd, x-1, y-1].
+    # After .T and re-fetch, shape is (4, H-2, W-2) indexed as grid[hd, y-1, x-1].
+    # So: dim 2 (height) = MiniGrid y - 1 (rows), dim 3 (width) = MiniGrid x - 1 (cols).
+    #
+    # target_loc = (x, y) in MiniGrid coords → grid indices are (y-1, x-1).
+    yy, xx = np.ogrid[:height, :width]  # yy = y-1 row indices, xx = x-1 col indices
+    dist_from_center = np.sqrt(
+        (yy - (target_loc[1] - 1))**2 + (xx - (target_loc[0] - 1))**2
+    )
+    roi_mask = dist_from_center <= radius  # Boolean mask of shape (H, W)
+    
+    # Initialize the output tensor
+    prob_tensor = torch.zeros((num_trajs, num_steps))
+    
+    for step_idx, step in enumerate(sorted_steps):
+        # Array shape: (num_trajs, 4, H, W)
+        grids = grid_items[step]
+        
+        # 1. Sum across head directions to get total occupancy per cell
+        # Result shape: (num_trajs, H, W)
+        total_occupancy_per_cell = np.nansum(grids, axis=1)
+        
+        # 2. Sum the occupancy within the ROI
+        # Using boolean indexing over the last two dimensions
+        roi_occupancy = total_occupancy_per_cell[:, roi_mask].sum(axis=1)
+        
+        # 3. Sum total occupancy across the entire grid to normalize
+        total_grid_occupancy = total_occupancy_per_cell.reshape(num_trajs, -1).sum(axis=1)
+        
+        # 4. Compute probability (avoid division by zero if a trajectory is empty)
+        # We use np.divide to handle NaNs/Zeros gracefully
+        occupancy_prob = np.divide(
+            roi_occupancy, 
+            total_grid_occupancy, 
+            out=np.zeros_like(roi_occupancy), 
+            where=total_grid_occupancy != 0
+        )
+        
+        prob_tensor[:, step_idx] = torch.from_numpy(occupancy_prob)
+        
+    return prob_tensor
+
+def plot_prob_roi(prob_tensor, steps, prob_tensor_rand=None, use_std: bool = True, color="blue"):
+    """
+    Plots the mean occupancy probability with a 95% Confidence Interval.
+    
+    Args:
+        prob_tensor: Tensor of shape [num_trajs, num_steps] from prob_roi()
+        steps: List of step values (x-axis)
+        color: Color for the line and shading
+        prob_tensor_rand: Optional tensor of shape [num_trajs, num_steps] for random agent comparison
+    """
+    # 1. Calculate Mean
+    mean = prob_tensor.mean(dim=0).numpy()
+    
+    # 2. Calculate Standard Deviation
+    std = prob_tensor.std(dim=0).numpy()
+    sem = std / np.sqrt(prob_tensor.shape[0])  # Standard Error of the Mean
+    ci_multiplier = 1.96  # For 95% confidence interval
+    ci = sem * ci_multiplier
+    spread = std if use_std else ci
+
+    # 3. Create Plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    ax.plot(steps, mean, color=color, label="Curious Agent", linewidth=2)
+    ax.fill_between(
+        steps, 
+        mean - spread, 
+        mean + spread, 
+        color=color, 
+        alpha=0.2, 
+        label="Standard Deviation (Curious)" if use_std else "95% CI (Curious)"
+    )
+
+    if prob_tensor_rand is not None:
+        mean_rand = prob_tensor_rand.mean(dim=0).numpy()
+        std_rand = prob_tensor_rand.std(dim=0).numpy()
+        sem_rand = std_rand / np.sqrt(prob_tensor_rand.shape[0])
+        ci_rand = sem_rand * 1.96
+        spread_rand = std_rand if use_std else ci_rand
+
+        print(f"{mean.mean()=}")
+        print(f"{std.mean()=}")
+        print(f"{ci.mean()=}")
+
+        print(f"Random Agent Mean probabilities: {mean_rand}")
+        print(f"Random Agent Standard deviation: {std_rand}")
+        print(f"Random Agent 95% Confidence Intervals: {ci_rand}")
+
+        print(f"{mean_rand.mean()=}")
+        print(f"{std_rand.mean()=}")
+        print(f"{ci_rand.mean()=}")
+
+        ax.plot(steps, mean_rand, color="red", label="Random Agent", linewidth=2)
+        ax.fill_between(
+            steps, 
+            mean_rand - spread_rand, 
+            mean_rand + spread_rand, 
+            color="red", 
+            alpha=0.2, 
+            label="Standard Deviation (Random)" if use_std else "95% CI (Random)"
+        )
+    
+    # Formatting
+    ax.set_xlabel("Training Trajectories", fontsize=12)
+    ax.set_ylabel("Probability of ROI Occupancy", fontsize=12)
+    ax.set_title("Target Object Preference Index", fontsize=14)
+    ax.grid(True, linestyle='--', alpha=0.6)
+    # ax.legend()
+    
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_subroom_percentage(
+    counts: torch.Tensor,
+    room_labels: list[str] | None = None,
+    colors: list[str] | None = None,
+    ax: Axes | None = None,
+    figsize: tuple[float, float] = (8, 5),
+    title: str = "Time Spent per Room",
+) -> Axes:
+    """Bar chart of the percentage of time spent in each subroom.
+
+    For each trajectory (timestep), computes the fraction of visits in
+    each room, then averages across all trajectories and runs.  Error
+    bars show +1 standard deviation (computed across runs).
+
+    Args:
+        counts: Tensor of shape ``(num_runs, num_timesteps, n_subrooms)``
+            from :func:`fetch_subroom_counts`.
+        room_labels: Labels for the x-axis bars.  Defaults to
+            ``["Room 0", "Room 1", ...]``.
+        colors: One color per room.  Defaults to a standard palette.
+        ax: Optional matplotlib Axes.  If ``None``, creates a new figure.
+        figsize: Figure size when creating a new figure.
+        title: Figure title.
+
+    Returns:
+        The matplotlib Axes with the bar chart.
+    """
+    n_subrooms = counts.shape[-1]
+
+    # Percentage per trajectory: counts / total visits in that trajectory
+    totals = counts.sum(dim=-1, keepdim=True)
+    # Avoid division by zero (NaN rows stay NaN)
+    pct = counts / totals.clamp(min=1) * 100
+    # Where totals were 0 or NaN, mark as NaN
+    pct[totals.squeeze(-1) == 0] = float("nan")
+
+    # Average across timesteps per run → (num_runs, n_subrooms)
+    pct_per_run = pct.nanmean(dim=1)
+
+    # Mean and std across runs → (n_subrooms,)
+    mean = pct_per_run.nanmean(dim=0).numpy()
+    std = pct_per_run.std(dim=0).numpy()
+
+    if room_labels is None:
+        room_labels = [f"Room {i}" for i in range(n_subrooms)]
+    if colors is None:
+        colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52",
+                   "#8172B3", "#937860"][:n_subrooms]
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+
+    x = np.arange(n_subrooms)
+    ax.bar(x, mean, yerr=std, capsize=5, color=colors[:n_subrooms],
+           edgecolor="black", linewidth=0.8, error_kw={"lw": 1.5})
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(room_labels)
+    ax.set_ylabel("Time Spent (%)")
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.6)
+
+    return ax
 
 if __name__ == "__main__":
+    
+    target_loc = [7, 2]
+    entropy_coef = 0.0
+    radius = 3
+    with_obs = False
+    obs_naming = "with_obs" if with_obs else "without_obs"
+
+    """data_rand = fetch_occupancy_grids(                                                                                                                                
+      entity="blake-richards",                                                                                                                                 
+      project="curious-george-omt",                                                                                                                            
+      metric="Eval/OPA_Occupancy",
+      group="omt-rand-dot",  
+      filters={"config.tasks.new_obj_loc": target_loc},   # or None, [7, 11] or [14, 7] depending on which condition you want to filter for                                                                                                                 
+      # step_key defaults to "_step" (correct for Eval/* metrics)                                            
+    )"""
 
     data = fetch_occupancy_grids(                                                                                                                                
       entity="blake-richards",                                                                                                                                 
       project="curious-george-omt",                                                                                                                            
       metric="Eval/OPA_Occupancy",
       group="omt-cur-dot",  
-      filters={"config.tasks.new_obj_loc": [7, 11]},   # or [7, 11] or [14, 7] depending on which condition you want to filter for                                                                                                                 
+      filters={"config.tasks.new_obj_loc": target_loc,
+               "config.rl.entropy_coef": entropy_coef,
+               "config.exp.with_obs": with_obs},   # or None, [7, 11] or [14, 7] depending on which condition you want to filter for                                                                                                                 
       # step_key defaults to "_step" (correct for Eval/* metrics)                                            
-    )                                                                                                                                                            
-                                                                                                                                                                                                                                                                   
-    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
-    fig = plot_occupancy_average(avg)                                                                                                                            
-    fig.write_image("occupancy_711.png")
-
-    df = fetch_run_traces(
-        entity="blake-richards",
-        project="curious-george-omt",
-        metric="Analysis/Avg Distance Travelled",
-        step_key="step_count",
-        config_keys=["tasks.testing.start_low_bound", "exp.curious_agent"],
-        samples=15, # Goal minus ctrl only has 15 datapoints per trace
     )
 
-    ax = plot_traces(                                                                           
-      df,                          # DataFrame from fetch_run_traces                     
-      group_keys=["tasks.testing.start_low_bound", "exp.curious_agent"],  # config keys to group by                           
-      colors=["red", "blue", "green", "orange", "purple", "brown"],   # one color per group combination                   
-      use_se=True,                   # True=SEM shading, False=SD shading                
-      ax=None,                       # optional existing Axes                            
-      ylabel="Goal Modulation",                                                          
-      xlabel="Step",                                                                     
-    ) 
-    plt.savefig("plot.png")
+    target_loc = [7, 2] if target_loc is None else target_loc    
+    hardcoded_steps = [0, 8, 208, 408, 608, 808, 1008, 1208, 1408, 1608, 1808, 2008, 2208, 2408, 2608, 2808]                                                                                                                                                                                                                                                       
+    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
+    fig = plot_occupancy_average(avg, label_steps=hardcoded_steps) 
+    fig.write_image(f"outputs/{obs_naming}/occupancy_{target_loc[0]}{target_loc[1]}_ec{entropy_coef}.png")                                                                                                                           
+    # fig.write_image(f"outputs/occupancy_{target_loc[0]}{target_loc[1]}_{entropy_coef}.png")
+
+    sorted_steps = sorted(data.grids.keys())
+    # sorted_steps_rand = sorted(data_rand.grids.keys())
+    res = prob_roi(data.grids, radius=radius, target_loc=target_loc, sorted_steps=sorted_steps)
+    # res_rand = prob_roi(data_rand.grids, radius=3, target_loc=target_loc, sorted_steps=sorted_steps_rand)
+    fig, ax = plot_prob_roi(res, hardcoded_steps,) # prob_tensor_rand=res_rand)
+    fig.savefig(f"outputs/{obs_naming}/roi_plot{target_loc[0]}{target_loc[1]}_ec{entropy_coef}_r{radius}.png")       
