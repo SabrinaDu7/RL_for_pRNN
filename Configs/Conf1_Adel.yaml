@@ -20,14 +20,14 @@ exp:
     start_rand: True # Wether to randomize the agent start position
     # wrapper: 
     #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
-    input_type: 'pRNN+PO' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
+    input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
     exp_name: omt
     seed: 2 # Random seed
     pRNN: True # Wether to use pRNN for spatial input
     PC: False # Wether to use fake place cells for spatial input
     CANN: False # Wether to use CANN for spatial input
     recurrence: 1 # Wether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
-    with_obs: True # Wether to include visual input (in case of recurrency the one that would bypass RNN)
+    with_obs: False # Wether to include visual input (in case of recurrency the one that would bypass RNN)
     with_HD: True
     rgb: True # Is visual input RGB?
     intrinsic: False # Use intrinsic rewards?
