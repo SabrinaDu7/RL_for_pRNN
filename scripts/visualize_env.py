@@ -86,7 +86,6 @@ if __name__ == "__main__":
     env_img = get_env_img(env_key=MinigridEnvNames.LRoom)
     fig = plt.figure()
     plt.imshow(env_img)
-    plt.savefig('high_resolution_plot.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 # %% [markdown]
