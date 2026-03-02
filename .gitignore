@@ -13,3 +13,4 @@ omt-*/
 *.png
 
 wandb/*
+outputs/

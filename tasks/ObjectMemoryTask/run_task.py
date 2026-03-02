@@ -12,24 +12,21 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
-from tasks.ObjectMemoryTask.figure import figure_object_learning
-from utils import get_wandb_env_vars, get_ckpt_env_vars, get_env_var, AgentType, AgentInputType
+from utils import get_ckpt_env_vars, get_env_var, AgentType, AgentInputType
 from RLutils import make_env
  
 # ===== Constants =====
 DEVICE = torch.device("cuda")
-
-WANDB_ENTITY, WANDB_PROJECT_OMT = get_wandb_env_vars(omt=True)
 RL_STORAGE = get_env_var("RL_STORAGE")
 
 RESULTS_SAVE_FOLDER = "results"
 TIME = time.strftime("%m%d-%H%M")
 
 # ===== Helper functions =====
-def create_wandb_run(run_name: str, group_name:str, args: DictConfig):
+def create_wandb_run(entity: str, project:str, run_name: str, group_name:str, args: DictConfig):
     run = wandb.init(
-        entity=WANDB_ENTITY,
-        project=WANDB_PROJECT_OMT,
+        entity=entity,
+        project=project,
         name=run_name,
         group=group_name,
     )
@@ -45,7 +42,6 @@ def get_novel_env(room_type: str, obj_pos: list[int] = [7, 2]) -> FaramaMinigrid
     elif room_type == "plus":
         return make_env(env_key=MinigridEnvNames.LRoom, plus_color="green", input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "dot":
-        # LANDMINE: Hardcoded new object position
         return make_env(env_key=MinigridEnvNames.LRoom, new_obj_pos=obj_pos, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
     elif room_type == "goal":
         return make_env(env_key=MinigridEnvNames.LRoomGoal, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
@@ -64,15 +60,24 @@ def main(args: DictConfig):
     run_name = f"{group_name}-{date}"
 
     if args.logging.wandb_log:
-        create_wandb_run(run_name, group_name, args)
+        create_wandb_run(
+            entity=args.logging.wandb_entity,
+            project=args.logging.wandb_project,
+            run_name=run_name,
+            group_name=group_name,
+            args=args
+        )
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
     # Get environments
     env_orig_name = MinigridEnvNames.LRoom
     env_orig = make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
-    env_novel = get_novel_env(args.tasks.room_type_green, obj_pos=args.tasks.new_obj_loc)
-    assert env_novel.get_goal_loc() is None, "Novel environment cannot have extrinsic goal"
+
+    if args.tasks.control:
+        env_novel = make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+    else:
+        env_novel = get_novel_env(args.tasks.room_type_green, obj_pos=args.tasks.new_obj_loc)
     
     # Run task
     print(f"Running Object Memory Task with {agent_name} agent")
@@ -96,8 +101,6 @@ def main(args: DictConfig):
         analysis_interval=args.tasks.training.analysis_interval,
         lr_trials=args.tasks.training.lr_trials,
         lrgroups=args.tasks.training.lrgroups,
-        resetOptimizer=args.tasks.training.resetOptimizer,
-        continueTraining=args.tasks.training.continueTraining,
         device=DEVICE,
     )
     
