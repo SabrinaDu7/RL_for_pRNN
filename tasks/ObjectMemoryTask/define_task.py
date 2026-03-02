@@ -9,6 +9,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from typing import TypedDict, Optional, Iterable
 
 from RLutils import (
+    save_status,
     get_pN,
     get_SR_acmodel,
     get_obss_preprocessor,
@@ -19,9 +20,12 @@ from RLutils import (
     get_agent,
     synthesize,
     get_dist_travelled,
+    save_pN_and_acmodel,
     OnPolicyAnalysis,
+    ActorCriticAgent,
 )
 
+from utils import StatusCkptKeys
 from prnn.utils import save_pN
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.ObjectMemoryTask.figure import figure_object_learning, figure_goal_modulation_vs_trajectories
@@ -44,20 +48,17 @@ class ObjectMemoryTask:
         save_path: str,
         acmodel_status_ckpt: str,
         prnn_ckpt: str,
-        decoder="train",
+        new_obj_loc_ctrl: list[int] = [7, 11],
     ):
         seed(args.exp.seed)
 
         self.env_orig = env_orig
         self.env_novel = env_novel
 
-        self.new_obj_pos = self.env_novel.get_new_obj_pos()
+        self.new_obj_pos = new_obj_loc_ctrl if self.env_novel.get_new_obj_pos() is None else self.env_novel.get_new_obj_pos()
         print(f"New object position in novel environment: {self.new_obj_pos}")
         with open_dict(args):
             args.tasks.new_obj_pos = self.new_obj_pos
-
-        # CRITICAL: These rooms have no goal. So object learning figures are MEANINGLESS.
-        # TODO: Just show predictions instead of object learning.
 
         self.args = args
         self.save_path = save_path
@@ -72,10 +73,6 @@ class ObjectMemoryTask:
         self.seqdur = args.predNet.seqdur # steps
         self.trajs_per_batch = args.rl.trajs_per_batch
         self.trajs_test = args.tasks.testing.trajs
-
-        # Create save directory and save config
-        # os.makedirs(self.save_path, exist_ok=True)
-        # OmegaConf.save(args, f"{self.save_path}/config.yaml")
 
         self.pN_control = get_pN(args=args, env=self.env_orig, device=device, pRNN_ckpt=prnn_ckpt)
         self.pN_post = self.pN_control.copy()
@@ -146,8 +143,6 @@ class ObjectMemoryTask:
         num_trajs: int, # num of trajectories to train on in novel env
         saving_interval: int, # num batches between logging
         analysis_interval: int, # num batches between logging
-        resetOptimizer: bool,
-        continueTraining: bool,
         device,
     ):
         with torch.no_grad():
@@ -215,14 +210,11 @@ class ObjectMemoryTask:
                         if key.startswith("avg_adv") or key.startswith("curious_reward"):                                                                                                                       
                             wandb.log({f"Train/{key}": val})  
 
-            # if index % saving_interval == 0:
-                # print(f"Completed {index * self.trajs_per_batch} trajectories = {index * self.trajs_per_batch * self.seqdur} steps")
-                # save_pN(self.pN_post, f"{self.save_path}/pN-{traj_count}.pt")
+            if index % saving_interval == 0:
+                save_pN_and_acmodel(self.pN_post, self.algo.acmodel, self.save_path, index * self.trajs_per_batch)
             
             if index % analysis_interval == 0:
                 with torch.no_grad():
-                    testing_tsteps = self.trajs_test * self.seqdur
-
                     # Plotting Trajectories
                     if self.traj_fig:
                         self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
@@ -241,32 +233,26 @@ class ObjectMemoryTask:
                         traj_count=traj_count,
                     )
                     if objectLearning is not None and testTrial is not None and self.wandb_log:
-                        # torch.save(objectLearning, f"{self.save_path}/objectLearning_{traj_count}.pt")
-                        # torch.save(testTrial, f"{self.save_path}/testTrial_{traj_count}.pt")
-                        # print(f"Saved object learning results (traj {traj_count}): {self.save_path}/objectLearning_{traj_count}.pt.")
+                        obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
+                                                            run_name=self.save_path, 
+                                                            traj_num=traj_count, 
+                                                            save_folder=self.save_path,
+                                                            objectLearning=objectLearning,
+                                                            testTrial=testTrial,
+                                                            rl_storage=".",
+                                                            config=self.args,
+                                                            pN=self.pN_post,
+                                                            show=False,
+                                                            save=False)
+                        
+                        wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
                         wandb.log({"Analysis/Novel Object In-view Times": objectLearning["inviewtimes"]})
                         wandb.log({"Analysis/Goal Modulation Vs. Step Count": objectLearning["goalmodulation"]})
                         wandb.log({"Analysis/Goal Minus Ctrl Vs. Step Count": objectLearning["goalmodulation"] - objectLearning["ctlmodulation_diffloc"]})
                         wandb.log({"Analysis/Avg Distance Travelled": objectLearning["avg_dist"]})
-                        
-                        if self.wandb_log and self.oL_fig:
-                            obj_learn_fig = figure_object_learning(env_name=self.env_orig, 
-                                                                run_name=self.save_path, 
-                                                                traj_num=traj_count, 
-                                                                save_folder=self.save_path,
-                                                                objectLearning=objectLearning,
-                                                                testTrial=testTrial,
-                                                                rl_storage=".",
-                                                                config=self.args,
-                                                                pN=self.pN_post,
-                                                                show=False,
-                                                                save=False)
-                            
-                            wandb.log({"Analysis/ObjectLearning": wandb.Image(obj_learn_fig)})
 
-
-        save_pN(self.pN_post, f"{self.save_path}/pN-{num_trajs}.pt")
-        print(f"Saved trained net to {self.save_path}/pN-{num_trajs}.pt")
+        save_pN_and_acmodel(self.pN_post, self.algo.acmodel, self.save_path, index * self.trajs_per_batch)
+        print(f"Saved trained net to {self.save_path}")
 
         # Return the learning rate
         for lidx, lgroup in enumerate(lrgroups):
@@ -284,8 +270,8 @@ class ObjectMemoryTask:
         T = self.seqdur
         A = self.env_orig.getActSize()
 
-        obs: Float[torch.Tensor, "B T+1 X"] # NOTE: To check with Alex, what is X here? obs.shape=torch.Size([1, 257, 147])
-        act: Float[torch.Tensor, "B T A"] # Ex: act.shape=torch.Size([1, 256, 8]) for SpeedHD
+        obs: Float[torch.Tensor, "T+1 X"] # NOTE: To check with Alex, what is X here? obs.shape=torch.Size([1, 257, 147])
+        act: Float[torch.Tensor, "T A"] # Ex: act.shape=torch.Size([1, 256, 8]) for SpeedHD
         state: State
  
         # Store original device before moving to CPU
@@ -296,8 +282,9 @@ class ObjectMemoryTask:
         self.pN_control.pRNN.eval()
         
         if hasattr(self.agent, "acmodel"):
-            self.agent.acmodel.eval()  # type: ignore[attr-defined]
-            self.agent.argmax = True # type: ignore[attr-defined]
+            assert isinstance(self.agent, ActorCriticAgent)
+            self.agent.acmodel.eval()
+            self.agent.argmax = True
         
         self.set_start_pos()
         opa = OnPolicyAnalysis(self.algo, timesteps=int(T * 30))

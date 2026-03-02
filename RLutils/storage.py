@@ -19,6 +19,7 @@ from utils import (
     StatusCkptKeys,
     AgentType,
 )
+from prnn.utils import save_pN
 
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
@@ -233,6 +234,15 @@ def save_analysis_of_agent_behav(onpolicyAnalysis, model_dir, update_step):
         savename = os.path.join(outdir, fname)
         fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
         fig.write_image(savename)
+
+def save_pN_and_acmodel(pN: PredictiveNet, ac_model: ACModel, save_path: str, count: int):
+    save_pN(pN, f"{save_path}/{count}/pN-{count}.pt")
+    print(f"Saved trained net to {save_path}/pN-{count}.pt")
+    status_save = {
+        StatusCkptKeys.MODEL_STATE.value: ac_model.state_dict(),
+        StatusCkptKeys.OPTIMIZER_STATE.value: pN.optimizer.state_dict(),
+    }
+    save_status(status_save, f"{save_path}/{count}")
 
 # def get_vocab(model_dir):
 #     return get_status(model_dir)["vocab"]
