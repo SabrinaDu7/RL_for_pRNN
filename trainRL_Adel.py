@@ -45,8 +45,6 @@ from prnn.utils import (
     save_pN, 
 )
 from utils import load_statedict_from_acmodel_status
-
-WANDB_ENTITY, WANDB_PROJECT = get_wandb_env_vars(omt=False)
 RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
 
 class RL_Trainer(object):
@@ -75,14 +73,14 @@ class RL_Trainer(object):
 
         if self.wandb_log:
             self.run = wandb.init(
-                entity=WANDB_ENTITY,
-                project=WANDB_PROJECT,
+                entity=params.logging.wandb_entity,
+                project=params.logging.wandb_project,
                 group=self.group,
                 name=run_name,
                 id=run_name,
                 dir=self.model_dir,
                 resume="allow",
-                config=OmegaConf.to_container(params, resolve=True),
+                config=OmegaConf.to_container(params, resolve=True), # type: ignore
             )
 
     def run_training_loop(self):
@@ -107,6 +105,7 @@ class RL_Trainer(object):
             act_enc=args.predNet.action_encoding,
             open_all_paths=False, # Only applicable for FourRooms env
             subroom_size=args.exp.env_subroom_size, # Only applicable for FourRooms env
+            door_poss=args.exp.door_poss, # Only applicable for FourRooms env
             agent_start_pos=agent_start_pos,
             agent_start_dir=agent_start_dir,
         )
