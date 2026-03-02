@@ -86,6 +86,8 @@ predNet:
 
 logging:
     wandb_log: True
+    wandb_entity: blake-richards
+    wandb_project: curious-george # curious-george-omt, curious-george-ctrl
     video_log_freq: 0 # Number of episodes between video logs (0: no videos)
     log_interval: 1 # Number of updates between two logs
     analysis_interval: 200 # Number of updates between analysis events (0: no analysis)
