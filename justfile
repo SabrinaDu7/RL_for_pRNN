@@ -18,6 +18,10 @@ omt-rand-start-rand *EXTRA:
     just omt-start-rand exp.random_action_agent=True exp.curious_agent=False {{EXTRA}}
 
 
+# Run control omt
+omt-start-rand-ctrl *EXTRA
+    uv run just omt-start-rand tasks.new_obj_loc=[14,7] tasks.control=True tasks.training.saving_interval=1000000 logging.wandb_project=curious-george-ctrl {{EXTRA}}
+
 # Training
 train-rand-fourroom *EXTRA:
     uv run trainRL_Adel.py exp.start_rand=False exp.exp_name=pRNN_fourroom exp.env_name=MiniGrid-FourRooms-Objects-v0 predNet.pRNNtype=thRNN_5win exp.curious_agent=False exp.random_action_agent=True {{EXTRA}}
