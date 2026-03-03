@@ -93,10 +93,11 @@ class RL_Trainer(object):
         # Load environment (default size = 16)
         agent_start_pos = None
         agent_start_dir = None
+        start_room = None
 
-        if 'FourRooms' in args.exp.env_name and not args.exp.start_rand:
-            agent_start_pos=(1, 1)
-            agent_start_dir=1
+        if not args.exp.start_rand:
+            start_room = args.exp.start_room
+            print(f"Agent starting in room {start_room}")
 
         env = RLutils.make_env(
             env_key=args.exp.env_name,
@@ -108,6 +109,7 @@ class RL_Trainer(object):
             door_poss=args.exp.door_poss, # Only applicable for FourRooms env
             agent_start_pos=agent_start_pos,
             agent_start_dir=agent_start_dir,
+            agent_start_room=start_room, # Only applicable for FourRooms env
         )
         print("Environment loaded\n")
 
