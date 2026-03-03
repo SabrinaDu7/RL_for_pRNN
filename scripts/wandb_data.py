@@ -904,46 +904,4 @@ def plot_subroom_percentage(
     ax.set_title(title)
     ax.grid(True, axis="y", linestyle="--", alpha=0.6)
 
-    return ax
-
-if __name__ == "__main__":
-    
-    target_loc = [7, 2]
-    entropy_coef = 0.0
-    radius = 3
-    with_obs = False
-    obs_naming = "with_obs" if with_obs else "without_obs"
-
-    """data_rand = fetch_occupancy_grids(                                                                                                                                
-      entity="blake-richards",                                                                                                                                 
-      project="curious-george-omt",                                                                                                                            
-      metric="Eval/OPA_Occupancy",
-      group="omt-rand-dot",  
-      filters={"config.tasks.new_obj_loc": target_loc},   # or None, [7, 11] or [14, 7] depending on which condition you want to filter for                                                                                                                 
-      # step_key defaults to "_step" (correct for Eval/* metrics)                                            
-    )"""
-
-    data = fetch_occupancy_grids(                                                                                                                                
-      entity="blake-richards",                                                                                                                                 
-      project="curious-george-omt",                                                                                                                            
-      metric="Eval/OPA_Occupancy",
-      group="omt-cur-dot",  
-      filters={"config.tasks.new_obj_loc": target_loc,
-               "config.rl.entropy_coef": entropy_coef,
-               "config.exp.with_obs": with_obs},   # or None, [7, 11] or [14, 7] depending on which condition you want to filter for                                                                                                                 
-      # step_key defaults to "_step" (correct for Eval/* metrics)                                            
-    )
-
-    target_loc = [7, 2] if target_loc is None else target_loc    
-    hardcoded_steps = [0, 8, 208, 408, 608, 808, 1008, 1208, 1408, 1608, 1808, 2008, 2208, 2408, 2608, 2808]                                                                                                                                                                                                                                                       
-    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
-    fig = plot_occupancy_average(avg, label_steps=hardcoded_steps) 
-    fig.write_image(f"outputs/{obs_naming}/occupancy_{target_loc[0]}{target_loc[1]}_ec{entropy_coef}.png")                                                                                                                           
-    # fig.write_image(f"outputs/occupancy_{target_loc[0]}{target_loc[1]}_{entropy_coef}.png")
-
-    sorted_steps = sorted(data.grids.keys())
-    # sorted_steps_rand = sorted(data_rand.grids.keys())
-    res = prob_roi(data.grids, radius=radius, target_loc=target_loc, sorted_steps=sorted_steps)
-    # res_rand = prob_roi(data_rand.grids, radius=3, target_loc=target_loc, sorted_steps=sorted_steps_rand)
-    fig, ax = plot_prob_roi(res, hardcoded_steps,) # prob_tensor_rand=res_rand)
-    fig.savefig(f"outputs/{obs_naming}/roi_plot{target_loc[0]}{target_loc[1]}_ec{entropy_coef}_r{radius}.png")       
+    return ax   
