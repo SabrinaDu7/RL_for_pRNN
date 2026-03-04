@@ -9,12 +9,14 @@ from typing import Any
 import torch
 
 from matplotlib.axes import Axes
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import wandb
+from jaxtyping import Float
 
 # Fetching from wandb functions
 def _unwrap_wandb_config(config: dict) -> dict:
@@ -445,6 +447,9 @@ class OccupancyData:
     grids: dict[int, np.ndarray]
     """Mapping from step value to array of shape ``(n_runs, 4, H, W)``."""
 
+    target_loc: list[int] | None
+    """Target location for this occupancy data."""
+
     run_names: list[str]
     """Run names in the order they appear along axis 0 of each grid array."""
 
@@ -463,6 +468,7 @@ class OccupancyData:
 def fetch_occupancy_grids(
     entity: str,
     project: str,
+    target_loc: list[int] | None,
     metric: str = "Eval/OPA_Occupancy",
     step_key: str = "_step",
     config_keys: list[str] | None = None,
@@ -615,6 +621,7 @@ def fetch_occupancy_grids(
 
     return OccupancyData(
         grids=grids,
+        target_loc=target_loc,
         run_names=run_names,
         config_values=config_values,
         config_keys=config_keys,
@@ -705,26 +712,26 @@ def plot_occupancy_average(
 
     return fig
 
-def prob_roi(grid_items, radius, target_loc, sorted_steps):
+def prob_roi(grid_items, radius, target_loc, sorted_steps) -> Float[torch.Tensor, "n_train_steps n_runs"]:
     """
     Computes the probability of occupancy within a radius R of a target location.
     P = occupancy(x, y) / total_occupancy
     
     Args:
-        grid_items: Dictionary mapping steps to numpy arrays of shape (num_trajs, 4, H, W).
+        grid_items: Dictionary mapping steps to numpy arrays of shape (n_runs, 4, H, W).
                     Matches the output of data.grids.items().
         radius: Float/Int defining the L2 distance (radius) for the ROI.
         target_loc: Tuple (x, y) in MiniGrid coordinates (x = horizontal, y = vertical).
                     MiniGrid uses 1-based coordinates starting from (1, 1).
 
     Returns:
-        torch.Tensor: Shape [num_trajs, num_steps] containing the occupancy probability.
+        torch.Tensor: Shape [n_train_steps, n_runs] containing the occupancy probability.
     """
 
     # Get metadata from the first entry
     first_step_data = grid_items[sorted_steps[0]]
-    num_trajs, num_hd, height, width = first_step_data.shape
-    num_steps = len(sorted_steps)
+    n_runs, num_hd, height, width = first_step_data.shape
+    n_train_steps = len(sorted_steps)
 
     # The grids are fetched from WandB Plotly figures where z = occ[hd].T.
     # The original occ has shape (4, W-2, H-2) indexed as occ[hd, x-1, y-1].
@@ -739,22 +746,24 @@ def prob_roi(grid_items, radius, target_loc, sorted_steps):
     roi_mask = dist_from_center <= radius  # Boolean mask of shape (H, W)
     
     # Initialize the output tensor
-    prob_tensor = torch.zeros((num_trajs, num_steps))
+    prob_tensor = torch.zeros((n_train_steps, n_runs))
     
     for step_idx, step in enumerate(sorted_steps):
-        # Array shape: (num_trajs, 4, H, W)
+        # Array shape: (n_runs, 4, H, W)
         grids = grid_items[step]
         
         # 1. Sum across head directions to get total occupancy per cell
-        # Result shape: (num_trajs, H, W)
+        # Result shape: (n_runs, H, W)
         total_occupancy_per_cell = np.nansum(grids, axis=1)
         
         # 2. Sum the occupancy within the ROI
         # Using boolean indexing over the last two dimensions
+        # Result shape: (n_runs,)
         roi_occupancy = total_occupancy_per_cell[:, roi_mask].sum(axis=1)
         
         # 3. Sum total occupancy across the entire grid to normalize
-        total_grid_occupancy = total_occupancy_per_cell.reshape(num_trajs, -1).sum(axis=1)
+        # Result shape: (n_runs,)
+        total_grid_occupancy = total_occupancy_per_cell.reshape(n_runs, -1).sum(axis=1)
         
         # 4. Compute probability (avoid division by zero if a trajectory is empty)
         # We use np.divide to handle NaNs/Zeros gracefully
@@ -765,79 +774,86 @@ def prob_roi(grid_items, radius, target_loc, sorted_steps):
             where=total_grid_occupancy != 0
         )
         
-        prob_tensor[:, step_idx] = torch.from_numpy(occupancy_prob)
-        
+        prob_tensor[step_idx] = torch.from_numpy(occupancy_prob)
+    
+    print("Computed occupancy probabilities for ROI:")
+    print(prob_tensor.shape)
     return prob_tensor
 
-def plot_prob_roi(prob_tensor, steps, prob_tensor_rand=None, use_std: bool = True, color="blue"):
+def bootstrap_ci(data: np.ndarray, n_bootstrap: int = 1000, ci: float = 0.95) -> tuple[np.ndarray, np.ndarray]:
     """
-    Plots the mean occupancy probability with a 95% Confidence Interval.
-    
+    Computes a bootstrap confidence interval for the mean along axis 0.
+
     Args:
-        prob_tensor: Tensor of shape [num_trajs, num_steps] from prob_roi()
-        steps: List of step values (x-axis)
-        color: Color for the line and shading
-        prob_tensor_rand: Optional tensor of shape [num_trajs, num_steps] for random agent comparison
+        data: Array of shape [n_train_steps, n_runs]
+        n_bootstrap: Number of bootstrap resamples
+        ci: Confidence level (default 0.95 for 95% CI)
+
+    Returns:
+        Tuple of (lower_error, upper_error) arrays of shape [n_train_steps],
+        where errors are distances from the mean (for use with ax.errorbar's yerr).
     """
-    # 1. Calculate Mean
-    mean = prob_tensor.mean(dim=0).numpy()
-    
-    # 2. Calculate Standard Deviation
-    std = prob_tensor.std(dim=0).numpy()
-    sem = std / np.sqrt(prob_tensor.shape[0])  # Standard Error of the Mean
-    ci_multiplier = 1.96  # For 95% confidence interval
-    ci = sem * ci_multiplier
-    spread = std if use_std else ci
+    n_runs = data.shape[1]
+    boot_means = np.stack([
+        data[:, np.random.randint(0, n_runs, size=n_runs)].mean(axis=1)
+        for _ in range(n_bootstrap)
+    ], axis=1)  # [n_train_steps, n_bootstrap]
 
-    # 3. Create Plot
+    alpha = (1 - ci) / 2
+    lower = np.percentile(boot_means, 100 * alpha, axis=1)
+    upper = np.percentile(boot_means, 100 * (1 - alpha), axis=1)
+    mean = data.mean(axis=1)
+    return mean - lower, upper - mean
+
+
+def plot_prob_roi(prob_tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], use_std: bool = True, radius: int = 3, n_bootstrap: int = 1000):
+    """
+    Plots the mean occupancy probability with a 95% Confidence Interval for multiple agents.
+
+    Args:
+        prob_tensors: List of tensors, each of shape [n_train_steps, n_runs] from prob_roi()
+        steps: List of step values (x-axis)
+        colors: List of colors, one per tensor in prob_tensors
+        labels: List of legend labels, one per tensor
+        use_std: If True, shade with std; if False and bootstrap=False, use normal-assumption 95% CI
+        bootstrap: If True, use bootstrap_ci() for the error band (overrides use_std)
+        n_bootstrap: Number of bootstrap resamples (only used when bootstrap=True)
+    """
+    if len(prob_tensors) != len(colors):
+        raise ValueError(f"prob_tensors and colors must have the same length, got {len(prob_tensors)} and {len(colors)}")
+    if len(prob_tensors) != len(labels):
+        raise ValueError(f"prob_tensors and labels must have the same length, got {len(prob_tensors)} and {len(labels)}")
+
+    ref_shape = prob_tensors[0].shape
+    for i, t in enumerate(prob_tensors[1:], start=1):
+        if t.shape[0] != ref_shape[0]:
+            raise ValueError(f"All prob_tensors must have the same shape. prob_tensors[0] has shape {ref_shape}, but prob_tensors[{i}] has shape {t.shape}")
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    
-    ax.plot(steps, mean, color=color, label="Curious Agent", linewidth=2)
-    ax.fill_between(
-        steps, 
-        mean - spread, 
-        mean + spread, 
-        color=color, 
-        alpha=0.2, 
-        label="Standard Deviation (Curious)" if use_std else "95% CI (Curious)"
-    )
 
-    if prob_tensor_rand is not None:
-        mean_rand = prob_tensor_rand.mean(dim=0).numpy()
-        std_rand = prob_tensor_rand.std(dim=0).numpy()
-        sem_rand = std_rand / np.sqrt(prob_tensor_rand.shape[0])
-        ci_rand = sem_rand * 1.96
-        spread_rand = std_rand if use_std else ci_rand
+    for tensor, color, label in zip(prob_tensors, colors, labels):
+        data = tensor.numpy()
+        mean = data.mean(axis=-1)
 
-        print(f"{mean.mean()=}")
-        print(f"{std.mean()=}")
-        print(f"{ci.mean()=}")
+        if use_std:
+            std = data.std(axis=-1)
+            yerr = std
+            spread_label = f"Std ({label})"
+        else:
+            yerr = np.stack(bootstrap_ci(data, n_bootstrap=n_bootstrap), axis=0)  # [2, n_steps]
+            spread_label = f"Bootstrap 95% CI ({label})"
 
-        print(f"Random Agent Mean probabilities: {mean_rand}")
-        print(f"Random Agent Standard deviation: {std_rand}")
-        print(f"Random Agent 95% Confidence Intervals: {ci_rand}")
+        light_color = (*mcolors.to_rgb(color), 0.4)
+        ax.plot(steps, mean, color=color, label=label, linewidth=2, marker="o", markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.5)
+        ax.errorbar(steps, mean, yerr=yerr, fmt='none', ecolor=light_color, elinewidth=1.5, capsize=3, label=spread_label)
 
-        print(f"{mean_rand.mean()=}")
-        print(f"{std_rand.mean()=}")
-        print(f"{ci_rand.mean()=}")
-
-        ax.plot(steps, mean_rand, color="red", label="Random Agent", linewidth=2)
-        ax.fill_between(
-            steps, 
-            mean_rand - spread_rand, 
-            mean_rand + spread_rand, 
-            color="red", 
-            alpha=0.2, 
-            label="Standard Deviation (Random)" if use_std else "95% CI (Random)"
-        )
-    
     # Formatting
-    ax.set_xlabel("Training Trajectories", fontsize=12)
-    ax.set_ylabel("Probability of ROI Occupancy", fontsize=12)
-    ax.set_title("Target Object Preference Index", fontsize=14)
+    ax.set_xlabel("Trajectories taken in novel environment", fontsize=12)
+    ax.set_ylabel(f"Probability of staying in ROI (r={radius})", fontsize=12)
+    # ax.set_title("Novel Object", fontsize=14)
     ax.grid(True, linestyle='--', alpha=0.6)
-    # ax.legend()
-    
+    ax.legend()
+
     plt.tight_layout()
     return fig, ax
 
