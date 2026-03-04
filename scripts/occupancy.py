@@ -31,7 +31,7 @@ from scripts.wandb_data import (
     fetch_occupancy_grids,
     plot_occupancy_average,
     prob_roi,
-    plot_prob_roi,
+    plot_metric,
     OccupancyData,
 )
 
@@ -117,7 +117,9 @@ def show_prob_roi(
     radius: int = 3,
     use_std: bool = True,
     save_path: str | None = None,
-):  
+    xlabel: str = "Trajectories taken in novel environment",
+    ylabel: str = "Probability of staying in ROI",
+):
     sorted_steps = [sorted(d.grids.keys()) for d in data]
     min_length = min([len(steps) for steps in sorted_steps])
     label_steps = STEPS[:min_length]
@@ -127,7 +129,7 @@ def show_prob_roi(
         for i, d in enumerate(data)
     ]
     prob_tensors = [t[:min_length] for t in prob_tensors]
-    fig, ax = plot_prob_roi(prob_tensors, label_steps, colors=colors, labels=labels, use_std=use_std, radius=radius)
+    fig, ax = plot_metric(prob_tensors, label_steps, colors=colors, labels=labels, xlabel=xlabel, ylabel=ylabel, use_std=use_std)
     if save_path is not None:
         fig.savefig(save_path)
     return fig, ax

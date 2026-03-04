@@ -806,32 +806,33 @@ def bootstrap_ci(data: np.ndarray, n_bootstrap: int = 1000, ci: float = 0.95) ->
     return mean - lower, upper - mean
 
 
-def plot_prob_roi(prob_tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], use_std: bool = True, radius: int = 3, n_bootstrap: int = 1000):
+def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000):
     """
-    Plots the mean occupancy probability with a 95% Confidence Interval for multiple agents.
+    Plots the mean of a metric with a 95% Confidence Interval for multiple agents.
 
     Args:
-        prob_tensors: List of tensors, each of shape [n_train_steps, n_runs] from prob_roi()
+        tensors: List of tensors, each of shape [n_train_steps, n_runs]
         steps: List of step values (x-axis)
-        colors: List of colors, one per tensor in prob_tensors
+        colors: List of colors, one per tensor
         labels: List of legend labels, one per tensor
-        use_std: If True, shade with std; if False and bootstrap=False, use normal-assumption 95% CI
-        bootstrap: If True, use bootstrap_ci() for the error band (overrides use_std)
-        n_bootstrap: Number of bootstrap resamples (only used when bootstrap=True)
+        xlabel: Label for the x-axis
+        ylabel: Label for the y-axis
+        use_std: If True, shade with std; if False, use bootstrap 95% CI
+        n_bootstrap: Number of bootstrap resamples (only used when use_std=False)
     """
-    if len(prob_tensors) != len(colors):
-        raise ValueError(f"prob_tensors and colors must have the same length, got {len(prob_tensors)} and {len(colors)}")
-    if len(prob_tensors) != len(labels):
-        raise ValueError(f"prob_tensors and labels must have the same length, got {len(prob_tensors)} and {len(labels)}")
+    if len(tensors) != len(colors):
+        raise ValueError(f"tensors and colors must have the same length, got {len(tensors)} and {len(colors)}")
+    if len(tensors) != len(labels):
+        raise ValueError(f"tensors and labels must have the same length, got {len(tensors)} and {len(labels)}")
 
-    ref_shape = prob_tensors[0].shape
-    for i, t in enumerate(prob_tensors[1:], start=1):
+    ref_shape = tensors[0].shape
+    for i, t in enumerate(tensors[1:], start=1):
         if t.shape[0] != ref_shape[0]:
-            raise ValueError(f"All prob_tensors must have the same shape. prob_tensors[0] has shape {ref_shape}, but prob_tensors[{i}] has shape {t.shape}")
+            raise ValueError(f"All tensors must have the same shape. tensors[0] has shape {ref_shape}, but tensors[{i}] has shape {t.shape}")
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    for tensor, color, label in zip(prob_tensors, colors, labels):
+    for tensor, color, label in zip(tensors, colors, labels):
         data = tensor.numpy()
         mean = data.mean(axis=-1)
 
@@ -848,76 +849,11 @@ def plot_prob_roi(prob_tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]
         ax.errorbar(steps, mean, yerr=yerr, fmt='none', ecolor=light_color, elinewidth=1.5, capsize=3, label=spread_label)
 
     # Formatting
-    ax.set_xlabel("Trajectories taken in novel environment", fontsize=12)
-    ax.set_ylabel(f"Probability of staying in ROI (r={radius})", fontsize=12)
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
     # ax.set_title("Novel Object", fontsize=14)
     ax.grid(True, linestyle='--', alpha=0.6)
     ax.legend()
 
     plt.tight_layout()
     return fig, ax
-
-
-def plot_subroom_percentage(
-    counts: torch.Tensor,
-    room_labels: list[str] | None = None,
-    colors: list[str] | None = None,
-    ax: Axes | None = None,
-    figsize: tuple[float, float] = (8, 5),
-    title: str = "Time Spent per Room",
-) -> Axes:
-    """Bar chart of the percentage of time spent in each subroom.
-
-    For each trajectory (timestep), computes the fraction of visits in
-    each room, then averages across all trajectories and runs.  Error
-    bars show +1 standard deviation (computed across runs).
-
-    Args:
-        counts: Tensor of shape ``(num_runs, num_timesteps, n_subrooms)``
-            from :func:`fetch_subroom_counts`.
-        room_labels: Labels for the x-axis bars.  Defaults to
-            ``["Room 0", "Room 1", ...]``.
-        colors: One color per room.  Defaults to a standard palette.
-        ax: Optional matplotlib Axes.  If ``None``, creates a new figure.
-        figsize: Figure size when creating a new figure.
-        title: Figure title.
-
-    Returns:
-        The matplotlib Axes with the bar chart.
-    """
-    n_subrooms = counts.shape[-1]
-
-    # Percentage per trajectory: counts / total visits in that trajectory
-    totals = counts.sum(dim=-1, keepdim=True)
-    # Avoid division by zero (NaN rows stay NaN)
-    pct = counts / totals.clamp(min=1) * 100
-    # Where totals were 0 or NaN, mark as NaN
-    pct[totals.squeeze(-1) == 0] = float("nan")
-
-    # Average across timesteps per run → (num_runs, n_subrooms)
-    pct_per_run = pct.nanmean(dim=1)
-
-    # Mean and std across runs → (n_subrooms,)
-    mean = pct_per_run.nanmean(dim=0).numpy()
-    std = pct_per_run.std(dim=0).numpy()
-
-    if room_labels is None:
-        room_labels = [f"Room {i}" for i in range(n_subrooms)]
-    if colors is None:
-        colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52",
-                   "#8172B3", "#937860"][:n_subrooms]
-
-    if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
-
-    x = np.arange(n_subrooms)
-    ax.bar(x, mean, yerr=std, capsize=5, color=colors[:n_subrooms],
-           edgecolor="black", linewidth=0.8, error_kw={"lw": 1.5})
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(room_labels)
-    ax.set_ylabel("Time Spent (%)")
-    ax.set_title(title)
-    ax.grid(True, axis="y", linestyle="--", alpha=0.6)
-
-    return ax   
