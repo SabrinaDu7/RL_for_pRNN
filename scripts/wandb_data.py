@@ -5,7 +5,7 @@ import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 import torch
 
 from matplotlib.axes import Axes
@@ -683,12 +683,13 @@ def plot_occupancy_average(
         row_titles=[f"Step {s}" for s in (label_steps if label_steps is not None else steps)],
     )
 
+    global_max = max(np.nanmax(avg_grids[s]) for s in steps)
     for row_idx, step in enumerate(steps):
         grid = avg_grids[step]  # (4, H, W)
         for hd in range(4):
-            # Colorbar per subplot
+            show_scale = row_idx == len(steps) - 1 and hd == 3 # Show colorbar only on last plot
             fig.add_trace(
-                go.Heatmap(z=grid[hd], showscale=True, colorscale=scale, zmin=0, zmax=np.nanmax(grid)),
+                go.Heatmap(z=grid[hd], showscale=show_scale, colorscale=scale, zmin=0, zmax=global_max),
                 row=row_idx + 1,
                 col=hd + 1,
             )
@@ -806,7 +807,7 @@ def bootstrap_ci(data: np.ndarray, n_bootstrap: int = 1000, ci: float = 0.95) ->
     return mean - lower, upper - mean
 
 
-def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000):
+def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000, alpha: float = 0.01):
     """
     Plots the mean of a metric with a 95% Confidence Interval for multiple agents.
 
@@ -819,7 +820,11 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
         ylabel: Label for the y-axis
         use_std: If True, shade with std; if False, use bootstrap 95% CI
         n_bootstrap: Number of bootstrap resamples (only used when use_std=False)
+        alpha: Significance level for Welch's t-test (default 0.01)
     """
+    from itertools import combinations
+    from scipy import stats
+
     if len(tensors) != len(colors):
         raise ValueError(f"tensors and colors must have the same length, got {len(tensors)} and {len(colors)}")
     if len(tensors) != len(labels):
@@ -832,8 +837,10 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
+    all_data = []
     for tensor, color, label in zip(tensors, colors, labels):
         data = tensor.numpy()
+        all_data.append(data)
         mean = data.mean(axis=-1)
 
         if use_std:
@@ -844,9 +851,21 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
             yerr = np.stack(bootstrap_ci(data, n_bootstrap=n_bootstrap), axis=0)  # [2, n_steps]
             spread_label = f"Bootstrap 95% CI ({label})"
 
+        print(f"Plotting {label}:")
+        print("     Final mean:", mean[-1])
+        print("     Final yerr:", yerr[:, -1])
         light_color = (*mcolors.to_rgb(color), 0.4)
         ax.plot(steps, mean, color=color, label=label, linewidth=2, marker="o", markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.5)
         ax.errorbar(steps, mean, yerr=yerr, fmt='none', ecolor=light_color, elinewidth=1.5, capsize=3, label=spread_label)
+
+    # Welch's t-test (unequal variances) on final-step values for all pairs
+    print(f"\nWelch's t-test (two-sided, α={alpha}) on final step:")
+    for (i, label_i), (j, label_j) in combinations(enumerate(labels), 2):
+        a = all_data[i][-1, :]
+        b = all_data[j][-1, :]
+        t_stat, p_val = stats.ttest_ind(a, b, equal_var=False)
+        sig = "significant" if float(p_val) < alpha else "not significant"
+        print(f"  {label_i} vs {label_j}: t={t_stat:.4f}, p={p_val:.4f} → {sig}")
 
     # Formatting
     ax.set_xlabel(xlabel, fontsize=12)
@@ -857,3 +876,286 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
 
     plt.tight_layout()
     return fig, ax
+
+
+# ---------------------------------------------------------------------------
+# Subroom count fetching
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SubroomData:
+    """Container for fetched subroom visit count data across runs."""
+
+    subroom_ids: "Float[torch.Tensor, 'n_runs n_training_steps 4']"
+    """Shape (n_runs, n_training_steps, 4): visit counts per room per training step."""
+
+    run_names: list[str]
+    """Run names in the order they appear along axis 0."""
+
+    config_values: list[tuple] | None
+    """Config values per run (one tuple per run), or None if no config_keys."""
+
+    config_keys: list[str]
+    """The config keys that were requested."""
+
+
+def _histogram_to_subroom_counts(hist: dict, n_subrooms: int = 4) -> np.ndarray:
+    """Convert a wandb histogram dict to per-subroom visit counts.
+
+    Bin centers are rounded to the nearest integer to determine which subroom
+    each bin belongs to. Bins whose rounded center is outside [0, n_subrooms)
+    are ignored.
+
+    Args:
+        hist: A dict with ``"bins"`` (n+1 edges) and ``"values"`` (n counts).
+        n_subrooms: Number of subrooms (size of the output array).
+
+    Returns:
+        np.ndarray of shape ``(n_subrooms,)`` with visit counts per subroom.
+    """
+    bins = np.array(hist["bins"])
+    values = np.array(hist["values"])
+    centers = (bins[:-1] + bins[1:]) / 2
+    counts = np.zeros(n_subrooms)
+    for center, val in zip(centers, values):
+        idx = round(center)
+        if 0 <= idx < n_subrooms:
+            counts[idx] += val
+    return counts
+
+
+def fetch_subroom_counts(
+    entity: str,
+    project: str,
+    last_n: int | None = None,
+    metric: str = "subroom_ids",
+    step_key: str = "_step",
+    config_keys: list[str] | None = None,
+    filters: dict | None = None,
+    group: str | None = None,
+    max_workers: int = 32,
+    page_size: int = 10000,
+) -> SubroomData:
+    """Fetch subroom visit count data from WandB runs.
+
+    ``subroom_ids`` is logged as ``wandb.Histogram`` of per-frame room IDs
+    (1–4 in MiniGrid convention). This function converts those histograms into
+    per-room counts and aligns them across runs.
+
+    Args:
+        entity: WandB entity (team or user).
+        project: WandB project name.
+        last_n: If given, keep only the last ``last_n`` logged steps per run,
+            front-padding with NaN for runs with fewer entries. If ``None``,
+            uses the maximum number of steps across all runs.
+        metric: WandB metric key for the histogram. Defaults to ``"subroom_ids"``.
+        step_key: Step key used as the x-axis. Defaults to ``"_step"``.
+        config_keys: Optional dot-separated config keys to resolve per run.
+        filters: Optional WandB API filters dict (MongoDB query format).
+        group: Optional WandB group name to filter by.
+        max_workers: Maximum parallel threads for scanning run histories.
+        page_size: Number of rows fetched per API call in ``scan_history``.
+            Larger values reduce round-trips. Defaults to 10000.
+
+    Returns:
+        A :class:`SubroomData` with ``subroom_ids`` of shape
+        ``(n_runs, n_training_steps, 4)``.
+
+    Raises:
+        ValueError: If no runs match the provided filters or no subroom data
+            is found in any run.
+    """
+    from tqdm import tqdm
+
+    if config_keys is None:
+        config_keys = []
+
+    merged_filters = _build_filters(filters, group)
+    api = wandb.Api(timeout=59)
+    runs = api.runs(path=f"{entity}/{project}", filters=merged_filters)
+    runs_list = list(runs)
+    if not runs_list:
+        raise ValueError(
+            f"No runs found for entity='{entity}', project='{project}' "
+            f"with filters={merged_filters}"
+        )
+
+    n_runs = len(runs_list)
+    workers = min(max_workers, n_runs)
+
+    def _scan_run(run):
+        config_vals = tuple(
+            _resolve_config_value(run.config, key) for key in config_keys
+        )
+        entries: list[tuple[int, np.ndarray]] = []
+        for row in run.scan_history(keys=[step_key, metric], page_size=page_size):
+            if metric not in row or step_key not in row:
+                continue
+            hist = row[metric]
+            if not isinstance(hist, dict) or "bins" not in hist:
+                continue
+            # Actual subroom IDs are 1-indexed (1–4); shift bins by -1 so that
+            # _histogram_to_subroom_counts maps them to 0-indexed (0–3).
+            shifted_hist = {
+                "bins": [b - 1 for b in hist["bins"]],
+                "values": hist["values"],
+            }
+            counts = _histogram_to_subroom_counts(shifted_hist, n_subrooms=4)
+            entries.append((int(row[step_key]), counts))
+        return run.name, config_vals, entries
+
+    scan_results: list = [None] * n_runs
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_scan_run, run): i for i, run in enumerate(runs_list)}
+        for future in tqdm(as_completed(futures), total=n_runs, desc="Scanning runs"):
+            scan_results[futures[future]] = future.result()
+
+    run_names = [r[0] for r in scan_results]
+    config_values = [r[1] for r in scan_results] if config_keys else None
+    per_run_entries: list[list[tuple[int, np.ndarray]]] = [r[2] for r in scan_results]
+
+    # Determine the number of time steps to keep
+    max_entries = max((len(e) for e in per_run_entries), default=0)
+    n_steps = last_n if last_n is not None else max_entries
+
+    # Build (n_runs, n_steps, 4) tensor, front-padding short runs with NaN
+    result = torch.full((n_runs, n_steps, 4), float("nan"))
+    for run_idx, entries in enumerate(per_run_entries):
+        if not entries:
+            continue
+        # Sort by step, then take the last n_steps
+        entries_sorted = sorted(entries, key=lambda x: x[0])
+        entries_to_use = entries_sorted[-n_steps:] if n_steps else entries_sorted
+        counts_array = np.stack([c for _, c in entries_to_use], axis=0)  # (T, 4)
+        t = counts_array.shape[0]
+        result[run_idx, n_steps - t :] = torch.from_numpy(counts_array.astype(np.float32))
+
+    return SubroomData(
+        subroom_ids=result,
+        run_names=run_names,
+        config_values=config_values,
+        config_keys=config_keys,
+    )
+
+
+def save_subroom_data(data: SubroomData, path: str) -> None:
+    """Save a :class:`SubroomData` instance to a file.
+
+    Args:
+        data: The SubroomData to save.
+        path: Destination file path (conventionally ``.pt``).
+    """
+    torch.save(
+        {
+            "subroom_ids": data.subroom_ids,
+            "run_names": data.run_names,
+            "config_values": data.config_values,
+            "config_keys": data.config_keys,
+        },
+        path,
+    )
+
+
+def load_subroom_data(path: str) -> SubroomData:
+    """Load a :class:`SubroomData` instance from a file saved by :func:`save_subroom_data`.
+
+    Args:
+        path: Path to the saved file.
+
+    Returns:
+        The loaded :class:`SubroomData`.
+    """
+    d = torch.load(path, weights_only=False)
+    return SubroomData(
+        subroom_ids=d["subroom_ids"],
+        run_names=d["run_names"],
+        config_values=d["config_values"],
+        config_keys=d["config_keys"],
+    )
+
+
+_SUBROOM_COLORS = ["tab:blue", "tab:red", "tab:green", "tab:orange", "tab:purple"]
+
+
+def _subroom_percentages(
+    counts: "Float[torch.Tensor, 'n_runs n_training_steps n_rooms']",
+    step_range: tuple[int, int] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute mean and SE of subroom percentages across (run, step) samples.
+
+    Each ``(run, training_step)`` pair is one sample. Returns mean and SE per room.
+    """
+    data = counts.numpy() if isinstance(counts, torch.Tensor) else np.asarray(counts, dtype=float)
+    if step_range is not None:
+        data = data[:, step_range[0]:step_range[1], :]
+
+    n_rooms = data.shape[-1]
+    row_totals = np.nansum(data, axis=-1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pct = np.where(row_totals > 0, data / row_totals * 100, np.nan)
+
+    flat = pct.reshape(-1, n_rooms)
+    n_valid = int((~np.isnan(flat).all(axis=-1)).sum())
+    if n_valid == 0:
+        return np.zeros(n_rooms), np.zeros(n_rooms)
+    mean_pct = np.nanmean(flat, axis=0)
+    se_pct = np.nanstd(flat, axis=0) / np.sqrt(n_valid) if n_valid > 1 else np.zeros(n_rooms)
+    return mean_pct, se_pct
+
+
+def plot_subroom_percentage(
+    counts_list: "list[Float[torch.Tensor, 'n_runs n_training_steps n_rooms']]",
+    group_labels: "Sequence[str | None] | None" = None,
+    colors: "Sequence[str] | None" = None,
+    room_labels: "Sequence[str] | None" = None,
+    ax: "Axes | None" = None,
+    step_range: tuple[int, int] | None = None,
+) -> "Axes":
+    """Plot mean percentage of time spent in each subroom, one bar group per entry.
+
+    Each ``(run, training_step)`` pair is treated as a single sample for mean/SE.
+    Multiple groups (e.g. random vs. curious agent) are plotted as side-by-side
+    grouped bars in different colors.
+
+    Args:
+        counts_list: List of tensors, each of shape
+            ``(n_runs, n_training_steps, n_rooms)``.
+        group_labels: Legend labels for each group, e.g. ``["random", "curious"]``.
+            ``None`` entries suppress the label for that group; if all are ``None``
+            no legend is shown.
+        colors: Bar colors per group. Defaults to ``_SUBROOM_COLORS``.
+        room_labels: X-axis labels for each room. Defaults to
+            ``["Room 1", ..., "Room N"]``.
+        ax: Optional matplotlib Axes to plot on. Creates a new figure if ``None``.
+        step_range: Optional ``(start, end)`` slice of training steps (exclusive end).
+
+    Returns:
+        The matplotlib Axes with the bar chart.
+    """
+    n_groups = len(counts_list)
+    first = counts_list[0]
+    n_rooms = (first.numpy() if isinstance(first, torch.Tensor) else np.asarray(first)).shape[-1]
+
+    resolved_labels: list[str | None] = list(group_labels) if group_labels is not None else [None] * n_groups
+    resolved_colors: list[str] = list(colors) if colors is not None else [_SUBROOM_COLORS[i % len(_SUBROOM_COLORS)] for i in range(n_groups)]
+    resolved_rooms: list[str] = list(room_labels) if room_labels is not None else [f"Room {i + 1}" for i in range(n_rooms)]
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    x = np.arange(n_rooms)
+    width = 0.8 / n_groups
+    for i, (counts, label, color) in enumerate(zip(counts_list, resolved_labels, resolved_colors)):
+        mean_pct, se_pct = _subroom_percentages(counts, step_range=step_range)
+        offset = (i - n_groups / 2 + 0.5) * width
+        ax.bar(x + offset, mean_pct, width, yerr=se_pct, label=label, color=color,
+               capsize=4, error_kw=dict(elinewidth=2, ecolor="black"))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(resolved_rooms)
+    ax.set_ylabel("% time in subroom")
+    ax.set_ylim(0, 100)
+    if any(l is not None for l in resolved_labels):
+        ax.legend()
+    return ax

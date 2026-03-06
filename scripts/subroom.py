@@ -1,0 +1,197 @@
+# ---
+# jupyter:
+#   jupytext:
+#     formats: py:percent,ipynb
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.18.1
+#   kernelspec:
+#     display_name: RL_for_pRNN
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Subroom Percentage Plots for WandB data
+
+# %%
+# !pwd
+
+# %% [markdown]
+# ## Imports and Function Definitions
+# %%
+import matplotlib.pyplot as plt
+import torch
+from typing import Literal, Sequence
+from pathlib import Path
+from scripts.wandb_data import (
+    fetch_subroom_counts,
+    plot_subroom_percentage,
+    save_subroom_data,
+    load_subroom_data,
+    SubroomData,
+)
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
+CACHE_DIR = Path("../outputs/cache")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _cache_key(agent_type: str, with_obs: bool, entropy_coef: float, ctrl: bool | None, project: str) -> Path:
+    ctrl_str = "none" if ctrl is None else str(ctrl)
+    name = f"subroom__{project}__{agent_type}__obs{with_obs}__ec{entropy_coef}__ctrl{ctrl_str}.pt"
+    return CACHE_DIR / name
+
+
+def fetch_data(
+    agent_type: Literal["rand", "cur"],
+    with_obs: bool,
+    entropy_coef: float = 0.0,
+    ctrl: bool | None = False,
+    project: str = "curious-george-omt",
+    last_n: int | None = None,
+    use_cache: bool = True,
+) -> SubroomData:
+    cache_path = _cache_key(agent_type, with_obs, entropy_coef, ctrl, project)
+    if use_cache and cache_path.exists():
+        return load_subroom_data(str(cache_path))
+    data = fetch_subroom_counts(
+        entity="blake-richards",
+        project=project,
+        last_n=last_n,
+        metric="subroom_ids",
+        group=f"pRNN_fourroom",
+        filters={
+            "config.rl.entropy_coef": entropy_coef,
+            "config.exp.with_obs": with_obs,
+            "config.exp.random_action_agent": False if agent_type == "cur" else True,
+        },
+        max_workers=10,
+    )
+    if use_cache:
+        save_subroom_data(data, str(cache_path))
+    return data
+
+
+def show_subroom_percentage(
+    data_list: list[SubroomData],
+    labels: Sequence[str],
+    colors: Sequence[str] | None = None,
+    room_labels: Sequence[str] | None = None,
+    step_range: tuple[int, int] | None = (9800, 10000),
+    save_path: str | None = None,
+) -> tuple:
+    """Plot subroom percentage as grouped bars, one bar group per agent condition.
+
+    Args:
+        data_list: List of SubroomData instances to compare.
+        labels: Legend labels, one per entry in data_list.
+        colors: Optional bar colors, one per entry. Defaults to ``_SUBROOM_COLORS``.
+        room_labels: Labels for each room. Defaults to ["Room 1", ..., "Room 4"].
+        step_range: Training-step slice to aggregate over.
+        save_path: If given, saves the figure to this path.
+
+    Returns:
+        (fig, ax) tuple.
+    """
+    fig, ax = plt.subplots(figsize=(6, 4))
+    plot_subroom_percentage(
+        [d.subroom_ids for d in data_list],
+        group_labels=labels,
+        colors=colors,
+        room_labels=room_labels,
+        ax=ax,
+        step_range=step_range,
+    )
+    fig.suptitle("Time Spent per Subroom", fontsize=13)
+    plt.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path)
+    return fig, ax
+
+
+def main_single(
+    agent: Literal["rand", "cur"],
+    ec: float,
+    ctrl: bool | None = False,
+    project: str = "curious-george-fourroom",
+    last_n: int | None = None,
+    use_cache: bool = True,
+):
+    data = fetch_data(agent_type=agent, with_obs=False, entropy_coef=ec, ctrl=ctrl, project=project, last_n=last_n, use_cache=use_cache)
+    ctrl_str = "_ctrl" if ctrl else ("_exp" if ctrl is None else "")
+    save_path = f"../outputs/without_obs/subroom_{agent}{ctrl_str}_ec{ec}.png"
+    show_subroom_percentage(data_list=[data], labels=[agent], save_path=save_path)
+
+
+def main_multiple(
+    agents: list[Literal["rand", "cur"]],
+    ec: float,
+    ctrl: bool | None = False,
+    project: str = "curious-george-fourroom",
+    colors: list[str] | None = None,
+    last_n: int | None = None,
+    use_cache: bool = True,
+    step_range: tuple[int, int] | None = (9800, 10000),
+):
+    """Plot subroom percentage for multiple agent types on one grouped bar chart.
+
+    Args:
+        agents: List of agent types, e.g. ``["rand", "cur"]``.
+        ec: Entropy coefficient shared across all agents.
+        ctrl: Control flag passed to fetch_data.
+        project: WandB project name.
+        colors: Optional bar colors, one per agent. Defaults to ``_SUBROOM_COLORS``.
+        last_n: Fetch only the last N runs.
+        use_cache: Whether to use cached data.
+        step_range: Training-step slice to aggregate over.
+    """
+    data_list = [
+        fetch_data(agent_type=a, with_obs=False, entropy_coef=ec, ctrl=ctrl,
+                   project=project, last_n=last_n, use_cache=use_cache)
+        for a in agents
+    ]
+    ctrl_str = "_ctrl" if ctrl else ("_exp" if ctrl is None else "")
+    label_str = "_vs_".join(agents)
+    save_path = f"../outputs/without_obs/subroom_{label_str}{ctrl_str}_ec{ec}.png"
+    show_subroom_percentage(
+        data_list=data_list,
+        labels=agents,
+        colors=colors,
+        step_range=step_range,
+        save_path=save_path,
+    )
+
+
+# %% [markdown]
+# ## Subroom Percentage Plots
+# %%
+EC = 0
+
+# %%
+# CURIOUS
+if __name__ == "__main__":
+    AGENT = "cur"
+    PROJECT = "curious-george-fourroom"
+
+    data = fetch_data(agent_type=AGENT, with_obs=False, entropy_coef=EC, project=PROJECT)
+    main_single(agent=AGENT, ec=EC, project=PROJECT)
+
+# %%
+# RANDOM
+if __name__ == "__main__":
+    AGENT = "rand"
+    PROJECT = "curious-george-fourroom"
+
+    data = fetch_data(agent_type=AGENT, with_obs=False, entropy_coef=EC, project=PROJECT)
+    main_single(agent=AGENT, ec=EC, project=PROJECT)
+
+# %%
+# RANDOM vs CURIOUS
+if __name__ == "__main__":
+    PROJECT = "curious-george-fourroom"
+    main_multiple(agents=["rand", "cur"], ec=EC, project=PROJECT, colors=["tab:red", "tab:blue"])

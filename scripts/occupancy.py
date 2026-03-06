@@ -134,11 +134,19 @@ def show_prob_roi(
         fig.savefig(save_path)
     return fig, ax
 
-def main_single(agent: Literal["rand", "cur"], loc: list[int] | None, ec: float, r: int, data: OccupancyData | None = None, ctrl: bool | None = False, project: str = "curious-george-omt"):
+def main_single(agent: Literal["rand", "cur"], 
+                loc: list[int] | None, 
+                ec: float, 
+                r: int, 
+                data: OccupancyData | None = None, 
+                ctrl: bool | None = False, 
+                project: str = "curious-george-omt", 
+                use_std: bool = True):
+    
     if data is None:
         data = fetch_data(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, ctrl=ctrl, project=project)
     show_occ_heatmaps(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, data=data)
-    show_prob_roi(data=[data], colors=["blue"], labels=[agent], radius=r, use_std=True)
+    show_prob_roi(data=[data], colors=["blue"], labels=[agent], radius=r, use_std=use_std)
 
 def main_multiple(target_loc: list[int], radius: int, use_std: bool = True):
     save_path = f"../outputs/without_obs/roi_plot{target_loc[0]}{target_loc[1]}_official.png"
@@ -167,15 +175,17 @@ if __name__ == "__main__":
 
 # %%
 # CURIOUS
+# For [7, 11], CTRL = None
 if __name__ == "__main__":
     AGENT= "cur"
-    LOC = [7, 11]
-    CTRL = None
+    LOC = [14, 7]
+    CTRL = False
     W_OBS = False
     PROJECT = "curious-george-omt"
+    USE_STD = False
     
     data = fetch_data(agent_type=AGENT, with_obs=W_OBS, target_loc=LOC, ctrl=CTRL, entropy_coef=EC, project=PROJECT)
-    main_single(agent=AGENT, loc=LOC, ec=EC, r=R, ctrl=CTRL, project=PROJECT, data=data)
+    main_single(agent=AGENT, loc=LOC, ec=EC, r=R, ctrl=CTRL, project=PROJECT, data=data, use_std=USE_STD)
 
 # %%
 # CURIOUS CTRL
