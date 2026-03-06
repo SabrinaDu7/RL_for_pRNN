@@ -807,7 +807,102 @@ def bootstrap_ci(data: np.ndarray, n_bootstrap: int = 1000, ci: float = 0.95) ->
     return mean - lower, upper - mean
 
 
-def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000, alpha: float = 0.01):
+def _sig_label(alpha: float) -> str:
+    """Return a significance star string for a given alpha level.
+
+    * for alpha >= 0.05, ** for alpha >= 0.01, *** for alpha >= 0.001.
+    """
+    if alpha >= 0.05:
+        return "*"
+    if alpha >= 0.01:
+        return "**"
+    return "***"
+
+
+def _pval_stars(p_val: float) -> str | None:
+    """Return significance stars based on p-value, or None if not significant (p >= 0.05)."""
+    if p_val < 0.001:
+        return "***"
+    if p_val < 0.01:
+        return "**"
+    if p_val < 0.05:
+        return "*"
+    return None
+
+
+def _draw_significance_bracket(
+    ax: "Axes",
+    x1: float,
+    x2: float,
+    y_bracket: float,
+    text: str,
+    y1_bottom: float,
+    y2_bottom: float,
+    color: str = "black",
+    fontsize: int = 10,
+) -> float:
+    """Draw a significance bracket whose vertical lines reach down to each bar top.
+
+    Args:
+        ax: Axes to draw on.
+        x1, x2: Horizontal centres of the two bars.
+        y_bracket: Height of the horizontal connecting line.
+        text: Annotation text, e.g. ``"**"``.
+        y1_bottom: Top of the left bar (where the left vertical line starts).
+        y2_bottom: Top of the right bar (where the right vertical line starts).
+        color: Line and text colour.
+        fontsize: Font size for the annotation text.
+
+    Returns:
+        ``y_bracket`` (useful for stacking further brackets above this one).
+    """
+    ax.plot([x1, x1, x2, x2], [y1_bottom, y_bracket, y_bracket, y2_bottom],
+            color=color, linewidth=0.75)
+    ax.text((x1 + x2) / 2, y_bracket, text, ha="center", va="bottom",
+            color=color, fontsize=fontsize)
+    return y_bracket
+
+
+def pairwise_ttest(
+    pairs: list[tuple[np.ndarray, np.ndarray]],
+    pair_labels: list[str] | None = None,
+) -> list[float]:
+    """Run Welch's t-test for each (a, b) pair and return p-values.
+
+    Args:
+        pairs: List of ``(a, b)`` where ``a`` and ``b`` are 1D arrays of samples.
+        alpha: Significance level used for labelling printed output.
+        pair_labels: Optional label per pair for printed output.
+
+    Returns:
+        List of p-values, one per pair.
+    """
+    from scipy import stats
+
+    def compute_sig(p_val: float) -> float | str:
+        if p_val < 0.001:
+            return 0.001
+        elif p_val < 0.01:
+            return 0.01
+        elif p_val < 0.05:
+            return 0.05
+        else:
+            return "ns"
+        
+
+    p_vals = []
+    for idx, (a, b) in enumerate(pairs):
+        t_stat, p_val = stats.ttest_ind(a, b, equal_var=False)
+        p_val = float(p_val)
+        p_vals.append(p_val)
+        label = pair_labels[idx] if pair_labels is not None else f"pair {idx}"
+        sig_level = compute_sig(p_val)
+        sig = _sig_label(sig_level) if isinstance(sig_level, float) else sig_level
+        print(f"  {label}: t={t_stat:.4f}, p={p_val:.4f} → {sig}")
+    return p_vals
+
+
+def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000, alpha=0.01):
     """
     Plots the mean of a metric with a 95% Confidence Interval for multiple agents.
 
@@ -823,7 +918,6 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
         alpha: Significance level for Welch's t-test (default 0.01)
     """
     from itertools import combinations
-    from scipy import stats
 
     if len(tensors) != len(colors):
         raise ValueError(f"tensors and colors must have the same length, got {len(tensors)} and {len(colors)}")
@@ -860,12 +954,15 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
 
     # Welch's t-test (unequal variances) on final-step values for all pairs
     print(f"\nWelch's t-test (two-sided, α={alpha}) on final step:")
-    for (i, label_i), (j, label_j) in combinations(enumerate(labels), 2):
-        a = all_data[i][-1, :]
-        b = all_data[j][-1, :]
-        t_stat, p_val = stats.ttest_ind(a, b, equal_var=False)
-        sig = "significant" if float(p_val) < alpha else "not significant"
-        print(f"  {label_i} vs {label_j}: t={t_stat:.4f}, p={p_val:.4f} → {sig}")
+    pairs = [
+        (all_data[i][-1, :], all_data[j][-1, :])
+        for (i, _), (j, _) in combinations(enumerate(labels), 2)
+    ]
+    pair_labels = [
+        f"{label_i} vs {label_j}"
+        for (_, label_i), (_, label_j) in combinations(enumerate(labels), 2)
+    ]
+    pairwise_ttest(pairs, pair_labels=pair_labels)
 
     # Formatting
     ax.set_xlabel(xlabel, fontsize=12)
@@ -1078,6 +1175,24 @@ def load_subroom_data(path: str) -> SubroomData:
 _SUBROOM_COLORS = ["tab:blue", "tab:red", "tab:green", "tab:orange", "tab:purple"]
 
 
+def _subroom_pct_array(
+    counts: "Float[torch.Tensor, 'n_runs n_training_steps n_rooms']",
+    step_range: tuple[int, int] | None = None,
+) -> np.ndarray:
+    """Return per-run mean subroom percentages, shape ``(n_runs, n_rooms)``.
+
+    For each run, visit counts are normalised to percentages at each step, then
+    averaged over steps (NaN rows excluded).
+    """
+    data = counts.numpy() if isinstance(counts, torch.Tensor) else np.asarray(counts, dtype=float)
+    if step_range is not None:
+        data = data[:, step_range[0]:step_range[1], :]
+    row_totals = np.nansum(data, axis=-1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pct = np.where(row_totals > 0, data / row_totals * 100, np.nan)
+    return np.nanmean(pct, axis=1)  # (n_runs, n_rooms)
+
+
 def _subroom_percentages(
     counts: "Float[torch.Tensor, 'n_runs n_training_steps n_rooms']",
     step_range: tuple[int, int] | None = None,
@@ -1111,6 +1226,7 @@ def plot_subroom_percentage(
     room_labels: "Sequence[str] | None" = None,
     ax: "Axes | None" = None,
     step_range: tuple[int, int] | None = None,
+    alpha: float = 0.05,
 ) -> "Axes":
     """Plot mean percentage of time spent in each subroom, one bar group per entry.
 
@@ -1129,6 +1245,8 @@ def plot_subroom_percentage(
             ``["Room 1", ..., "Room N"]``.
         ax: Optional matplotlib Axes to plot on. Creates a new figure if ``None``.
         step_range: Optional ``(start, end)`` slice of training steps (exclusive end).
+        alpha: Significance level for per-subroom Welch's t-test (printed when
+            more than one group is provided).
 
     Returns:
         The matplotlib Axes with the bar chart.
@@ -1146,8 +1264,13 @@ def plot_subroom_percentage(
 
     x = np.arange(n_rooms)
     width = 0.8 / n_groups
+
+    # Collect per-group stats so we can position brackets after plotting
+    group_stats: list[tuple[np.ndarray, np.ndarray]] = []
     for i, (counts, label, color) in enumerate(zip(counts_list, resolved_labels, resolved_colors)):
         mean_pct, se_pct = _subroom_percentages(counts, step_range=step_range)
+        print(f"{label or f'Group {i}'} mean percentages: {mean_pct}, SE: {se_pct}")
+        group_stats.append((mean_pct, se_pct))
         offset = (i - n_groups / 2 + 0.5) * width
         ax.bar(x + offset, mean_pct, width, yerr=se_pct, label=label, color=color,
                capsize=4, error_kw=dict(elinewidth=2, ecolor="black"))
@@ -1158,4 +1281,41 @@ def plot_subroom_percentage(
     ax.set_ylim(0, 100)
     if any(l is not None for l in resolved_labels):
         ax.legend()
+
+    # Per-subroom Welch's t-test and significance brackets for all group pairs
+    if n_groups > 1:
+        from itertools import combinations as _combinations
+        run_means = [_subroom_pct_array(c, step_range=step_range) for c in counts_list]
+        # bracket_top[r] tracks how high we've stacked brackets for room r
+        bracket_top = np.array([
+            max(group_stats[k][0][r] + group_stats[k][1][r] for k in range(n_groups))
+            for r in range(n_rooms)
+        ]) + 2.0
+
+        for (i, label_i), (j, label_j) in _combinations(enumerate(resolved_labels), 2):
+            lbl_i = label_i or f"group {i}"
+            lbl_j = label_j or f"group {j}"
+            print(f"\nWelch's t-test per subroom ({lbl_i} vs {lbl_j}, α={alpha}):")
+            pairs = [(run_means[i][:, r], run_means[j][:, r]) for r in range(n_rooms)]
+            p_vals = pairwise_ttest(pairs, pair_labels=resolved_rooms)
+
+            offset_i = (i - n_groups / 2 + 0.5) * width
+            offset_j = (j - n_groups / 2 + 0.5) * width
+            for r, p_val in enumerate(p_vals):
+                stars = _pval_stars(p_val)
+                if stars is not None:
+                    mean_i, se_i = group_stats[i]
+                    mean_j, se_j = group_stats[j]
+
+                    _draw_significance_bracket(
+                        ax,
+                        x1=x[r] + offset_i,
+                        x2=x[r] + offset_j,
+                        y_bracket=bracket_top[r],
+                        text=stars,
+                        y1_bottom=mean_i[r] + se_i[r] + 1,
+                        y2_bottom=mean_j[r] + se_j[r] + 1,
+                    )
+                    bracket_top[r] += 4.0
+
     return ax

@@ -34,9 +34,12 @@ from scripts.wandb_data import (
     plot_metric,
     OccupancyData,
 )
-
+from matplotlib import pyplot as plt
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.dpi'] = 300
 
 CACHE_DIR = Path("../outputs/cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -178,8 +181,8 @@ if __name__ == "__main__":
 # For [7, 11], CTRL = None
 if __name__ == "__main__":
     AGENT= "cur"
-    LOC = [14, 7]
-    CTRL = False
+    LOC = [7, 11]
+    CTRL = None
     W_OBS = False
     PROJECT = "curious-george-omt"
     USE_STD = False

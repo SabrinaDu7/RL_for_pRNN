@@ -37,6 +37,9 @@ from scripts.wandb_data import (
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.dpi'] = 300
+
 CACHE_DIR = Path("../outputs/cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -107,7 +110,6 @@ def show_subroom_percentage(
         ax=ax,
         step_range=step_range,
     )
-    fig.suptitle("Time Spent per Subroom", fontsize=13)
     plt.tight_layout()
     if save_path is not None:
         fig.savefig(save_path)
@@ -136,7 +138,7 @@ def main_multiple(
     colors: list[str] | None = None,
     last_n: int | None = None,
     use_cache: bool = True,
-    step_range: tuple[int, int] | None = (9800, 10000),
+    step_range: tuple[int, int] | None = (9000, 10000),
 ):
     """Plot subroom percentage for multiple agent types on one grouped bar chart.
 
