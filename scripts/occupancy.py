@@ -109,8 +109,8 @@ def show_occ_heatmaps(agent_type: Literal["rand", "cur"], with_obs: bool, target
     
     target_loc = [7, 2] if target_loc is None else target_loc   
     avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
-    fig = plot_occupancy_average(avg_grids=avg, label_steps=STEPS) 
-    fig.write_image(f"../outputs/{obs_naming}/occupancy_{target_loc[0]}{target_loc[1]}_ec{entropy_coef}{ctrl_naming}.png")
+    fig = plot_occupancy_average(avg_grids=avg, label_steps=STEPS, scale="plasma") 
+    fig.write_image(f"../outputs/{obs_naming}/occupancy_{agent_type}_{target_loc[0]}{target_loc[1]}_ec{entropy_coef}{ctrl_naming}.png")
     fig.show()                                                                                                                           
 
 def show_prob_roi(
@@ -148,7 +148,7 @@ def main_single(agent: Literal["rand", "cur"],
     
     if data is None:
         data = fetch_data(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, ctrl=ctrl, project=project)
-    show_occ_heatmaps(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, data=data)
+    show_occ_heatmaps(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, data=data, ctrl=ctrl)
     show_prob_roi(data=[data], colors=["blue"], labels=[agent], radius=r, use_std=use_std)
 
 def main_multiple(target_loc: list[int], radius: int, use_std: bool = True):
@@ -161,7 +161,7 @@ def main_multiple(target_loc: list[int], radius: int, use_std: bool = True):
     data_list = [data_cur_exp, data_cur_ctrl, data_rand]
     labels = ["Curious", "Curious CTRL", "Random"]
 
-    show_prob_roi(data=data_list, colors=["green", "blue", "red"], labels=labels, radius=radius, save_path=save_path, use_std=use_std)
+    show_prob_roi(data=data_list, colors=["purple", "turquoise", "blue"], labels=labels, radius=radius, save_path=save_path, use_std=use_std)
 
 # %% [markdown]
 # ## Novel Object
@@ -178,10 +178,10 @@ if __name__ == "__main__":
 
 # %%
 # CURIOUS
-# For [7, 11], CTRL = None
+# For [7, 11] and [7, 2], CTRL = None
 if __name__ == "__main__":
     AGENT= "cur"
-    LOC = [7, 11]
+    LOC = [7, 2]
     CTRL = None
     W_OBS = False
     PROJECT = "curious-george-omt"
