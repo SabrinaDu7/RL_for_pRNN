@@ -89,7 +89,7 @@ def get_SR_acmodel(args,
                    env_act_space, 
                    obs_space: dict,
                    device: torch.device,
-                   acmodel_status_ckpt: str = "") -> ACModelSR:
+                   acmodel_status_ckpt: str | None = None) -> ACModelSR:
 
     """
     Loads ACModel and Optimizer State Dictionaries from checkpoint.
@@ -104,7 +104,7 @@ def get_SR_acmodel(args,
         with_HD=args.exp.with_HD,
     )
 
-    if acmodel_status_ckpt == "":
+    if acmodel_status_ckpt == "" or acmodel_status_ckpt is None:
         return acmodel.to(device)
     else:
         status = torch.load(

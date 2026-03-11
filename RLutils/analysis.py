@@ -12,6 +12,7 @@ from RLutils.algo import PredictivePPOAlgo
 
 SCALES = {
     "viridis": plotly.colors.sequential.Viridis,
+    "plasma": plotly.colors.sequential.Plasma,
     "default": plotly.colors.sequential.Plasma,
 }
 
@@ -299,7 +300,7 @@ class EnvironmentFeaturesAnalysis:
         return fig
 
     def error_map(
-        self, xref=7, yref=7, zmin=None, zmax=None, HDs=True, scale="viridis"
+        self, xref=7, yref=7, zmin=None, zmax=None, HDs=True, scale="plasma"
     ):
         """
         Plot the heatmap of h_{ref} errors.
@@ -538,12 +539,12 @@ class OnPolicyAnalysis:
         # fig.show()
         return fig
 
-    def plot_occupancy(self, scale="viridis"):
+    def plot_occupancy(self, scale="plasma"):
         return get_occupancy_fig(self.algo, self.timesteps, scale)
 
 
 # Distinct function
-def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="viridis") -> go.Figure:
+def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="plasma") -> go.Figure:
     """
     Show state-occupancy counts (no action dimension).
     1×4 layout – one heat-map per head-direction.

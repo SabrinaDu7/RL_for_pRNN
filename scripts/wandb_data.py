@@ -649,7 +649,7 @@ def runs_per_step(
 def plot_occupancy_average(
     avg_grids: dict[int, np.ndarray],
     steps: list[int] | None = None,
-    scale: str = "viridis",
+    scale: str = "plasma",
     title: str = "Average Occupancy",
     label_steps: list[int] | None = None,
 ) -> go.Figure:
@@ -947,7 +947,7 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
 
         print(f"Plotting {label}:")
         print("     Final mean:", mean[-1])
-        print("     Final yerr:", yerr[:, -1])
+        print("     Final yerr:", yerr[-1])
         light_color = (*mcolors.to_rgb(color), 0.4)
         ax.plot(steps, mean, color=color, label=label, linewidth=2, marker="o", markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.5)
         ax.errorbar(steps, mean, yerr=yerr, fmt='none', ecolor=light_color, elinewidth=1.5, capsize=3, label=spread_label)
@@ -1227,6 +1227,7 @@ def plot_subroom_percentage(
     ax: "Axes | None" = None,
     step_range: tuple[int, int] | None = None,
     alpha: float = 0.05,
+    reorder_rooms: bool = True,
 ) -> "Axes":
     """Plot mean percentage of time spent in each subroom, one bar group per entry.
 
@@ -1251,6 +1252,7 @@ def plot_subroom_percentage(
     Returns:
         The matplotlib Axes with the bar chart.
     """
+    counts_list = [tensor[:, :, [0, 2, 3, 1]] for tensor in counts_list]  # Reorder from (1,2,3,4) to (1,3,4,2)
     n_groups = len(counts_list)
     first = counts_list[0]
     n_rooms = (first.numpy() if isinstance(first, torch.Tensor) else np.asarray(first)).shape[-1]
