@@ -19,7 +19,7 @@ def init_params(m):
 
 class RecACModel(nn.Module, torch_ac.RecurrentACModel):
     def __init__(
-        self,
+        self,   
         obs_space,
         action_space,
         cell,
