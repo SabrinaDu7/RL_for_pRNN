@@ -482,3 +482,71 @@ def get_obs_at_loc(obs, goal_loc, pos, HD):
     viewtimes = np.stack(viewtimes, axis=0)
     viewcoords = np.stack(viewcoords, axis=0)
     return locobs, viewtimes, viewcoords
+
+
+# Pre-built array for vectorized direction lookups
+_DIR_TO_VEC_ARRAY = np.array(DIR_TO_VEC, dtype=np.int32)  # (4, 2)
+
+
+def get_view_coords_batch(
+    i: int, j: int, pos: np.ndarray, HD: np.ndarray, agent_view_size: int = 7
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized version of get_view_coords over T timesteps.
+
+    Args:
+        i, j: World-coordinate location to project.
+        pos:  (T, 2) agent positions.
+        HD:   (T,)  agent head directions in [0, 3].
+
+    Returns:
+        vx, vy: (T,) int arrays of egocentric view coordinates.
+    """
+    dxdy = _DIR_TO_VEC_ARRAY[HD]          # (T, 2)
+    dx, dy = dxdy[:, 0], dxdy[:, 1]
+    rx, ry = -dy, dx
+
+    sz, hs = agent_view_size, agent_view_size // 2
+    ax, ay = pos[:, 0], pos[:, 1]
+
+    tx = ax + dx * (sz - 1) - rx * hs
+    ty = ay + dy * (sz - 1) - ry * hs
+
+    lx = i - tx
+    ly = j - ty
+
+    vx = (rx * lx + ry * ly).astype(int)
+    vy = (-(dx * lx + dy * ly)).astype(int)
+    return vx, vy
+
+
+def get_obs_at_loc_fast(
+    obs: np.ndarray, goal_loc: list[int], pos: np.ndarray, HD: np.ndarray, return_obs: bool = True
+) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
+    """Vectorized version of get_obs_at_loc.
+
+    Computes view coordinates for all timesteps at once instead of looping.
+
+    Args:
+        obs:      (T, H, W, C) predicted observations.
+        goal_loc: [i, j] world coordinate of location of interest.
+        pos:      (T_pos, 2) agent positions (only first T rows are used).
+        HD:       (T_pos,)  agent head directions (only first T rows are used).
+
+    Returns:
+        locobs, viewtimes, viewcoords — same semantics as get_obs_at_loc.
+    """
+    i, j = goal_loc
+    T = obs.shape[0]
+
+    vx, vy = get_view_coords_batch(i, j, pos[:T], HD[:T])
+
+    in_view = (vx >= 0) & (vx < 7) & (vy >= 0) & (vy < 7)
+    viewtimes = np.where(in_view)[0]
+
+    if viewtimes.size == 0:
+        return None, None, None
+
+    vx_v, vy_v = vx[viewtimes], vy[viewtimes]
+    locobs = obs[viewtimes, vy_v, vx_v, :] if return_obs else None
+    viewcoords = np.stack([vx_v, vy_v], axis=1)
+    return locobs, viewtimes, viewcoords
