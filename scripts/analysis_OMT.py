@@ -12,9 +12,9 @@ Minigrid uses (1, 1) as the top left corner, so we ONLY change coordinates when 
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypedDict, Union
+from typing import Callable, TypedDict, Union
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,10 @@ from tasks.ObjectMemoryTask.define_task import State
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="gymnasium")
 
+# Type alias for a label function: given a list of State dicts (one per trajectory),
+# returns an integer label tensor of shape (B, T).
+LabelFn = Callable[[list[State], int], torch.Tensor]
+
 
 # ---------------------------------------------------------------------------
 # Types
@@ -44,7 +48,9 @@ class EvalTrajectories(TypedDict):
     act: Float[torch.Tensor, "B T A"]
     states: list[State]
     hidden_states: Float[torch.Tensor, "B T hidden"] | None
+    labels: torch.Tensor | None  # (B, T) integer labels, or None
     renders: np.ndarray | None
+    config: EvalTrajectoryConfig
 
 
 # ---------------------------------------------------------------------------
@@ -56,10 +62,12 @@ class EvalTrajectories(TypedDict):
 class EvalTrajectoryConfig:
     """Configuration for collecting evaluation trajectories."""
 
+    save_path: Path
     timesteps: int
     include_render: bool = False
     include_hidden_states: bool = False
-    save_path: Path | None = None
+    ckpt_step: int | None = None # ckpt_step
+    goal_loc: list[int] | None = None # [x, y]
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +169,7 @@ def collect_eval_trajectories(
     agent: Union[ActorCriticAgent, RandomActionAgent],
     env: FaramaMinigridShell,
     config: EvalTrajectoryConfig,
+    label_fn: LabelFn | None = None,
 ) -> EvalTrajectories:
     """Collect evaluation trajectories from an agent in a MiniGrid environment.
 
@@ -175,6 +184,10 @@ def collect_eval_trajectories(
         agent: Agent to collect trajectories from.
         env: MiniGrid environment wrapped in FaramaMinigridShell.
         config: Collection parameters.
+        label_fn: Optional hook ``(states, T) -> Tensor[B, T]`` that assigns
+            an integer label to each (trajectory, timestep) pair.  For example,
+            ``novel_obj_in_view`` sets 1 when the object is visible and 0
+            otherwise.  When *None*, ``labels`` in the result is *None*.
 
     Returns:
         EvalTrajectories dict with collected data.
@@ -249,6 +262,10 @@ def collect_eval_trajectories(
             if config.include_hidden_states:
                 all_hidden = h_t[0].permute(2, 0, 1)
 
+    all_labels: torch.Tensor | None = None
+    if label_fn is not None:
+        all_labels = label_fn(all_states, T)  # (B, T)
+
     result: EvalTrajectories = {
         "obs": all_obs,
         "obs_pred": all_obs_pred,
@@ -256,7 +273,9 @@ def collect_eval_trajectories(
         "act": all_act,
         "states": all_states, # Contains agent_pos and agent_dir
         "hidden_states": all_hidden,
+        "labels": all_labels,
         "renders": all_renders,
+        "config" : config
     }
 
     if config.save_path is not None:
@@ -314,10 +333,10 @@ def load_eval_trajectories(path: Path) -> dict:
     """Load evaluation trajectories from a ``.pt`` file.
 
     Args:
-        path: Directory containing ``trajectories.pt``.
+        path: Full path to .pt file.
 
     Returns:
         Dict with the saved tensor data.
     """
-    return torch.load(Path(path) / "trajectories.pt", weights_only=False)
+    return torch.load(Path(path), weights_only=False)
 
