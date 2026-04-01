@@ -84,6 +84,7 @@ def show_subroom_percentage(
     data_list: list[SubroomData],
     labels: Sequence[str],
     colors: Sequence[str] | None = None,
+    hatches: Sequence[str] | None = None,
     room_labels: Sequence[str] | None = None,
     step_range: tuple[int, int] | None = (9800, 10000),
     save_path: str | None = None,
@@ -94,6 +95,8 @@ def show_subroom_percentage(
         data_list: List of SubroomData instances to compare.
         labels: Legend labels, one per entry in data_list.
         colors: Optional bar colors, one per entry. Defaults to ``_SUBROOM_COLORS``.
+        hatches: Optional hatch patterns per entry for color-blind accessibility.
+            Defaults to ``_SUBROOM_HATCHES``.
         room_labels: Labels for each room. Defaults to ["Room 1", ..., "Room 4"].
         step_range: Training-step slice to aggregate over.
         save_path: If given, saves the figure to this path.
@@ -106,6 +109,7 @@ def show_subroom_percentage(
         [d.subroom_ids for d in data_list],
         group_labels=labels,
         colors=colors,
+        hatches=hatches,
         room_labels=room_labels,
         ax=ax,
         step_range=step_range,
@@ -136,6 +140,7 @@ def main_multiple(
     ctrl: bool | None = False,
     project: str = "curious-george-fourroom",
     colors: list[str] | None = None,
+    hatches: list[str] | None = None,
     last_n: int | None = None,
     use_cache: bool = True,
     step_range: tuple[int, int] | None = (9000, 10000),
@@ -148,6 +153,8 @@ def main_multiple(
         ctrl: Control flag passed to fetch_data.
         project: WandB project name.
         colors: Optional bar colors, one per agent. Defaults to ``_SUBROOM_COLORS``.
+        hatches: Optional hatch patterns per agent for color-blind accessibility.
+            Defaults to ``_SUBROOM_HATCHES``.
         last_n: Fetch only the last N runs.
         use_cache: Whether to use cached data.
         step_range: Training-step slice to aggregate over.
@@ -164,6 +171,7 @@ def main_multiple(
         data_list=data_list,
         labels=agents,
         colors=colors,
+        hatches=hatches,
         step_range=step_range,
         save_path=save_path,
     )
