@@ -948,28 +948,31 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
         print(f"Plotting {label}:")
         print("     Final mean:", mean[-1])
         print("     Final yerr:", yerr[-1])
-        light_color = (*mcolors.to_rgb(color), 0.4)
+        light_color = (*mcolors.to_rgb(color), 0.25)
         ax.plot(steps, mean, color=color, label=label, linewidth=2, marker="o", markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.5)
         ax.errorbar(steps, mean, yerr=yerr, fmt='none', ecolor=light_color, elinewidth=1.5, capsize=3, label=spread_label)
 
-    # Welch's t-test (unequal variances) on final-step values for all pairs
-    print(f"\nWelch's t-test (two-sided, α={alpha}) on final step:")
-    pairs = [
-        (all_data[i][-1, :], all_data[j][-1, :])
-        for (i, _), (j, _) in combinations(enumerate(labels), 2)
-    ]
-    pair_labels = [
-        f"{label_i} vs {label_j}"
+    # Welch's t-test (unequal variances) on all steps for all pairs
+    label_pairs = [
+        (label_i, label_j)
         for (_, label_i), (_, label_j) in combinations(enumerate(labels), 2)
     ]
-    pairwise_ttest(pairs, pair_labels=pair_labels)
+    idx_pairs = list(combinations(range(len(labels)), 2))
+    print(f"\nWelch's t-test (two-sided, α={alpha}) across all steps:")
+    for (i, j), (label_i, label_j) in zip(idx_pairs, label_pairs):
+        pairs = [(all_data[i][s, :], all_data[j][s, :]) for s in range(len(steps))]
+        pair_labels = [f"step {steps[s]}" for s in range(len(steps))]
+        print(f"\n  {label_i} vs {label_j}:")
+        p_vals = pairwise_ttest(pairs, pair_labels=pair_labels)
 
     # Formatting
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
+    ax.spines['top'].set_visible(False)                                                                               
+    ax.spines['right'].set_visible(False)
     # ax.set_title("Novel Object", fontsize=14)
-    ax.grid(True, linestyle='--', alpha=0.6)
-    ax.legend()
+    # ax.grid(True, linestyle='--', alpha=0.6)
+    # ax.legend()
 
     plt.tight_layout()
     return fig, ax
@@ -1219,10 +1222,14 @@ def _subroom_percentages(
     return mean_pct, se_pct
 
 
+_SUBROOM_HATCHES = ["/", "", ".", "x", "\\", "o", "+"]
+
+
 def plot_subroom_percentage(
     counts_list: "list[Float[torch.Tensor, 'n_runs n_training_steps n_rooms']]",
     group_labels: "Sequence[str | None] | None" = None,
     colors: "Sequence[str] | None" = None,
+    hatches: "Sequence[str] | None" = None,
     room_labels: "Sequence[str] | None" = None,
     ax: "Axes | None" = None,
     step_range: tuple[int, int] | None = None,
@@ -1242,6 +1249,8 @@ def plot_subroom_percentage(
             ``None`` entries suppress the label for that group; if all are ``None``
             no legend is shown.
         colors: Bar colors per group. Defaults to ``_SUBROOM_COLORS``.
+        hatches: Hatch patterns per group for accessibility (e.g. ``["", "/", "."]``).
+            Defaults to ``_SUBROOM_HATCHES``.
         room_labels: X-axis labels for each room. Defaults to
             ``["Room 1", ..., "Room N"]``.
         ax: Optional matplotlib Axes to plot on. Creates a new figure if ``None``.
@@ -1259,6 +1268,7 @@ def plot_subroom_percentage(
 
     resolved_labels: list[str | None] = list(group_labels) if group_labels is not None else [None] * n_groups
     resolved_colors: list[str] = list(colors) if colors is not None else [_SUBROOM_COLORS[i % len(_SUBROOM_COLORS)] for i in range(n_groups)]
+    resolved_hatches: list[str] = list(hatches) if hatches is not None else [_SUBROOM_HATCHES[i % len(_SUBROOM_HATCHES)] for i in range(n_groups)]
     resolved_rooms: list[str] = list(room_labels) if room_labels is not None else [f"Room {i + 1}" for i in range(n_rooms)]
 
     if ax is None:
@@ -1269,13 +1279,13 @@ def plot_subroom_percentage(
 
     # Collect per-group stats so we can position brackets after plotting
     group_stats: list[tuple[np.ndarray, np.ndarray]] = []
-    for i, (counts, label, color) in enumerate(zip(counts_list, resolved_labels, resolved_colors)):
+    for i, (counts, label, color, hatch) in enumerate(zip(counts_list, resolved_labels, resolved_colors, resolved_hatches)):
         mean_pct, se_pct = _subroom_percentages(counts, step_range=step_range)
         print(f"{label or f'Group {i}'} mean percentages: {mean_pct}, SE: {se_pct}")
         group_stats.append((mean_pct, se_pct))
         offset = (i - n_groups / 2 + 0.5) * width
         ax.bar(x + offset, mean_pct, width, yerr=se_pct, label=label, color=color,
-               capsize=4, error_kw=dict(elinewidth=2, ecolor="black"))
+               hatch=hatch, capsize=4, error_kw=dict(elinewidth=2, ecolor="black"))
 
     ax.set_xticks(x)
     ax.set_xticklabels(resolved_rooms)

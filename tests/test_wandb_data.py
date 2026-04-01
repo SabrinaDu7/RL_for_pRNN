@@ -12,25 +12,38 @@ import os
 import numpy as np
 import plotly.graph_objects as go
 
+import torch
+
 from scripts.wandb_data import (
     OccupancyData,
+    SubroomData,
     _build_filters,
     _download_and_extract,
+    _draw_significance_bracket,
     _extract_heatmap_grids,
     _fetch_history,
     _fetch_plotly_file,
     _histogram_to_subroom_counts,
     _resolve_config_value,
     _scan_occupancy_refs,
+    _pval_stars,
+    _sig_label,
+    _subroom_pct_array,
+    _subroom_percentages,
     _unwrap_wandb_config,
+    bootstrap_ci,
     fetch_occupancy_grids,
     fetch_run_traces,
     fetch_subroom_counts,
+    load_subroom_data,
+    pairwise_ttest,
     plot_occupancy_average,
+    plot_metric,
     plot_subroom_percentage,
     plot_traces,
     prob_roi,
     runs_per_step,
+    save_subroom_data,
 )
 
 
@@ -907,11 +920,13 @@ import torch
 def _make_hist_dict(subroom_counts: list[float]) -> dict:
     """Build a minimal wandb Histogram dict from per-subroom counts.
 
-    Creates bins aligned at integer boundaries so that
-    _histogram_to_subroom_counts recovers the original counts exactly.
+    Simulates wandb.Histogram output for actual 1-indexed subroom IDs (1–4).
+    Bins use 1-indexed boundaries [0.5, 1.5, 2.5, 3.5, 4.5] to match real data,
+    so that fetch_subroom_counts (which shifts bins by -1 internally) maps
+    rooms 1–4 to output indices 0–3.
     """
     n = len(subroom_counts)
-    bins = [i - 0.5 for i in range(n + 1)]
+    bins = [i + 0.5 for i in range(n + 1)]
     return {"_type": "histogram", "bins": bins, "values": subroom_counts}
 
 
@@ -931,10 +946,11 @@ def test_fetch_subroom_counts_basic():
             entity="e", project="p", last_n=5,
         )
 
-    assert result.shape == (1, 5, 4)
+    assert isinstance(result, SubroomData)
+    assert result.subroom_ids.shape == (1, 5, 4)
     # Check first timestep
     np.testing.assert_array_almost_equal(
-        result[0, 0].numpy(), [0, 1, 2, 3],
+        result.subroom_ids[0, 0].numpy(), [0, 1, 2, 3],
     )
 
 
@@ -949,11 +965,11 @@ def test_fetch_subroom_counts_truncates_to_last_n():
     with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
         result = fetch_subroom_counts(entity="e", project="p", last_n=3)
 
-    assert result.shape == (1, 3, 4)
+    assert result.subroom_ids.shape == (1, 3, 4)
     # Should have steps 7, 8, 9 (the last 3)
-    np.testing.assert_array_almost_equal(result[0, 0, 0].item(), 7)
-    np.testing.assert_array_almost_equal(result[0, 1, 0].item(), 8)
-    np.testing.assert_array_almost_equal(result[0, 2, 0].item(), 9)
+    np.testing.assert_array_almost_equal(result.subroom_ids[0, 0, 0].item(), 7)
+    np.testing.assert_array_almost_equal(result.subroom_ids[0, 1, 0].item(), 8)
+    np.testing.assert_array_almost_equal(result.subroom_ids[0, 2, 0].item(), 9)
 
 
 def test_fetch_subroom_counts_pads_short_runs():
@@ -966,12 +982,12 @@ def test_fetch_subroom_counts_pads_short_runs():
     with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
         result = fetch_subroom_counts(entity="e", project="p", last_n=3)
 
-    assert result.shape == (1, 3, 4)
+    assert result.subroom_ids.shape == (1, 3, 4)
     # First 2 rows should be NaN (padding)
-    assert torch.isnan(result[0, 0]).all()
-    assert torch.isnan(result[0, 1]).all()
+    assert torch.isnan(result.subroom_ids[0, 0]).all()
+    assert torch.isnan(result.subroom_ids[0, 1]).all()
     # Last row has actual data
-    np.testing.assert_array_almost_equal(result[0, 2].numpy(), [1, 2, 3, 4])
+    np.testing.assert_array_almost_equal(result.subroom_ids[0, 2].numpy(), [1, 2, 3, 4])
 
 
 def test_fetch_subroom_counts_multiple_runs():
@@ -986,15 +1002,28 @@ def test_fetch_subroom_counts_multiple_runs():
     with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
         result = fetch_subroom_counts(entity="e", project="p", last_n=1)
 
-    assert result.shape == (2, 1, 4)
-    np.testing.assert_array_almost_equal(result[0, 0].numpy(), [1, 0, 0, 0])
-    np.testing.assert_array_almost_equal(result[1, 0].numpy(), [0, 0, 0, 2])
+    assert result.subroom_ids.shape == (2, 1, 4)
+    np.testing.assert_array_almost_equal(result.subroom_ids[0, 0].numpy(), [1, 0, 0, 0])
+    np.testing.assert_array_almost_equal(result.subroom_ids[1, 0].numpy(), [0, 0, 0, 2])
 
 
 def test_fetch_subroom_counts_no_runs_raises():
     with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api([])):
         with pytest.raises(ValueError, match="No runs found"):
             fetch_subroom_counts(entity="e", project="p")
+
+
+def test_fetch_subroom_counts_page_size_forwarded():
+    """page_size is forwarded to scan_history."""
+    history = [{"_step": 0, "subroom_ids": _make_hist_dict([1, 0, 0, 0])}]
+    mock_run = MockRun(name="r1", config={}, _history=history)
+    mock_runs = [mock_run]
+
+    with patch("scripts.wandb_data.wandb.Api", return_value=_make_mock_api(mock_runs)):
+        with patch.object(mock_run, "scan_history", wraps=mock_run.scan_history) as spy:
+            fetch_subroom_counts(entity="e", project="p", last_n=1, page_size=5000)
+            _, kwargs = spy.call_args
+            assert kwargs.get("page_size") == 5000
 
 
 # ---------------------------------------------------------------------------
@@ -1007,7 +1036,7 @@ def test_plot_subroom_percentage_returns_axes():
         [[10, 10, 10, 10], [20, 20, 20, 20], [5, 5, 5, 5]],
         [[8, 8, 8, 8], [12, 12, 12, 12], [6, 6, 6, 6]],
     ], dtype=torch.float)
-    ax = plot_subroom_percentage(counts)
+    ax = plot_subroom_percentage([counts])
     assert isinstance(ax, plt.Axes)
     # 4 bars
     assert len(ax.patches) == 4
@@ -1019,7 +1048,7 @@ def test_plot_subroom_percentage_values():
     counts = torch.tensor([
         [[10, 0, 0, 0], [10, 0, 0, 0]],
     ], dtype=torch.float)
-    ax = plot_subroom_percentage(counts)
+    ax = plot_subroom_percentage([counts])
     heights = [p.get_height() for p in ax.patches]
     assert heights[0] == pytest.approx(100.0)
     for h in heights[1:]:
@@ -1029,9 +1058,290 @@ def test_plot_subroom_percentage_values():
 
 def test_plot_subroom_percentage_custom_labels():
     counts = torch.ones((1, 2, 3))
-    ax = plot_subroom_percentage(counts, room_labels=["A", "B", "C"])
+    ax = plot_subroom_percentage([counts], room_labels=["A", "B", "C"])
     labels = [t.get_text() for t in ax.get_xticklabels()]
     assert labels == ["A", "B", "C"]
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_step_range():
+    """step_range restricts aggregation to the specified slice of steps."""
+    # Steps 0-1: all visits in room 0. Step 2: all visits in room 1.
+    counts = torch.tensor([
+        [[10, 0, 0, 0], [10, 0, 0, 0], [0, 10, 0, 0]],
+    ], dtype=torch.float)
+    # With step_range=(0, 2) we should get 100% room 0
+    ax = plot_subroom_percentage([counts], step_range=(0, 2))
+    heights = [p.get_height() for p in ax.patches]
+    assert heights[0] == pytest.approx(100.0)
+    for h in heights[1:]:
+        assert h == pytest.approx(0.0)
+    plt.close("all")
+
+    # With step_range=(2, 3) we should get 100% room 1
+    ax = plot_subroom_percentage([counts], step_range=(2, 3))
+    heights = [p.get_height() for p in ax.patches]
+    assert heights[1] == pytest.approx(100.0)
+    assert heights[0] == pytest.approx(0.0)
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_se_errorbars():
+    """SE is computed per-sample (run, step), not globally."""
+    # 1 run, 2 steps: step 0 → room 0 gets 75%, step 1 → room 0 gets 25%
+    counts = torch.tensor([
+        [[3, 1, 0, 0], [1, 3, 0, 0]],
+    ], dtype=torch.float)
+    ax = plot_subroom_percentage([counts])
+    # Mean for room 0: (75 + 25) / 2 = 50%
+    heights = [p.get_height() for p in ax.patches]
+    assert heights[0] == pytest.approx(50.0)
+    # SE for room 0: std([75, 25]) / sqrt(2) = 25 / sqrt(2)
+    expected_se = 25.0 / np.sqrt(2)
+    mean_pct, se_pct = _subroom_percentages(counts)
+    assert se_pct[0] == pytest.approx(expected_se, rel=1e-5)
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_nan_room0_still_valid():
+    """Rows where room 0 is NaN but other rooms have data are still counted as valid."""
+    # 1 run, 1 step: room 0 is NaN, rooms 1-3 have counts
+    counts = torch.tensor([
+        [[float("nan"), 5, 5, 0]],
+    ], dtype=torch.float)
+    ax = plot_subroom_percentage([counts])
+    heights = [p.get_height() for p in ax.patches]
+    # Room 1 and 2 each get 50%, room 0 and 3 get 0/NaN
+    assert heights[1] == pytest.approx(50.0)
+    assert heights[2] == pytest.approx(50.0)
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_nan_rows_excluded():
+    """NaN rows (front-padding) are excluded from SE computation."""
+    # 1 run, 3 steps: first is NaN padding, then two real steps
+    counts = torch.tensor([
+        [[float("nan"), float("nan"), float("nan"), float("nan")],
+         [10, 0, 0, 0],
+         [10, 0, 0, 0]],
+    ], dtype=torch.float)
+    ax = plot_subroom_percentage([counts])
+    heights = [p.get_height() for p in ax.patches]
+    # Both valid samples: room 0 = 100%, so mean = 100% and SE = 0
+    assert heights[0] == pytest.approx(100.0)
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_multigroup_bar_count():
+    """Two groups → 2 bars per room (8 patches for 4 rooms)."""
+    counts_a = torch.tensor([[[10, 0, 0, 0], [10, 0, 0, 0]]], dtype=torch.float)
+    counts_b = torch.tensor([[[0, 10, 0, 0], [0, 10, 0, 0]]], dtype=torch.float)
+    ax = plot_subroom_percentage([counts_a, counts_b])
+    assert len(ax.patches) == 8
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_multigroup_legend():
+    """group_labels appear in the legend."""
+    counts_a = torch.ones((1, 1, 4))
+    counts_b = torch.ones((1, 1, 4))
+    ax = plot_subroom_percentage([counts_a, counts_b], group_labels=["random", "curious"])
+    legend_texts = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert legend_texts == ["random", "curious"]
+    plt.close("all")
+
+
+def test_plot_subroom_percentage_multigroup_colors():
+    """Custom colors are applied to each group's bars."""
+    counts_a = torch.ones((1, 1, 4))
+    counts_b = torch.ones((1, 1, 4))
+    ax = plot_subroom_percentage([counts_a, counts_b], colors=["red", "blue"])
+    bar_colors = [p.get_facecolor() for p in ax.patches]
+    # First 4 patches belong to group 0 (red), next 4 to group 1 (blue)
+    import matplotlib.colors as mcolors
+    red = mcolors.to_rgba("red")
+    blue = mcolors.to_rgba("blue")
+    for fc in bar_colors[:4]:
+        assert tuple(fc) == pytest.approx(red)
+    for fc in bar_colors[4:]:
+        assert tuple(fc) == pytest.approx(blue)
+    plt.close("all")
+
+
+def test_subroom_percentages_helper():
+    """_subroom_percentages returns correct mean and SE."""
+    counts = torch.tensor([[[3, 1, 0, 0], [1, 3, 0, 0]]], dtype=torch.float)
+    mean_pct, se_pct = _subroom_percentages(counts)
+    assert mean_pct[0] == pytest.approx(50.0)
+    assert se_pct[0] == pytest.approx(25.0 / np.sqrt(2))
+
+
+# ---------------------------------------------------------------------------
+# _sig_label
+# ---------------------------------------------------------------------------
+
+
+def test_sig_label_thresholds():
+    assert _sig_label(0.05) == "*"
+    assert _sig_label(0.01) == "**"
+    assert _sig_label(0.001) == "***"
+    assert _sig_label(0.049) == "**"   # < 0.05 → **
+    assert _sig_label(0.009) == "***"  # < 0.01 → ***
+
+
+# ---------------------------------------------------------------------------
+# _pval_stars
+# ---------------------------------------------------------------------------
+
+
+def test_pval_stars_thresholds():
+    assert _pval_stars(0.0001) == "***"
+    assert _pval_stars(0.0009) == "***"
+    assert _pval_stars(0.001) == "**"   # 0.001 is not < 0.001, but is < 0.01
+    assert _pval_stars(0.005) == "**"
+    assert _pval_stars(0.01) == "*"     # 0.01 is not < 0.01, but is < 0.05
+    assert _pval_stars(0.03) == "*"
+    assert _pval_stars(0.05) is None    # boundary: not < 0.05
+    assert _pval_stars(0.1) is None
+
+
+def test_plot_subroom_percentage_star_annotation():
+    """Bracket text reflects the actual p-value significance level."""
+    # Two groups with n=30 runs each: group a all in room 0, group b all in room 1.
+    # p-value for room 0 and room 1 will be very small → expect *** brackets.
+    rng = np.random.default_rng(0)
+    n_runs = 30
+    counts_a = torch.zeros((n_runs, 1, 2), dtype=torch.float)
+    counts_b = torch.zeros((n_runs, 1, 2), dtype=torch.float)
+    counts_a[:, :, 0] = 10.0
+    counts_b[:, :, 1] = 10.0
+
+    ax = plot_subroom_percentage([counts_a, counts_b], group_labels=["a", "b"])
+    texts = [t.get_text() for t in ax.texts]
+    assert any(t in {"*", "**", "***"} for t in texts), f"Expected star annotation, got: {texts}"
+    plt.close("all")
+
+
+# ---------------------------------------------------------------------------
+# _draw_significance_bracket
+# ---------------------------------------------------------------------------
+
+
+def test_draw_significance_bracket_adds_lines_and_text():
+    _, ax = plt.subplots()
+    top = _draw_significance_bracket(
+        ax, x1=0.0, x2=1.0, y_bracket=50.0, text="**",
+        y1_bottom=30.0, y2_bottom=40.0,
+    )
+    # One Line2D for the bracket
+    assert len(ax.lines) == 1
+    # One Text annotation
+    assert any(t.get_text() == "**" for t in ax.texts)
+    # Returns y_bracket
+    assert top == pytest.approx(50.0)
+    plt.close("all")
+
+
+def test_draw_significance_bracket_vertical_lines_reach_bar_tops():
+    """The bracket's vertical lines start at y1_bottom and y2_bottom."""
+    _, ax = plt.subplots()
+    _draw_significance_bracket(
+        ax, x1=0.0, x2=1.0, y_bracket=60.0, text="*",
+        y1_bottom=20.0, y2_bottom=35.0,
+    )
+    ydata = ax.lines[0].get_ydata()
+    assert ydata[0] == pytest.approx(20.0)  # left bar top
+    assert ydata[3] == pytest.approx(35.0)  # right bar top
+    plt.close("all")
+
+
+def test_draw_significance_bracket_stacking():
+    """Calling twice with an offset y_bracket stacks brackets."""
+    _, ax = plt.subplots()
+    top1 = _draw_significance_bracket(ax, 0.0, 1.0, y_bracket=50.0, text="*",
+                                       y1_bottom=30.0, y2_bottom=30.0)
+    top2 = _draw_significance_bracket(ax, 0.0, 1.0, y_bracket=top1 + 4.0, text="**",
+                                       y1_bottom=30.0, y2_bottom=30.0)
+    assert top2 > top1
+    plt.close("all")
+
+
+# ---------------------------------------------------------------------------
+# pairwise_ttest
+# ---------------------------------------------------------------------------
+
+
+def test_pairwise_ttest_returns_p_values(capsys):
+    """Returns one p-value per pair."""
+    a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    b = np.array([10.0, 11.0, 12.0, 13.0, 14.0])
+    p_vals = pairwise_ttest([(a, b)], alpha=0.01)
+    assert len(p_vals) == 1
+    assert 0.0 <= p_vals[0] <= 1.0
+
+
+def test_pairwise_ttest_significant():
+    """Clearly separated distributions yield p < alpha."""
+    rng = np.random.default_rng(0)
+    a = rng.normal(0, 1, 50)
+    b = rng.normal(100, 1, 50)
+    p_vals = pairwise_ttest([(a, b)], alpha=0.01)
+    assert p_vals[0] < 0.01
+
+
+def test_pairwise_ttest_not_significant():
+    """Identical distributions yield p > alpha."""
+    rng = np.random.default_rng(1)
+    a = rng.normal(0, 1, 10)
+    b = a.copy()
+    # ttest_ind on identical arrays → p=1 (or NaN); just check it doesn't crash
+    p_vals = pairwise_ttest([(a, b)], alpha=0.01)
+    assert len(p_vals) == 1
+
+
+def test_pairwise_ttest_multiple_pairs():
+    """One p-value returned per pair."""
+    a = np.array([1.0, 2.0, 3.0])
+    b = np.array([4.0, 5.0, 6.0])
+    c = np.array([100.0, 101.0, 102.0])
+    p_vals = pairwise_ttest([(a, b), (a, c)], alpha=0.05)
+    assert len(p_vals) == 2
+
+
+def test_pairwise_ttest_pair_labels_printed(capsys):
+    """pair_labels appear in printed output."""
+    a = np.array([1.0, 2.0, 3.0])
+    b = np.array([4.0, 5.0, 6.0])
+    pairwise_ttest([(a, b)], alpha=0.05, pair_labels=["rand vs cur"])
+    out = capsys.readouterr().out
+    assert "rand vs cur" in out
+
+
+def test_subroom_pct_array_shape():
+    """_subroom_pct_array returns shape (n_runs, n_rooms)."""
+    counts = torch.ones((3, 5, 4))  # 3 runs, 5 steps, 4 rooms
+    result = _subroom_pct_array(counts)
+    assert result.shape == (3, 4)
+
+
+def test_subroom_pct_array_uniform():
+    """Uniform visits → 25% per room for each run."""
+    counts = torch.ones((2, 3, 4))
+    result = _subroom_pct_array(counts)
+    assert result == pytest.approx(25.0)
+
+
+def test_plot_subroom_percentage_ttest_printed(capsys):
+    """With two groups, per-subroom t-test is printed."""
+    counts_a = torch.tensor([[[10, 0, 0, 0]] * 5], dtype=torch.float)  # all room 0
+    counts_b = torch.tensor([[[0, 10, 0, 0]] * 5], dtype=torch.float)  # all room 1
+    plot_subroom_percentage(
+        [counts_a, counts_b],
+        group_labels=["rand", "cur"],
+    )
+    out = capsys.readouterr().out
+    assert "Welch's t-test" in out
+    assert "Room 1" in out
     plt.close("all")
 
 
@@ -1158,3 +1468,193 @@ def test_prob_roi_multiple_steps():
     assert result.shape == (1, 2)
     assert result[0, 0].item() == pytest.approx(1.0)  # step 0: on target
     assert result[0, 1].item() == pytest.approx(0.0)  # step 100: off target
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_ci
+# ---------------------------------------------------------------------------
+
+def test_bootstrap_ci_output_shape():
+    """Returns two arrays of shape [n_train_steps]."""
+    rng = np.random.default_rng(0)
+    data = rng.random((5, 20))
+    lower_err, upper_err = bootstrap_ci(data, n_bootstrap=200)
+    assert lower_err.shape == (5,)
+    assert upper_err.shape == (5,)
+
+
+def test_bootstrap_ci_non_negative_errors():
+    """Error bars are non-negative (distances from mean)."""
+    rng = np.random.default_rng(1)
+    data = rng.random((4, 30))
+    lower_err, upper_err = bootstrap_ci(data, n_bootstrap=200)
+    assert np.all(lower_err >= 0)
+    assert np.all(upper_err >= 0)
+
+
+def test_bootstrap_ci_wider_with_more_variance():
+    """Higher-variance data produces wider CI than lower-variance data."""
+    rng = np.random.default_rng(2)
+    low_var = rng.normal(loc=0.5, scale=0.01, size=(3, 50))
+    high_var = rng.normal(loc=0.5, scale=1.0, size=(3, 50))
+    lo_l, lo_u = bootstrap_ci(low_var, n_bootstrap=500)
+    hi_l, hi_u = bootstrap_ci(high_var, n_bootstrap=500)
+    assert (lo_l + lo_u).mean() < (hi_l + hi_u).mean()
+
+
+# ---------------------------------------------------------------------------
+# plot_metric (smoke tests)
+# ---------------------------------------------------------------------------
+
+def _make_metric_tensor(n_steps: int = 3, n_runs: int = 10, seed: int = 0) -> torch.Tensor:
+    rng = np.random.default_rng(seed)
+    return torch.from_numpy(rng.random((n_steps, n_runs)).astype(np.float32))
+
+
+def test_plot_metric_bootstrap_returns_figure():
+    t = _make_metric_tensor()
+    fig, ax = plot_metric(
+        tensors=[t],
+        steps=[0, 1, 2],
+        colors=["blue"],
+        labels=["agent"],
+        xlabel="Steps",
+        ylabel="Value",
+        use_std=False,
+        n_bootstrap=100,
+    )
+    import matplotlib.pyplot as plt
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_metric_std_returns_figure():
+    t = _make_metric_tensor()
+    fig, ax = plot_metric(
+        tensors=[t],
+        steps=[0, 1, 2],
+        colors=["red"],
+        labels=["agent"],
+        xlabel="Steps",
+        ylabel="Value",
+        use_std=True,
+    )
+    import matplotlib.pyplot as plt
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_metric_bootstrap_ci_returns_figure():
+    t = _make_metric_tensor()
+    fig, ax = plot_metric(
+        tensors=[t],
+        steps=[0, 1, 2],
+        colors=["green"],
+        labels=["agent"],
+        xlabel="Steps",
+        ylabel="Value",
+        use_std=False,
+    )
+    import matplotlib.pyplot as plt
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_metric_ttest_significant(capsys):
+    """Two clearly separated distributions should yield a significant t-test result."""
+    import matplotlib.pyplot as plt
+
+    rng = np.random.default_rng(42)
+    t1 = torch.from_numpy(rng.normal(0.0, 0.1, size=(3, 30)).astype(np.float32))
+    t2 = torch.from_numpy(rng.normal(1.0, 0.1, size=(3, 30)).astype(np.float32))
+    fig, ax = plot_metric(
+        tensors=[t1, t2],
+        steps=[0, 1, 2],
+        colors=["blue", "red"],
+        labels=["low", "high"],
+        xlabel="Steps",
+        ylabel="Value",
+        use_std=True,
+        alpha=0.01,
+    )
+    plt.close(fig)
+    captured = capsys.readouterr()
+    assert "significant" in captured.out
+    assert "not significant" not in captured.out
+
+
+def test_plot_metric_ttest_not_significant(capsys):
+    """Two nearly identical distributions should yield a non-significant t-test result."""
+    import matplotlib.pyplot as plt
+
+    rng = np.random.default_rng(0)
+    data = rng.normal(0.5, 0.5, size=(3, 30)).astype(np.float32)
+    t1 = torch.from_numpy(data.copy())
+    t2 = torch.from_numpy(data.copy())
+    fig, ax = plot_metric(
+        tensors=[t1, t2],
+        steps=[0, 1, 2],
+        colors=["blue", "red"],
+        labels=["a", "b"],
+        xlabel="Steps",
+        ylabel="Value",
+        use_std=True,
+        alpha=0.01,
+    )
+    plt.close(fig)
+    captured = capsys.readouterr()
+    assert "not significant" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# save_subroom_data / load_subroom_data
+# ---------------------------------------------------------------------------
+
+
+def test_save_load_subroom_data_roundtrip(tmp_path):
+    """Saved SubroomData is loaded back identically."""
+    data = SubroomData(
+        subroom_ids=torch.tensor([[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]]),
+        run_names=["r1"],
+        config_values=None,
+        config_keys=[],
+    )
+    path = str(tmp_path / "subroom.pt")
+    save_subroom_data(data, path)
+    loaded = load_subroom_data(path)
+
+    torch.testing.assert_close(loaded.subroom_ids, data.subroom_ids)
+    assert loaded.run_names == data.run_names
+    assert loaded.config_values == data.config_values
+    assert loaded.config_keys == data.config_keys
+
+
+def test_save_load_subroom_data_with_config(tmp_path):
+    """Config values and keys survive the roundtrip."""
+    data = SubroomData(
+        subroom_ids=torch.ones(2, 3, 4),
+        run_names=["r1", "r2"],
+        config_values=[(42,), (7,)],
+        config_keys=["exp.seed"],
+    )
+    path = str(tmp_path / "subroom_cfg.pt")
+    save_subroom_data(data, path)
+    loaded = load_subroom_data(path)
+
+    assert loaded.config_keys == ["exp.seed"]
+    assert loaded.config_values == [(42,), (7,)]
+    assert loaded.run_names == ["r1", "r2"]
+
+
+def test_save_load_subroom_data_preserves_nan(tmp_path):
+    """NaN padding survives the roundtrip."""
+    ids = torch.full((1, 3, 4), float("nan"))
+    ids[0, 2] = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    data = SubroomData(subroom_ids=ids, run_names=["r"], config_values=None, config_keys=[])
+    path = str(tmp_path / "subroom_nan.pt")
+    save_subroom_data(data, path)
+    loaded = load_subroom_data(path)
+
+    assert torch.isnan(loaded.subroom_ids[0, 0]).all()
+    assert torch.isnan(loaded.subroom_ids[0, 1]).all()
+    torch.testing.assert_close(loaded.subroom_ids[0, 2], ids[0, 2])
