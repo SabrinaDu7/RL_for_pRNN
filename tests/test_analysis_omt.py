@@ -20,14 +20,16 @@ from utils import get_ckpt_env_vars, AgentInputType, AgentType
 from scripts.analysis_OMT import (
     EvalTrajectoryConfig,
     EvalTrajectories,
+    LabelFn,
     eval_mode,
     on_device,
     collect_eval_trajectories,
     save_eval_trajectories,
     load_eval_trajectories,
     get_walkable_mask,
-    get_walkable_positions,
+    get_walkable_minigrid_positions as get_walkable_positions,
 )
+from scripts.isomap import make_novel_obj_in_view_label_fn
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +191,7 @@ class TestSaveLoadRoundtrip:
                 for _ in range(B)
             ],
             "hidden_states": None,
+            "labels": None,
             "renders": None,
         }
 
@@ -228,6 +231,7 @@ class TestSaveLoadRoundtrip:
                 for _ in range(B)
             ],
             "hidden_states": None,
+            "labels": None,
             "renders": None,
         }
 
@@ -368,3 +372,113 @@ class TestCollectEvalTrajectories:
             positions = state["agent_pos"]
             deltas = np.linalg.norm(np.diff(positions, axis=0), axis=1)
             assert np.all(deltas <= np.sqrt(2)), "Agent position jumped unexpectedly"
+
+
+# ---------------------------------------------------------------------------
+# Tests for label_fn hook
+# ---------------------------------------------------------------------------
+
+
+class TestMakeNovelObjInViewLabelFn:
+    """Unit tests for make_novel_obj_in_view_label_fn (no env / pRNN needed)."""
+
+    def _make_states(self, positions: list[np.ndarray], directions: list[np.ndarray]) -> list:
+        """Build minimal State dicts from position/direction arrays."""
+        return [
+            {"agent_pos": pos, "agent_dir": hd}
+            for pos, hd in zip(positions, directions)
+        ]
+
+    def test_returns_zeros_when_out_of_view(self):
+        """All-zeros label when object is behind the agent."""
+        # Agent at (5, 5) facing right (dir=0), object at (5, 0) far left
+        B, T = 1, 3
+        pos = np.tile(np.array([[5, 5]]), (T, 1)).astype(np.float32)
+        hd = np.zeros(T, dtype=np.int32)
+        states = self._make_states([pos], [hd])
+
+        fn = make_novel_obj_in_view_label_fn(obj_pos=[5, 0])
+        labels = fn(states, T)
+
+        assert labels.shape == (B, T)
+        assert labels.sum().item() == 0
+
+    def test_returns_ones_when_in_view(self):
+        """Object directly in front should produce label=1 at every step."""
+        # Agent at (2, 2) facing right (dir=0, forward = +x).
+        # With view_size=7, the agent sees columns 2..8 ahead.
+        # Object at (5, 2) is 3 cells ahead and centered — should be in view.
+        B, T = 1, 4
+        pos = np.tile(np.array([[2, 2]]), (T, 1)).astype(np.float32)
+        hd = np.zeros(T, dtype=np.int32)  # dir=0 → facing right
+        states = self._make_states([pos], [hd])
+
+        fn = make_novel_obj_in_view_label_fn(obj_pos=[5, 2])
+        labels = fn(states, T)
+
+        assert labels.shape == (B, T)
+        assert labels.sum().item() == T  # always in view
+
+    def test_shape_multi_trajectory(self):
+        """Output shape is (B, T) for B > 1."""
+        B, T = 3, 6
+        states = self._make_states(
+            [np.tile(np.array([[1, 1]]), (T, 1)).astype(np.float32)] * B,
+            [np.zeros(T, dtype=np.int32)] * B,
+        )
+        fn = make_novel_obj_in_view_label_fn(obj_pos=[3, 1])
+        labels = fn(states, T)
+        assert labels.shape == (B, T)
+        assert labels.dtype == torch.int64
+
+    def test_values_are_binary(self):
+        """Labels must be 0 or 1 only."""
+        B, T = 2, 8
+        pos = np.random.randint(1, 10, size=(T, 2)).astype(np.float32)
+        hd = np.random.randint(0, 4, size=T).astype(np.int32)
+        states = self._make_states([pos, pos], [hd, hd])
+
+        fn = make_novel_obj_in_view_label_fn(obj_pos=[5, 5])
+        labels = fn(states, T)
+
+        unique_vals = labels.unique().tolist()
+        assert all(v in (0, 1) for v in unique_vals)
+
+
+class TestCollectEvalTrajectoriesLabelFn:
+    """Integration tests for label_fn hook in collect_eval_trajectories."""
+
+    @pytest.mark.slow
+    def test_label_fn_shape(self):
+        """label_fn result should be stored as (B, T) in 'labels'."""
+        seed(42)
+        env = _get_env()
+        pN = _get_pRNN(prnn_ckpt=PRNN_RAND_CKPT, device=DEVICE, env=env)
+        agent = RandomActionAgent(env.action_space, np.array([0.15, 0.15, 0.6, 0.1]))
+
+        T = 10
+        num_walkable = int(get_walkable_mask(env).sum())
+        B = num_walkable * 4
+
+        def constant_label_fn(states, T):
+            return torch.ones((len(states), T), dtype=torch.int64)
+
+        config = EvalTrajectoryConfig(timesteps=T)
+        result = collect_eval_trajectories(pN, agent, env, config, label_fn=constant_label_fn)
+
+        assert result["labels"] is not None
+        assert result["labels"].shape == (B, T)
+        assert result["labels"].sum().item() == B * T  # all ones
+
+    @pytest.mark.slow
+    def test_no_label_fn_gives_none(self):
+        """Without label_fn, 'labels' key should be None."""
+        seed(42)
+        env = _get_env()
+        pN = _get_pRNN(prnn_ckpt=PRNN_RAND_CKPT, device=DEVICE, env=env)
+        agent = RandomActionAgent(env.action_space, np.array([0.15, 0.15, 0.6, 0.1]))
+
+        config = EvalTrajectoryConfig(timesteps=5)
+        result = collect_eval_trajectories(pN, agent, env, config)
+
+        assert result["labels"] is None
