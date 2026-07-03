@@ -2063,6 +2063,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pypatree"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rich" },
+    { name = "tyro" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d4/ac/fb35ab6bba17b00610e278db92a3d6cec9f78b23bffb0c73380b7a1bedd9/pypatree-0.4.0.tar.gz", hash = "sha256:19586563475c1ab00a6343759409a443365964c0b947436797d4eee652a11c96", size = 73940, upload-time = "2026-02-14T17:48:47.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/4b/4057b7b43b46061f2ba96301f14ee30eaabb5aa9e5e175b0cdf3e09a0b0c/pypatree-0.4.0-py3-none-any.whl", hash = "sha256:eb558c5fd2a50dee6827d32233842bdde1362b64644de4d6b755a1b91a166360", size = 17724, upload-time = "2026-02-14T17:48:45.967Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2324,6 +2337,7 @@ dependencies = [
     { name = "pyarrow", version = "23.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pynapple" },
     { name = "pyparsing" },
+    { name = "pypatree" },
     { name = "ratinabox" },
     { name = "ruamel-yaml" },
     { name = "scikit-learn", version = "1.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -2368,6 +2382,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=21.0.0" },
     { name = "pynapple", specifier = "==0.6.1" },
     { name = "pyparsing", specifier = ">=3.1.1" },
+    { name = "pypatree", specifier = ">=0.4.0" },
     { name = "ratinabox", specifier = "==1.7.1" },
     { name = "ruamel-yaml", specifier = ">=0.18.6" },
     { name = "scikit-learn", specifier = ">=1.4.0" },

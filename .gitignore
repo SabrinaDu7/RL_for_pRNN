@@ -12,5 +12,7 @@ results/*
 omt-*/
 *.png
 
+# Claude and outputs
 wandb/*
 outputs/
+docs/*
