@@ -86,8 +86,6 @@ def main():
         4,               # epochs
         16,              # batch_size (frames=64 -> 4 minibatches)
         preprocess_obss,
-        None,            # place_cells
-        None,            # cann
         True,            # train_pN
         0,               # noise_mu
         0.05,            # noise_std

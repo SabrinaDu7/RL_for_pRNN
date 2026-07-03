@@ -216,8 +216,6 @@ class RL_Trainer(object):
             args.rl.ppo_epochs,
             args.rl.ppo_batch_size,
             preprocess_obss,
-            None,  # place_cells
-            None,  # cann
             args.predNet.train,
             args.predNet.noisemean,
             args.predNet.noisestd,

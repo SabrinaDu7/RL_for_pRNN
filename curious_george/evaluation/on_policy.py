@@ -365,8 +365,6 @@ class OnPolicyAnalysis:
                 max_grad_norm=PPOalgo.max_grad_norm,
                 recurrence=PPOalgo.recurrence,
                 preprocess_obss=PPOalgo.preprocess_obss,
-                place_cells=PPOalgo.PC,
-                cann=PPOalgo.CANN,
                 train_pN=PPOalgo.train_pN,
                 noise_mu=PPOalgo.noise_mu,
                 noise_std=PPOalgo.noise_std,

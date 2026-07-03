@@ -14,6 +14,10 @@ from scipy.spatial.distance import cosine
 from prnn.utils import PredictiveNet
 from curious_george.envs.access import get_subroom_id
 from curious_george.common import mean_by_action
+from curious_george.world_model.adapter import PRNNAdapter
+from curious_george.rl.buffer import compute_gae
+from curious_george.rl.rewards import compute_curious_rewards
+from curious_george.rl.ppo import ppo_update
 
 def check_large_jump(loc0: tuple, loc1: tuple):
     x0, y0 = loc0
@@ -42,7 +46,13 @@ def get_dist_travelled(
 
 
 class PredictivePPOAlgo:
-    """The base class for RL algorithms."""
+    """PPO with pRNN-derived spatial representations and curiosity reward.
+
+    Facade over: PRNNAdapter (all pRNN calls), rl.rewards (curiosity),
+    rl.buffer.compute_gae (advantages), rl.ppo.ppo_update (parameter updates).
+    Public attributes (obss, locs, actions, values, advantages, masks, ...)
+    are preserved for the analysis/task code that reads them.
+    """
 
     def __init__(
         self,
@@ -63,8 +73,6 @@ class PredictivePPOAlgo:
         epochs=4,
         batch_size=256,
         preprocess_obss=None,
-        place_cells=None,
-        cann=None,
         train_pN=False,
         noise_mu=0,
         noise_std=0.03,
@@ -75,39 +83,6 @@ class PredictivePPOAlgo:
         curious_agent=False,
         k_curious=1,
     ):
-        """
-        Initializes a `BaseAlgo` instance.
-
-        Parameters:
-        ----------
-        env : environment
-        acmodel : torch.Module
-            the model
-        num_frames_per_proc : int
-            the number of frames collected by every process for an update
-        discount : float
-            the discount for future rewards
-        lr : float
-            the learning rate for optimizers
-        gae_lambda : float
-            the lambda coefficient in the GAE formula
-            ([Schulman et al., 2015](https://arxiv.org/abs/1506.02438))
-        entropy_coef : float
-            the weight of the entropy cost in the final objective
-        value_loss_coef : float
-            the weight of the value loss in the final objective
-        max_grad_norm : float
-            gradient will be clipped to be at most this value
-        recurrence : int
-            the number of steps the gradient is propagated back in time - NO?
-        preprocess_obss : function
-            a function that takes observations returned by the environment
-            and converts them into the format that the model can handle - NO?
-        reshape_reward : function
-            a function that shapes the reward, takes an
-            (observation, action, reward, done) tuple as an input
-        """
-
         # Store parameters
         print("Store parameters")
         self.env = env
@@ -125,8 +100,6 @@ class PredictivePPOAlgo:
         self.preprocess_obss = preprocess_obss or default_preprocess_obss
         self.intrinsic = intrinsic
         self.k_int = k_int
-        self.PC = place_cells
-        self.CANN = cann
         self.train_pN = train_pN
         self.noise_mu = noise_mu
         self.noise_std = noise_std
@@ -136,15 +109,12 @@ class PredictivePPOAlgo:
         self.k_curious = k_curious
         assert pastSR ^ ("Next" in str(env.encodeAction))
 
+        self.adapter = PRNNAdapter(self.pN, self.device, pastSR) if self.pN else None
+
         if hasattr(self.env, "loc_mask"):
             self.loc_mask = self.env.loc_mask
         else:
             self.loc_mask = [x == None or x.can_overlap() for x in env.grid.grid]
-        if self.pN and "thcyc" in str(self.pN.pRNN):
-            self.theta = True
-            self.k = self.pN.pRNN.k + 1
-        else:
-            self.theta = False
 
         # Control parameters
         print("Control parameters")
@@ -155,9 +125,9 @@ class PredictivePPOAlgo:
         print("Configure acmodel")
         self.acmodel.to(self.device)
         self.acmodel.train()
-        if self.pN:
+        if self.adapter:
             # TODO: should be elsewhere if saving the net
-            self.pN.pRNN.to(self.device)
+            self.adapter.to(self.device)
 
         self.obs = self.env.reset()
         self.loc = self.agent_pos()
@@ -268,17 +238,10 @@ class PredictivePPOAlgo:
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
             self.SRs[i] = self.SR
             self.SR = SR
-            # if self.acmodel.recurrent: # Not using it now, disabled for efficiency
-            #     self.memories[i] = self.memory
-            #     self.memory = memory
             self.masks[i] = self.mask
             self.mask = 1 - done
             self.actions[i] = action
             self.values[i] = value
-            # if self.reshape_reward is not None: # Not using it now, disabled for efficiency
-            #     self.rewards[i] = self.reshape_reward(obs, action, reward, done)
-            # else:
-            #     self.rewards[i] = reward
             self.rewards[i] = reward
             self.log_probs[i] = dist.log_prob(action)
 
@@ -304,8 +267,8 @@ class PredictivePPOAlgo:
                 self.log_return.append(self.log_episode_return)
                 self.log_reshaped_return.append(self.log_episode_reshaped_return)
                 self.log_num_frames.append(self.log_episode_num_frames)
-                if self.pN:
-                    self.pN.reset_state(device=str(self.device))
+                if self.adapter:
+                    self.adapter.reset_state()
                 self.init_SR()
                 self.last_observations.append(self.obs)
 
@@ -326,27 +289,17 @@ class PredictivePPOAlgo:
         # Calculate curious rewards
         actions_preformatted = self.actions.cpu().numpy()
         if self.curious_agent:
-            with torch.no_grad():
-                MSEs = torch.zeros(self.num_frames, device=self.device)
-
-                for idx in range(1, len(self.done_indices)):
-                    start_episode, end_episode = self.done_indices[idx-1], self.done_indices[idx]
-                    last_obs = self.last_observations[idx-1]
-                    acts_now = actions_preformatted[start_episode:end_episode]
-                    obs_now = self.obss[start_episode:end_episode] + [last_obs]
-                    
-                    obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
-                    obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
-
-                    obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
-                    obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
-                    MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1) 
-
-                self.curious_rewards = MSEs
-                # Separate curious rewards by action type
-                curious_by_action = mean_by_action(MSEs.cpu().numpy(), actions_preformatted)
-                logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
-                
+            self.curious_rewards = compute_curious_rewards(
+                self.adapter,
+                obss=self.obss,
+                actions_np=actions_preformatted,
+                done_indices=self.done_indices,
+                last_observations=self.last_observations,
+                num_frames=self.num_frames,
+            )
+            # Separate curious rewards by action type
+            curious_by_action = mean_by_action(self.curious_rewards.cpu().numpy(), actions_preformatted)
+            logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
 
         # Calculate intrinsic rewards
         if self.intrinsic:
@@ -358,14 +311,13 @@ class PredictivePPOAlgo:
             # Add SR from the last state
             SRs = torch.cat((self.SRs, SR), dim=0).cpu()
             # Calculate cosine similarity between SRs and reference SR
-            # if self.pastSR:
+            # NOTE (preserved quirk): the first error is duplicated below, so
+            # int_rewards[0] is always 0.
             errors = torch.tensor(
                 [cosine(SR, self.ref.squeeze().cpu()) for SR in SRs[1:]],
                 device=self.device,
             )
             errors = torch.cat((errors[0][None], errors), dim=0)
-            # else:
-            #     errors = torch.tensor([cosine(SR, self.ref.squeeze().cpu()) for SR in SRs], device=self.device)
             # Calculate intrinsic rewards
             self.int_rewards = errors[:-1] - errors[1:]
 
@@ -373,39 +325,27 @@ class PredictivePPOAlgo:
 
         preprocessed_obs = self.preprocess_obss([self.obs], device=self.device)
         with torch.no_grad():
-            # if self.acmodel.recurrent:
-            #     noise = self.noise_mu + self.noise_std * torch.randn(self.acmodel.memorysize, device=self.device)
-            #     # TODO: remove SR if not using PCs with recurrence
-            #     _, next_value, _ = self.acmodel(preprocessed_obs,
-            #                                     (self.memory * self.mask)[None],
-            #                                     noise=noise,
-            #                                     SR=self.SR)
-            # else:
             _, next_value = self.acmodel(preprocessed_obs, SR=self.SR)
 
-        for i in reversed(range(self.num_frames)):
-            next_mask = self.masks[i + 1] if i < self.num_frames - 1 else self.mask
-            next_value = self.values[i + 1] if i < self.num_frames - 1 else next_value
-            next_advantage = self.advantages[i + 1] if i < self.num_frames - 1 else 0
-
-            reward_term = (
-                self.rewards[i]
-                + self.k_int * self.int_rewards[i]
-                + self.k_curious * self.curious_rewards[i]
-            )
-            delta = (
-                reward_term + self.discount * next_value * next_mask - self.values[i]
-            )
-            self.advantages[i] = (
-                delta + self.discount * self.gae_lambda * next_advantage * next_mask
-            ) # n-step TD generalized advantage estimates
+        compute_gae(
+            advantages=self.advantages,
+            rewards=self.rewards,
+            int_rewards=self.int_rewards,
+            curious_rewards=self.curious_rewards,
+            values=self.values,
+            masks=self.masks,
+            final_next_value=next_value,
+            final_mask=self.mask,
+            num_frames=self.num_frames,
+            discount=self.discount,
+            gae_lambda=self.gae_lambda,
+            k_int=self.k_int,
+            k_curious=self.k_curious,
+        )
 
         exps = DictList()
         exps.obs = self.obss
         exps.SR = self.SRs
-        # if self.acmodel.recurrent:
-        #     exps.memory = self.memories
-        #     exps.mask = self.masks
         exps.action = self.actions
         exps.value = self.values
         exps.reward = self.rewards
@@ -433,8 +373,8 @@ class PredictivePPOAlgo:
         exps.obs = self.preprocess_obss(exps.obs, device=self.device)
 
         # Reset pN state
-        if self.pN:
-            self.pN.reset_state(device=str(self.device))
+        if self.adapter:
+            self.adapter.reset_state()
 
         # Log some values
 
@@ -468,175 +408,48 @@ class PredictivePPOAlgo:
         return exps, logs # Everything in exps must be exact same length. Get self.locs out through logs
 
     def update_parameters(self, exps, update_params=True):
-        # Collect experiences
-        # TODO: deal with analyses, predNet saving, option to backprop through pRNN
-
         # below has to be done so that exps can be batched
         done_indices = exps.done_indices.copy()
         last_observations = exps.last_observations.copy()
         del exps["done_indices"]
         del exps["last_observations"]
 
-        for _ in range(self.epochs):  # TODO: should it be just one epoch?
-        # shuffle everything 4 times
-            # Initialize log values
-
-            log_entropies = []
-            log_values = []
-            log_policy_losses = []
-            log_value_losses = []
-            log_grad_norms = []
-
-            for inds in self._get_batches_starting_indexes(): # inds should be multiples of ppo_batch_size
-                # Initialize batch values
-
-                batch_entropy = 0
-                batch_value = 0
-                batch_policy_loss = 0
-                batch_value_loss = 0
-                batch_loss = 0
-
-                # Initialize memory
-
-                if self.acmodel.recurrent:
-                    memory = exps.memory[inds]
-
-                for i in range(self.recurrence): # only loops once
-                    # Create a sub-batch of experience
-
-                    sb = exps[inds + i]
-
-                    # Compute loss
-
-                    # if self.acmodel.recurrent:
-                    #     noise = self.noise_mu + self.noise_std * torch.randn(self.acmodel.memorysize, device=self.device)
-                    #     # NOTE: it is still not analogous to pRNN because obs is from current step, and act is not provided
-                    #     dist, value, memory = self.acmodel(sb.obs, (memory.T * sb.mask).T[None], noise=noise, SR=sb.SR)
-                    # else:
-                    dist, value = self.acmodel(sb.obs, SR=sb.SR)
-
-                    policy_entropy = dist.entropy().mean()
-
-                    ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
-                    surr1 = ratio * sb.advantage
-                    surr2 = (
-                        torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps)
-                        * sb.advantage
-                    )
-                    policy_loss = -torch.min(surr1, surr2).mean()
-
-                    value_clipped = sb.value + torch.clamp(
-                        value - sb.value, -self.clip_eps, self.clip_eps
-                    )
-                    surr1 = (value - sb.returnn).pow(2) # AC_model value estimate - target return
-                    surr2 = (value_clipped - sb.returnn).pow(2) # ppo clipping
-                    value_loss = torch.max(surr1, surr2).mean()
-
-                    loss = (
-                        policy_loss
-                        - self.entropy_coef * policy_entropy
-                        + self.value_loss_coef * value_loss
-                    )
-
-                    # Update batch values
-
-                    batch_entropy += policy_entropy.item() / torch.log(
-                        torch.tensor(2.0)
-                    )  # convert nats to bits
-                    batch_value += value.mean().item()
-                    batch_policy_loss += policy_loss.item()
-                    batch_value_loss += value_loss.item()
-                    batch_loss += loss
-
-                    # Update memories for next epoch
-
-                    # if self.acmodel.recurrent and i < self.recurrence - 1:
-                    #     exps.memory[inds + i + 1] = memory.detach()
-
-                # Update batch values
-
-                batch_entropy /= self.recurrence
-                batch_value /= self.recurrence
-                batch_policy_loss /= self.recurrence
-                batch_value_loss /= self.recurrence
-                batch_loss /= self.recurrence
-
-                # Update actor-critic
-
-                if update_params:
-                    self.optimizer.zero_grad()
-                    batch_loss.backward()
-                    grad_norm = (
-                        sum(
-                            p.grad.data.norm(2).item() ** 2
-                            for p in self.acmodel.parameters()
-                        )
-                        ** 0.5
-                    )
-                    torch.nn.utils.clip_grad_norm_(
-                        self.acmodel.parameters(), self.max_grad_norm
-                    )
-                    self.optimizer.step()
-                else:
-                    grad_norm = 0.0
-
-                # Update log values
-
-                log_entropies.append(batch_entropy)
-                log_values.append(batch_value)
-                log_policy_losses.append(batch_policy_loss)
-                log_value_losses.append(batch_value_loss)
-                log_grad_norms.append(grad_norm)
+        logs, self.batch_num = ppo_update(
+            self.acmodel,
+            self.optimizer,
+            exps,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            recurrence=self.recurrence,
+            num_frames=self.num_frames,
+            clip_eps=self.clip_eps,
+            entropy_coef=self.entropy_coef,
+            value_loss_coef=self.value_loss_coef,
+            max_grad_norm=self.max_grad_norm,
+            batch_num=self.batch_num,
+            update_params=update_params,
+        )
 
         # Update pN
 
         if self.train_pN:
-            # The below is bugged! discuss with Alex
-
-            # obs, act = self.pN.env_shell.env2pred(exps.obs + [self.obs], exps.action) # including the last observation
-            # _,_,_ = self.pN.trainStep(obs, act, mask=exps.masks+[self.mask])
-
-            # Fixed code:
-            self.pN.pRNN.to(self.device)
+            self.adapter.to(self.device)
             for idx in range(1, len(done_indices)):
                 start_episode = done_indices[idx - 1]
                 end_episode = done_indices[idx]
                 last_obs = last_observations[idx - 1]
-                self._train_pN(exps, start_episode, end_episode, last_obs)
-
-        # Log some values
-
-        logs = {
-            "entropy": np.mean(log_entropies),
-            "value": np.mean(log_values),
-            "policy_loss": np.mean(log_policy_losses),
-            "value_loss": np.mean(log_value_losses),
-            "grad_norm": np.mean(log_grad_norms),
-        }
+                self.adapter.train_on_episode(
+                    exps.obs.image[start_episode:end_episode],
+                    exps.obs.direction[start_episode:end_episode],
+                    exps.action[start_episode:end_episode].cpu().numpy(),
+                    last_obs,
+                )
 
         return logs
 
-    def _train_pN(self, exps, startIdx, endIdx, last_obs):
-        images_tensor, hd_tensor = (
-            exps.obs.image[startIdx:endIdx],
-            exps.obs.direction[startIdx:endIdx],
-        )
-        obs_for_pN = [
-            {"image": images_tensor[i].cpu().numpy(), "direction": hd_tensor[i].item()}
-            for i in range(len(images_tensor))
-        ]
-        act_for_pN = exps.action[startIdx:endIdx].cpu().numpy()
-
-        obs, act = self.pN.env_shell.env2pred(obs_for_pN + [last_obs], act_for_pN)
-
-        obs = obs.to(self.device)
-        act = act.to(self.device)
-        _, _, _ = self.pN.trainStep(obs, act)
-        self.pN.numTrainingEpochs += 1
-
     def randomAgent_collect_exp_and_update(self, agent):
         assert self.train_pN, "The only reason to have random actions in algo is to train the pRNN geinus..."
-        self.pN.pRNN.to(self.device)
+        self.adapter.to(self.device)
         numtrials = math.ceil(self.num_frames / self.prnn_seqdur)
 
         log_curr_seqdurs = []
@@ -663,7 +476,7 @@ class PredictivePPOAlgo:
             loc_list_current = [tuple(thisloc) for thisloc in locs_array]
             if hasattr(self.env.env.unwrapped, "subroom_size"):
                 subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self.env.env.unwrapped.subroom_size))
-            
+
             init_pos = state["agent_pos"][0, :]
             final_pos = state["agent_pos"][-1, :]
             dist_travelled = get_dist_travelled(torch.tensor(init_pos).unsqueeze(0), torch.tensor(final_pos).unsqueeze(0)).item()
@@ -696,54 +509,11 @@ class PredictivePPOAlgo:
             "dist_travelled": dist_travelled,
         }
 
-    def _get_batches_starting_indexes(self):
-        """Gives, for each batch, the indexes of the observations given to
-        the model and the experiences used to compute the loss at first.
-
-        First, the indexes are the integers from 0 to `self.num_frames` with a step of
-        `self.recurrence`, shifted by `self.recurrence//2` one time in two for having
-        more diverse batches. Then, the indexes are splited into the different batches.
-
-        Returns
-        -------
-        batches_starting_indexes : list of list of int
-            the indexes of the experiences to be used at first for each batch
-        """
-
-        # If batch size is 257 and numtrials is 2048, there will still be 8 batches
-        # first 7 batches will have 257 elements in them
-        # The last batch will have 2048 - (257*7) = 249 elements in it
-        # The above comment assumes recurrence is 1
-
-        indexes = np.arange(0, self.num_frames, self.recurrence)
-        indexes = np.random.permutation(indexes)
-
-        # Shift starting indexes by self.recurrence//2 half the time
-        if self.batch_num % 2 == 1:
-            indexes = indexes[(indexes + self.recurrence) % self.num_frames != 0]
-            indexes += self.recurrence // 2
-        self.batch_num += 1
-
-        num_indexes = self.batch_size // self.recurrence
-        batches_starting_indexes = [
-            indexes[i : i + num_indexes] for i in range(0, len(indexes), num_indexes)
-        ]
-
-        return batches_starting_indexes
-
     def next_experience(self):
         preprocessed_obs = self.preprocess_obss([self.obs], device=self.device)
         memory = None
 
         with torch.no_grad():
-            # if self.acmodel.recurrent:
-            #     noise = self.noise_mu + self.noise_std * torch.randn(self.acmodel.memorysize, device=self.device)
-            #     # TODO: remove SR if not using PCs with recurrence
-            #     dist, value, memory = self.acmodel(preprocessed_obs,
-            #                                         (self.memory * self.mask)[None],
-            #                                         noise=noise,
-            #                                         SR=self.SR)
-            # else:
             dist, value = self.acmodel(preprocessed_obs, SR=self.SR)
         action = dist.sample()  # choose action based on SR from step t-1
         det_action = action.cpu().numpy()
@@ -751,72 +521,19 @@ class PredictivePPOAlgo:
         return action, dist, value, memory, det_action
 
     def next_SR(self, act, obs):
-        if self.theta:
-            obs = [obs] * (self.k + 1)
-            act = act.repeat(self.k)
-
-            obs_pN, act_pN = self.pN.env_shell.env2pred(obs, act) # act_pN now contains HD
-            obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
-            with (
-                torch.no_grad()
-            ):  # calculate SR for step t based on obs and action from step t-1
-                SR = self.pN.predict(obs_pN, act_pN)[2][0]
-
-        elif self.pN:
-            obs = [obs, obs]
-
-            obs_pN, act_pN = self.pN.env_shell.env2pred(obs, act)
-            obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
-            with (
-                torch.no_grad()
-            ):  # calculate SR for step t based on obs and action from step t-1
-                SR = self.pN.predict_single(obs_pN[:, :-1, :], act_pN).squeeze(dim=0)
-
-        elif self.PC:  # not calculating it on the same step for now
-            SR = torch.tensor(
-                self.PC.activation(self.env.agent_pos),
-                dtype=torch.float32,
-                device=self.device,
-            ).unsqueeze(dim=0)
-        # Not using the CANNs anymore, so not solving the preprocessed_obs problem
-        # elif self.CANN: # not calculating it on the same step for now
-        #     with torch.no_grad():
-        #         _,_,SR = self.CANN.predict(preprocessed_obs,None,self.env.get_agent_pos())
-        #     SR = SR[0].to(self.device)
-
-        else:
-            SR = torch.tensor([], device=self.device).unsqueeze(dim=0)
-        return SR
+        if self.adapter:
+            return self.adapter.next_sr(act, obs)
+        return torch.tensor([], device=self.device).unsqueeze(dim=0)
 
     def init_SR(self):
-        SR = torch.tensor([], device=self.device).unsqueeze(dim=0)
-        if self.pN:
-            if self.pastSR:
-                SR = torch.zeros((1, self.pN.hidden_size), device=self.device)
-            else:
-                obs_pN, act_pN = self.pN.env_shell.env2pred(
-                    [self.obs, self.obs], np.array([0])
-                )
-                act_pN = torch.zeros_like(act_pN)
-                obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
-                with torch.no_grad():
-                    SR = self.pN.predict_single(obs_pN[:, :-1, :], act_pN).squeeze(
-                        dim=0
-                    )
-
-        if self.CANN:
-            SR = torch.zeros((1, self.CANN.hidden_size), device=self.device)
-        elif self.PC:
-            SR = torch.zeros((1, self.PC.size), device=self.device)
-
-        self.SR = SR
+        if self.adapter:
+            self.SR = self.adapter.init_sr(self.obs)
+        else:
+            self.SR = torch.tensor([], device=self.device).unsqueeze(dim=0)
 
     def init_exp(self):
         self.obss = [None] * (self.num_frames)
         self.locs = [None] * (self.num_frames)
-        # if self.acmodel.recurrent:
-        #     self.memory = torch.zeros((1,self.acmodel.memorysize), device=self.device)
-        #     self.memories = torch.zeros(self.num_frames, self.acmodel.memorysize, device=self.device)
         self.mask = 1
         self.masks = torch.zeros(self.num_frames, device=self.device)
         print("Masks done")
@@ -854,5 +571,3 @@ class PredictivePPOAlgo:
         else:
             loc = self.env.agent_pos
         return loc
-
-
