@@ -38,6 +38,7 @@ from scripts.wandb_data import (
     load_subroom_data,
     pairwise_ttest,
     plot_occupancy_average,
+    add_sig_line,
     plot_metric,
     plot_subroom_percentage,
     plot_traces,
@@ -829,6 +830,27 @@ def test_plot_occupancy_average_subset_steps():
     assert len(heatmaps) == 8
 
 
+def test_plot_occupancy_average_collapse_hd():
+    avg = {
+        10: np.random.rand(4, 3, 3),
+        20: np.random.rand(4, 3, 3),
+    }
+    fig = plot_occupancy_average(avg, collapse_hd=True)
+
+    heatmaps = [t for t in fig.data if t.type == "heatmap"]
+    # 2 steps x 1 collapsed HD = 2 heatmap traces
+    assert len(heatmaps) == 2
+
+
+def test_plot_occupancy_average_collapse_hd_values():
+    """Collapsed heatmap should equal the nanmean across the 4 HD grids."""
+    grid = np.random.rand(4, 3, 3)
+    avg = {0: grid}
+    fig = plot_occupancy_average(avg, collapse_hd=True)
+    heatmap_z = np.array(fig.data[0].z)
+    np.testing.assert_allclose(heatmap_z, np.nanmean(grid, axis=0))
+
+
 # ---------------------------------------------------------------------------
 # runs_per_step
 # ---------------------------------------------------------------------------
@@ -1272,12 +1294,14 @@ def test_draw_significance_bracket_stacking():
 
 
 def test_pairwise_ttest_returns_p_values(capsys):
-    """Returns one p-value per pair."""
+    """Returns one p-value and one df per pair."""
     a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     b = np.array([10.0, 11.0, 12.0, 13.0, 14.0])
-    p_vals = pairwise_ttest([(a, b)], alpha=0.01)
+    p_vals, dfs, _ = pairwise_ttest([(a, b)], alpha=0.01)
     assert len(p_vals) == 1
     assert 0.0 <= p_vals[0] <= 1.0
+    assert len(dfs) == 1
+    assert dfs[0] > 0
 
 
 def test_pairwise_ttest_significant():
@@ -1285,7 +1309,7 @@ def test_pairwise_ttest_significant():
     rng = np.random.default_rng(0)
     a = rng.normal(0, 1, 50)
     b = rng.normal(100, 1, 50)
-    p_vals = pairwise_ttest([(a, b)], alpha=0.01)
+    p_vals, dfs, _ = pairwise_ttest([(a, b)], alpha=0.01)
     assert p_vals[0] < 0.01
 
 
@@ -1295,26 +1319,43 @@ def test_pairwise_ttest_not_significant():
     a = rng.normal(0, 1, 10)
     b = a.copy()
     # ttest_ind on identical arrays → p=1 (or NaN); just check it doesn't crash
-    p_vals = pairwise_ttest([(a, b)], alpha=0.01)
+    p_vals, dfs, _ = pairwise_ttest([(a, b)], alpha=0.01)
     assert len(p_vals) == 1
 
 
 def test_pairwise_ttest_multiple_pairs():
-    """One p-value returned per pair."""
+    """One p-value and one df returned per pair."""
     a = np.array([1.0, 2.0, 3.0])
     b = np.array([4.0, 5.0, 6.0])
     c = np.array([100.0, 101.0, 102.0])
-    p_vals = pairwise_ttest([(a, b), (a, c)], alpha=0.05)
+    p_vals, dfs, _ = pairwise_ttest([(a, b), (a, c)], alpha=0.05)
     assert len(p_vals) == 2
+    assert len(dfs) == 2
 
 
 def test_pairwise_ttest_pair_labels_printed(capsys):
-    """pair_labels appear in printed output."""
-    a = np.array([1.0, 2.0, 3.0])
-    b = np.array([4.0, 5.0, 6.0])
+    """pair_labels and df appear in printed output."""
+    a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    b = np.array([4.0, 5.0, 6.0, 7.0, 8.0])
     pairwise_ttest([(a, b)], alpha=0.05, pair_labels=["rand vs cur"])
     out = capsys.readouterr().out
     assert "rand vs cur" in out
+    assert "df=" in out
+
+
+def test_pairwise_ttest_nan_values_ignored():
+    """NaN entries are ignored; result is finite and matches nan-free equivalent."""
+    rng = np.random.default_rng(42)
+    a_clean = rng.normal(0, 1, 50)
+    b_clean = rng.normal(5, 1, 50)
+    a_nan = a_clean.copy()
+    a_nan[[3, 7, 15]] = np.nan
+
+    p_clean, _, _ = pairwise_ttest([(a_clean, b_clean)], alpha=0.01)
+    p_nan, _, _ = pairwise_ttest([(a_nan, b_clean)], alpha=0.01)
+
+    assert np.isfinite(p_nan[0]), "p-value should be finite even with NaN inputs"
+    assert p_nan[0] < 0.01, "clearly separated distributions should still be significant"
 
 
 def test_subroom_pct_array_shape():
@@ -1502,6 +1543,18 @@ def test_bootstrap_ci_wider_with_more_variance():
     assert (lo_l + lo_u).mean() < (hi_l + hi_u).mean()
 
 
+def test_bootstrap_ci_with_nans():
+    """NaN runs do not produce NaN CI (simulates runs with missing steps)."""
+    rng = np.random.default_rng(3)
+    data = rng.normal(loc=0.5, scale=0.1, size=(5, 50))
+    data[:, -1] = np.nan  # one run entirely missing
+    lower_err, upper_err = bootstrap_ci(data, n_bootstrap=500)
+    assert not np.any(np.isnan(lower_err)), "lower CI should not be NaN with sparse NaN runs"
+    assert not np.any(np.isnan(upper_err)), "upper CI should not be NaN with sparse NaN runs"
+    assert np.all(lower_err >= 0)
+    assert np.all(upper_err >= 0)
+
+
 # ---------------------------------------------------------------------------
 # plot_metric (smoke tests)
 # ---------------------------------------------------------------------------
@@ -1513,7 +1566,7 @@ def _make_metric_tensor(n_steps: int = 3, n_runs: int = 10, seed: int = 0) -> to
 
 def test_plot_metric_bootstrap_returns_figure():
     t = _make_metric_tensor()
-    fig, ax = plot_metric(
+    fig, ax, *_ = plot_metric(
         tensors=[t],
         steps=[0, 1, 2],
         colors=["blue"],
@@ -1530,7 +1583,7 @@ def test_plot_metric_bootstrap_returns_figure():
 
 def test_plot_metric_std_returns_figure():
     t = _make_metric_tensor()
-    fig, ax = plot_metric(
+    fig, ax, *_ = plot_metric(
         tensors=[t],
         steps=[0, 1, 2],
         colors=["red"],
@@ -1546,7 +1599,7 @@ def test_plot_metric_std_returns_figure():
 
 def test_plot_metric_bootstrap_ci_returns_figure():
     t = _make_metric_tensor()
-    fig, ax = plot_metric(
+    fig, ax, *_ = plot_metric(
         tensors=[t],
         steps=[0, 1, 2],
         colors=["green"],
@@ -1567,7 +1620,7 @@ def test_plot_metric_ttest_significant(capsys):
     rng = np.random.default_rng(42)
     t1 = torch.from_numpy(rng.normal(0.0, 0.1, size=(3, 30)).astype(np.float32))
     t2 = torch.from_numpy(rng.normal(1.0, 0.1, size=(3, 30)).astype(np.float32))
-    fig, ax = plot_metric(
+    fig, ax, *_ = plot_metric(
         tensors=[t1, t2],
         steps=[0, 1, 2],
         colors=["blue", "red"],
@@ -1579,8 +1632,7 @@ def test_plot_metric_ttest_significant(capsys):
     )
     plt.close(fig)
     captured = capsys.readouterr()
-    assert "significant" in captured.out
-    assert "not significant" not in captured.out
+    assert "***" in captured.out
 
 
 def test_plot_metric_ttest_not_significant(capsys):
@@ -1591,7 +1643,7 @@ def test_plot_metric_ttest_not_significant(capsys):
     data = rng.normal(0.5, 0.5, size=(3, 30)).astype(np.float32)
     t1 = torch.from_numpy(data.copy())
     t2 = torch.from_numpy(data.copy())
-    fig, ax = plot_metric(
+    fig, ax, *_ = plot_metric(
         tensors=[t1, t2],
         steps=[0, 1, 2],
         colors=["blue", "red"],
@@ -1603,7 +1655,131 @@ def test_plot_metric_ttest_not_significant(capsys):
     )
     plt.close(fig)
     captured = capsys.readouterr()
-    assert "not significant" in captured.out
+    assert "ns" in captured.out
+
+
+def test_plot_metric_returns_p_vals_and_dfs():
+    """plot_metric returns a 4-tuple: (fig, ax, p_vals dict, dfs dict)."""
+    import matplotlib.pyplot as plt
+
+    rng = np.random.default_rng(0)
+    steps = [0, 1, 2]
+    t1 = torch.from_numpy(rng.normal(0.0, 0.1, size=(3, 20)).astype(np.float32))
+    t2 = torch.from_numpy(rng.normal(1.0, 0.1, size=(3, 20)).astype(np.float32))
+    fig, ax, p_vals, dfs, _ = plot_metric(
+        tensors=[t1, t2],
+        steps=steps,
+        colors=["blue", "red"],
+        labels=["exp", "ctrl"],
+        xlabel="Steps",
+        ylabel="Value",
+    )
+    plt.close(fig)
+    assert isinstance(p_vals, dict)
+    assert len(p_vals) == 1
+    key = next(iter(p_vals))
+    assert set(key) == {"exp", "ctrl"}
+    assert len(p_vals[key]) == len(steps)
+    assert all(0.0 <= v <= 1.0 for v in p_vals[key])
+    assert isinstance(dfs, dict)
+    assert key in dfs
+    assert len(dfs[key]) == len(steps)
+    assert all(d > 0 for d in dfs[key])
+
+
+def test_plot_metric_xlim_clips_line():
+    """When xlim_max is set, the plotted line ends at the last step within xlim_max."""
+    import matplotlib.pyplot as plt
+
+    steps = [0, 100, 200, 300]
+    t1 = torch.ones(4, 3)
+    fig, ax, *_ = plot_metric(
+        tensors=[t1],
+        steps=steps,
+        colors=["blue"],
+        labels=["A"],
+        xlabel="Steps",
+        ylabel="Value",
+        xlim_max=200,
+    )
+    labeled = [l for l in ax.get_lines() if l.get_label() == "A"]
+    assert list(labeled[0].get_xdata()) == [0, 100, 200]
+    assert ax.get_xlim()[1] == 200
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# add_sig_line
+# ---------------------------------------------------------------------------
+
+
+def _make_p_vals_significant(steps: list, labels: tuple[str, str]) -> dict[tuple[str, str], list[float]]:
+    """Return p_vals where every step is highly significant."""
+    return {labels: [1e-4] * len(steps)}
+
+
+def _make_p_vals_not_significant(steps: list, labels: tuple[str, str]) -> dict[tuple[str, str], list[float]]:
+    return {labels: [0.9] * len(steps)}
+
+
+def test_add_sig_line_one_control():
+    """Significant steps should produce stars and a grey line."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    steps = [0, 1, 2]
+    p_vals = _make_p_vals_significant(steps, ("exp", "ctrl"))
+    add_sig_line(ax, steps, p_vals, exp_label="exp", control_labels=["ctrl"],
+                 control_colors=["red"], height=1.0)
+    assert len(ax.texts) == 3
+    assert len(ax.collections) > 0  # grey hline (LineCollection) was drawn
+    plt.close(fig)
+
+
+def test_add_sig_line_two_controls():
+    """Two controls produce two stacked rows of annotations at different heights."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    steps = [0, 1, 2]
+    p_vals = {
+        ("exp", "ctrl1"): [1e-4, 1e-4, 1e-4],
+        ("exp", "ctrl2"): [1e-4, 1e-4, 1e-4],
+    }
+    add_sig_line(ax, steps, p_vals, exp_label="exp",
+                 control_labels=["ctrl1", "ctrl2"],
+                 control_colors=["red", "blue"],
+                 height=1.0, row_spacing=0.1)
+    y_vals = [t.get_position()[1] for t in ax.texts]
+    assert len(set(y_vals)) == 2  # two distinct heights
+    plt.close(fig)
+
+
+def test_add_sig_line_no_significance():
+    """No significant steps → no text or extra lines added."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    steps = [0, 1, 2]
+    p_vals = _make_p_vals_not_significant(steps, ("exp", "ctrl"))
+    add_sig_line(ax, steps, p_vals, exp_label="exp", control_labels=["ctrl"],
+                 control_colors=["red"], height=1.0)
+    assert len(ax.texts) == 0
+    assert len(ax.lines) == 0
+    plt.close(fig)
+
+
+def test_add_sig_line_key_order_invariant():
+    """Key lookup succeeds even when dict was keyed (ctrl, exp) instead of (exp, ctrl)."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    steps = [0, 1, 2]
+    p_vals = _make_p_vals_significant(steps, ("ctrl", "exp"))  # reversed order
+    add_sig_line(ax, steps, p_vals, exp_label="exp", control_labels=["ctrl"],
+                 control_colors=["red"], height=1.0)
+    assert len(ax.texts) == 3
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

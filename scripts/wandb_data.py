@@ -140,7 +140,10 @@ def _fetch_history(run, step_key: str, metric: str, samples: int | None) -> pd.S
             steps.append(row[step_key])
             values.append(row[metric])
 
-    return pd.Series(data=values, index=steps, dtype=float)
+    series = pd.Series(data=values, index=steps, dtype=float)
+    if series.index.duplicated().any():
+        series = series[~series.index.duplicated(keep="last")]
+    return series
 
 
 def fetch_run_traces(
@@ -152,6 +155,7 @@ def fetch_run_traces(
     filters: dict | None = None,
     group: str | None = None,
     samples: int | None = None,
+    max_runs: int | None = None,
 ) -> pd.DataFrame:
     """Fetch metric traces from WandB runs into a multi-indexed DataFrame.
 
@@ -175,6 +179,7 @@ def fetch_run_traces(
             that is merged into filters.
         samples: If None (default), use scan_history for exact data. If an int,
             use history(samples=N) for faster but potentially sampled data.
+        max_runs: If set, truncate to the first N runs returned by the API.
 
     Returns:
         pd.DataFrame with:
@@ -196,6 +201,8 @@ def fetch_run_traces(
     runs = api.runs(path=f"{entity}/{project}", filters=merged_filters)
 
     runs_list = list(runs)
+    if max_runs is not None:
+        runs_list = runs_list[:max_runs]
     if not runs_list:
         raise ValueError(
             f"No runs found for entity='{entity}', project='{project}' "
@@ -652,11 +659,12 @@ def plot_occupancy_average(
     scale: str = "plasma",
     title: str = "Average Occupancy",
     label_steps: list[int] | None = None,
+    collapse_hd: bool = False,
 ) -> go.Figure:
     """Plot cross-run average occupancy heatmaps.
 
-    Creates a grid of heatmaps: one row per requested step, 4 columns
-    for head directions.
+    Creates a grid of heatmaps: one row per requested step, either 4 columns
+    for head directions or 1 column when ``collapse_hd=True``.
 
     Args:
         avg_grids: Dict mapping step to ``np.ndarray`` of shape
@@ -664,6 +672,8 @@ def plot_occupancy_average(
         steps: Which steps to plot. If ``None``, plots all steps.
         scale: Plotly colorscale name.
         title: Figure title.
+        collapse_hd: If ``True``, average across all 4 head directions and
+            plot a single column instead of 4.
 
     Returns:
         A ``plotly.graph_objects.Figure`` with the heatmap grid.
@@ -671,42 +681,54 @@ def plot_occupancy_average(
     if steps is None:
         steps = sorted(avg_grids.keys())
 
-    hd_labels = ["→", "↓", "←", "↑"]
     n_steps = len(steps)
+
+    if collapse_hd:
+        n_cols = 1
+        col_titles = ["All HD (mean)"]
+    else:
+        n_cols = 4
+        hd_labels = ["→", "↓", "←", "↑"]
+        col_titles = [f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)]
 
     fig = make_subplots(
         rows=n_steps,
-        cols=4,
+        cols=n_cols,
         horizontal_spacing=0.02,
         vertical_spacing=min(0.05, 0.15 / max(n_steps - 1, 1)),
-        column_titles=[f"HD {i}: {lbl}" for i, lbl in enumerate(hd_labels)],
+        column_titles=col_titles,
         row_titles=[f"Step {s}" for s in (label_steps if label_steps is not None else steps)],
     )
 
     global_max = max(np.nanmax(avg_grids[s]) for s in steps)
     for row_idx, step in enumerate(steps):
         grid = avg_grids[step]  # (4, H, W)
-        for hd in range(4):
-            show_scale = row_idx == len(steps) - 1 and hd == 3 # Show colorbar only on last plot
+        if collapse_hd:
+            grids_to_plot = [np.nanmean(grid, axis=0)]
+        else:
+            grids_to_plot = [grid[hd] for hd in range(4)]
+
+        for col_idx, g in enumerate(grids_to_plot):
+            show_scale = row_idx == len(steps) - 1 and col_idx == len(grids_to_plot) - 1
             fig.add_trace(
-                go.Heatmap(z=grid[hd], showscale=show_scale, colorscale=scale, zmin=0, zmax=global_max),
+                go.Heatmap(z=g, showscale=show_scale, colorscale=scale, zmin=0, zmax=global_max),
                 row=row_idx + 1,
-                col=hd + 1,
+                col=col_idx + 1,
             )
 
     fig.update_xaxes(showticklabels=False, constrain="domain")
     fig.update_yaxes(showticklabels=False, autorange="reversed", constrain="domain")
     # Anchor each y-axis to its own x-axis so aspect ratios are independent.
     for row_idx in range(n_steps):
-        for col_idx in range(4):
-            ax_id = row_idx * 4 + col_idx + 1
+        for col_idx in range(n_cols):
+            ax_id = row_idx * n_cols + col_idx + 1
             suffix = "" if ax_id == 1 else str(ax_id)
             fig.update_layout(
                 **{f"yaxis{suffix}": dict(scaleanchor=f"x{suffix}", scaleratio=1)} #type: ignore
             )
     fig.update_layout(
         height=300 * n_steps,
-        width=1400,
+        width=1400 if not collapse_hd else 400,
         title=title,
         title_x=0.5,
     )
@@ -796,14 +818,14 @@ def bootstrap_ci(data: np.ndarray, n_bootstrap: int = 1000, ci: float = 0.95) ->
     """
     n_runs = data.shape[1]
     boot_means = np.stack([
-        data[:, np.random.randint(0, n_runs, size=n_runs)].mean(axis=1)
+        np.nanmean(data[:, np.random.randint(0, n_runs, size=n_runs)], axis=1)
         for _ in range(n_bootstrap)
     ], axis=1)  # [n_train_steps, n_bootstrap]
 
     alpha = (1 - ci) / 2
-    lower = np.percentile(boot_means, 100 * alpha, axis=1)
-    upper = np.percentile(boot_means, 100 * (1 - alpha), axis=1)
-    mean = data.mean(axis=1)
+    lower = np.nanpercentile(boot_means, 100 * alpha, axis=1)
+    upper = np.nanpercentile(boot_means, 100 * (1 - alpha), axis=1)
+    mean = np.nanmean(data, axis=1)
     return mean - lower, upper - mean
 
 
@@ -866,16 +888,18 @@ def _draw_significance_bracket(
 def pairwise_ttest(
     pairs: list[tuple[np.ndarray, np.ndarray]],
     pair_labels: list[str] | None = None,
-) -> list[float]:
-    """Run Welch's t-test for each (a, b) pair and return p-values.
+    alpha: float = 0.05,
+) -> tuple[list[float], list[float], list[float]]:
+    """Run Welch's t-test for each (a, b) pair and return p-values, degrees of freedom, and t-statistics.
 
     Args:
         pairs: List of ``(a, b)`` where ``a`` and ``b`` are 1D arrays of samples.
-        alpha: Significance level used for labelling printed output.
         pair_labels: Optional label per pair for printed output.
+        alpha: Significance level used for labelling printed output.
 
     Returns:
-        List of p-values, one per pair.
+        Tuple of (p_vals, dfs, t_stats): lists of p-values, Welch–Satterthwaite degrees of
+        freedom, and t-statistics, one entry per pair.
     """
     from scipy import stats
 
@@ -888,21 +912,33 @@ def pairwise_ttest(
             return 0.05
         else:
             return "ns"
-        
 
-    p_vals = []
+    def welch_df(a: np.ndarray, b: np.ndarray) -> float:
+        a = a[~np.isnan(a)]
+        b = b[~np.isnan(b)]
+        n1, n2 = len(a), len(b)
+        v1 = np.var(a, ddof=1)
+        v2 = np.var(b, ddof=1)
+        num = (v1 / n1 + v2 / n2) ** 2
+        denom = (v1 / n1) ** 2 / (n1 - 1) + (v2 / n2) ** 2 / (n2 - 1)
+        return float(num / denom) if denom != 0 else float("nan")
+
+    p_vals, dfs, t_stats = [], [], []
     for idx, (a, b) in enumerate(pairs):
-        t_stat, p_val = stats.ttest_ind(a, b, equal_var=False)
-        p_val = float(p_val)
+        t_stat, p_val = stats.ttest_ind(a, b, equal_var=False, nan_policy="omit")
+        t_stat, p_val = float(t_stat), float(p_val)
+        df = welch_df(a, b)
         p_vals.append(p_val)
+        dfs.append(df)
+        t_stats.append(t_stat)
         label = pair_labels[idx] if pair_labels is not None else f"pair {idx}"
         sig_level = compute_sig(p_val)
         sig = _sig_label(sig_level) if isinstance(sig_level, float) else sig_level
-        print(f"  {label}: t={t_stat:.4f}, p={p_val:.4f} → {sig}")
-    return p_vals
+        print(f"  {label}: t={t_stat:.4f}, df={df:.2f}, p={p_val:.4f} → {sig}")
+    return p_vals, dfs, t_stats
 
 
-def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000, alpha=0.01):
+def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], steps: list, colors: list, labels: list[str], xlabel: str, ylabel: str, use_std: bool = True, n_bootstrap: int = 1000, alpha=0.01, xlim_max: int | None = None):
     """
     Plots the mean of a metric with a 95% Confidence Interval for multiple agents.
 
@@ -916,6 +952,8 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
         use_std: If True, shade with std; if False, use bootstrap 95% CI
         n_bootstrap: Number of bootstrap resamples (only used when use_std=False)
         alpha: Significance level for Welch's t-test (default 0.01)
+        xlim_max: If set, clips the plotted line and x-axis to this value so the
+            line ends cleanly at the last datapoint within the range.
     """
     from itertools import combinations
 
@@ -932,25 +970,38 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
     fig, ax = plt.subplots(figsize=(10, 6))
 
     all_data = []
+    all_means = []
+    all_yerrs = []
     for tensor, color, label in zip(tensors, colors, labels):
         data = tensor.numpy()
         all_data.append(data)
-        mean = data.mean(axis=-1)
+        mean = np.nanmean(data, axis=-1)
 
         if use_std:
-            std = data.std(axis=-1)
-            yerr = std
-            spread_label = f"Std ({label})"
+            yerr = np.nanstd(data, axis=-1)
         else:
             yerr = np.stack(bootstrap_ci(data, n_bootstrap=n_bootstrap), axis=0)  # [2, n_steps]
-            spread_label = f"Bootstrap 95% CI ({label})"
+
+        all_means.append(mean)
+        all_yerrs.append(yerr)
 
         print(f"Plotting {label}:")
         print("     Final mean:", mean[-1])
         print("     Final yerr:", yerr[-1])
         light_color = (*mcolors.to_rgb(color), 0.25)
-        ax.plot(steps, mean, color=color, label=label, linewidth=2, marker="o", markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.5)
-        ax.errorbar(steps, mean, yerr=yerr, fmt='none', ecolor=light_color, elinewidth=1.5, capsize=3, label=spread_label)
+
+        if xlim_max is not None:
+            idx = [i for i, s in enumerate(steps) if s <= xlim_max]
+            plot_steps = [steps[i] for i in idx]
+            plot_mean = mean[idx]
+            plot_yerr = yerr[:, idx] if yerr.ndim == 2 else yerr[idx]
+        else:
+            plot_steps, plot_mean, plot_yerr = steps, mean, yerr
+
+        ax.plot(plot_steps, plot_mean, color=color, label=label, linewidth=2,
+                marker="o", markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.5)
+        ax.errorbar(plot_steps, plot_mean, yerr=plot_yerr,
+                    fmt="none", ecolor=light_color, elinewidth=1.5, capsize=3)
 
     # Welch's t-test (unequal variances) on all steps for all pairs
     label_pairs = [
@@ -959,23 +1010,87 @@ def plot_metric(tensors: list[Float[torch.Tensor, "n_train_steps n_runs"]], step
     ]
     idx_pairs = list(combinations(range(len(labels)), 2))
     print(f"\nWelch's t-test (two-sided, α={alpha}) across all steps:")
+    all_p_vals: dict[tuple[str, str], list[float]] = {}
+    all_dfs: dict[tuple[str, str], list[float]] = {}
+    all_t_stats: dict[tuple[str, str], list[float]] = {}
     for (i, j), (label_i, label_j) in zip(idx_pairs, label_pairs):
         pairs = [(all_data[i][s, :], all_data[j][s, :]) for s in range(len(steps))]
         pair_labels = [f"step {steps[s]}" for s in range(len(steps))]
         print(f"\n  {label_i} vs {label_j}:")
-        p_vals = pairwise_ttest(pairs, pair_labels=pair_labels)
+        p_vals_pair, dfs_pair, t_stats_pair = pairwise_ttest(pairs, pair_labels=pair_labels, alpha=alpha)
+        all_p_vals[(label_i, label_j)] = p_vals_pair
+        all_dfs[(label_i, label_j)] = dfs_pair
+        all_t_stats[(label_i, label_j)] = t_stats_pair
 
     # Formatting
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.spines['top'].set_visible(False)                                                                               
+    ax.set_xlabel(xlabel, fontsize=15)
+    ax.set_ylabel(ylabel, fontsize=15)
+    if xlim_max is not None:
+        ax.set_xlim(right=xlim_max)
+        visible_idx = [i for i, s in enumerate(steps) if s <= xlim_max]
+        if visible_idx:
+            visible_ys = np.concatenate([m[visible_idx] for m in all_means])
+            ymin, ymax = float(np.nanmin(visible_ys)), float(np.nanmax(visible_ys))
+            pad = max((ymax - ymin) * 0.1, 1e-6)
+            ax.set_ylim(ymin - pad, ymax + pad)
+
+    ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    # ax.set_title("Novel Object", fontsize=14)
-    # ax.grid(True, linestyle='--', alpha=0.6)
     # ax.legend()
 
     plt.tight_layout()
-    return fig, ax
+    return fig, ax, all_p_vals, all_dfs, all_t_stats
+
+
+def add_sig_line(
+    ax,
+    steps: list,
+    p_vals: dict[tuple[str, str], list[float]],
+    exp_label: str,
+    control_labels: list[str],
+    control_colors: list[str],
+    height: float,
+    alpha: float = 0.05,
+    row_spacing: float = 0.0,
+    fontsize: int = 9,
+) -> None:
+    """Draw significance annotations on an existing plot.
+
+    For each control condition, draws a thin grey horizontal line at ``height``
+    (offset vertically by ``row_spacing`` per additional control) and places
+    significance stars at steps where the t-test p-value < alpha.
+    Stars are colored the same as the corresponding control condition.
+
+    Args:
+        ax: Axes to annotate.
+        steps: x-axis step values (same list passed to plot_metric).
+        p_vals: Dict returned by plot_metric: {(label_i, label_j): [p_val_per_step]}.
+        exp_label: Label of the experimental condition.
+        control_labels: Labels of control conditions, in order.
+        control_colors: Colors matching control_labels (same order).
+        height: y-position for the first (or only) row of annotations.
+        alpha: Significance threshold (default 0.05).
+        row_spacing: Extra y offset between rows when there are multiple controls.
+        fontsize: Font size for the star annotations (default 9).
+    """
+    for k, (ctrl_label, ctrl_color) in enumerate(zip(control_labels, control_colors)):
+        y = height + k * row_spacing
+        pv = p_vals.get((exp_label, ctrl_label)) or p_vals.get((ctrl_label, exp_label))
+        if pv is None:
+            raise KeyError(f"No p-values found for pair ({exp_label}, {ctrl_label})")
+
+        sig_steps = [steps[s] for s, p in enumerate(pv) if p < alpha]
+        if not sig_steps:
+            continue
+
+        ax.hlines(y, min(sig_steps), max(sig_steps), colors="grey", linewidth=0.8, zorder=3)
+
+        for s, p in enumerate(pv):
+            if p >= alpha:
+                continue
+            star = "***" if p < 0.001 else "**" if p < 0.01 else "*"
+            ax.text(steps[s], y, star, ha="center", va="bottom",
+                    color=ctrl_color, fontsize=fontsize, zorder=4)
 
 
 # ---------------------------------------------------------------------------
@@ -1291,6 +1406,9 @@ def plot_subroom_percentage(
     ax.set_xticklabels(resolved_rooms)
     ax.set_ylabel("% time in subroom")
     ax.set_ylim(0, 100)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    
     if any(l is not None for l in resolved_labels):
         ax.legend()
 
@@ -1309,7 +1427,7 @@ def plot_subroom_percentage(
             lbl_j = label_j or f"group {j}"
             print(f"\nWelch's t-test per subroom ({lbl_i} vs {lbl_j}, α={alpha}):")
             pairs = [(run_means[i][:, r], run_means[j][:, r]) for r in range(n_rooms)]
-            p_vals = pairwise_ttest(pairs, pair_labels=resolved_rooms)
+            p_vals, _dfs, _ = pairwise_ttest(pairs, pair_labels=resolved_rooms)
 
             offset_i = (i - n_groups / 2 + 0.5) * width
             offset_j = (j - n_groups / 2 + 0.5) * width

@@ -32,6 +32,7 @@ from scripts.wandb_data import (
     plot_occupancy_average,
     prob_roi,
     plot_metric,
+    add_sig_line,
     OccupancyData,
 )
 from matplotlib import pyplot as plt
@@ -100,18 +101,18 @@ def fetch_data(agent_type: Literal["rand", "cur"], with_obs: bool, target_loc: l
         save_occupancy_data(data, cache_path, config)
     return data
 
-def show_occ_heatmaps(agent_type: Literal["rand", "cur"], with_obs: bool, target_loc: list[int] | None = None, entropy_coef: float = 0.0, data: OccupancyData | None = None, ctrl: bool = False):
+def show_occ_heatmaps(agent_type: Literal["rand", "cur"], with_obs: bool, target_loc: list[int] | None = None, entropy_coef: float = 0.0, data: OccupancyData | None = None, ctrl: bool = False, collapse_hd: bool = False):
     obs_naming = "with_obs" if with_obs else "without_obs"
     ctrl_naming = "_ctrl" if ctrl else ""
 
     if data is None:
         data = fetch_data(agent_type=agent_type, with_obs=with_obs, target_loc=target_loc, entropy_coef=entropy_coef, ctrl=ctrl)
-    
-    target_loc = [7, 2] if target_loc is None else target_loc   
-    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}                                                                             
-    fig = plot_occupancy_average(avg_grids=avg, label_steps=STEPS, scale="plasma") 
+
+    target_loc = [7, 2] if target_loc is None else target_loc
+    avg = {step: np.nanmean(grids, axis=0) for step, grids in data.grids.items()}
+    fig = plot_occupancy_average(avg_grids=avg, label_steps=STEPS, scale="plasma", collapse_hd=collapse_hd)
     fig.write_image(f"../outputs/{obs_naming}/occupancy_{agent_type}_{target_loc[0]}{target_loc[1]}_ec{entropy_coef}{ctrl_naming}.png")
-    fig.show()                                                                                                                           
+    fig.show()
 
 def show_prob_roi(
     data: list[OccupancyData],
@@ -122,46 +123,86 @@ def show_prob_roi(
     save_path: str | None = None,
     xlabel: str = "Trajectories taken in novel environment",
     ylabel: str = "Probability of staying in ROI",
+    target_loc: list[int] | None = None,
+    exp_label: str | None = None,
+    sig_height: float | None = None,
+    sig_row_spacing: float = 0.02,
+    sig_alpha: float = 0.05,
+    peak_label: str | list[str] | None = None,
 ):
     sorted_steps = [sorted(d.grids.keys()) for d in data]
     min_length = min([len(steps) for steps in sorted_steps])
     label_steps = STEPS[:min_length]
 
     prob_tensors = [
-        prob_roi(d.grids, radius=radius, target_loc=d.target_loc, sorted_steps=sorted_steps[i])
+        prob_roi(d.grids, radius=radius, target_loc=target_loc if target_loc is not None else d.target_loc, sorted_steps=sorted_steps[i])
         for i, d in enumerate(data)
     ]
     prob_tensors = [t[:min_length] for t in prob_tensors]
-    fig, ax = plot_metric(prob_tensors, label_steps, colors=colors, labels=labels, xlabel=xlabel, ylabel=ylabel, use_std=use_std)
+    fig, ax, p_vals, dfs, _ = plot_metric(prob_tensors, label_steps, colors=colors, labels=labels, xlabel=xlabel, ylabel=ylabel, use_std=use_std)
+    print("\nDegrees of freedom (Welch–Satterthwaite):")
+    for (lbl_i, lbl_j), df_list in dfs.items():
+        df_str = ", ".join(f"step {s}: {df:.2f}" for s, df in zip(label_steps, df_list))
+        print(f"  {lbl_i} vs {lbl_j}: {df_str}")
+
+    if exp_label is not None and sig_height is not None:
+        ctrl_indices = [i for i, l in enumerate(labels) if l != exp_label]
+        ctrl_labels = [labels[i] for i in ctrl_indices]
+        ctrl_colors = [colors[i] for i in ctrl_indices]
+        add_sig_line(ax, label_steps, p_vals, exp_label=exp_label,
+                     control_labels=ctrl_labels, control_colors=ctrl_colors,
+                     height=sig_height, alpha=sig_alpha, row_spacing=sig_row_spacing)
+
+    peak_labels_to_print = [lbl for lbl in (peak_label if isinstance(peak_label, list) else ([peak_label] if peak_label else [])) if lbl in labels]
+    for pl in peak_labels_to_print:
+        peak_idx = labels.index(pl)
+        peak_data = prob_tensors[peak_idx].numpy()  # [n_steps, n_runs]
+        peak_means = np.nanmean(peak_data, axis=-1)
+        peak_step_idx = int(np.nanargmax(peak_means))
+        peak_step = label_steps[peak_step_idx]
+        print(f"\nPeak timestep for '{pl}': step {peak_step}")
+        print(f"  {'Condition':<20} {'Mean':>8} {'SEM':>8} {'n':>5}")
+        for label, tensor in zip(labels, prob_tensors):
+            vals = tensor.numpy()[peak_step_idx, :]
+            n = int(np.sum(~np.isnan(vals)))
+            mean = float(np.nanmean(vals))
+            sem = float(np.nanstd(vals) / np.sqrt(n)) if n > 0 else float("nan")
+            print(f"  {label:<20} {mean:>8.4f} {sem:>8.4f} {n:>5}")
+
     if save_path is not None:
         fig.savefig(save_path)
     return fig, ax
 
-def main_single(agent: Literal["rand", "cur"], 
-                loc: list[int] | None, 
-                ec: float, 
-                r: int, 
-                data: OccupancyData | None = None, 
-                ctrl: bool | None = False, 
-                project: str = "curious-george-omt", 
-                use_std: bool = True):
-    
+def main_single(agent: Literal["rand", "cur"],
+                loc: list[int] | None,
+                ec: float,
+                r: int,
+                data: OccupancyData | None = None,
+                ctrl: bool = False,
+                project: str = "curious-george-omt",
+                use_std: bool = True,
+                collapse_hd: bool = True):
+
     if data is None:
         data = fetch_data(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, ctrl=ctrl, project=project)
-    show_occ_heatmaps(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, data=data, ctrl=ctrl)
+    show_occ_heatmaps(agent_type=agent, with_obs=False, target_loc=loc, entropy_coef=ec, data=data, ctrl=ctrl, collapse_hd=collapse_hd)
     show_prob_roi(data=[data], colors=["blue"], labels=[agent], radius=r, use_std=use_std)
 
-def main_multiple(target_loc: list[int], radius: int, use_std: bool = True):
+def main_multiple(target_loc: list[int], radius: int, use_std: bool = True, sig_height: float = 1.05):
     save_path = f"../outputs/without_obs/roi_plot{target_loc[0]}{target_loc[1]}_official.png"
     ec = 0
+    default_ctrl_target_loc = [7, 11] # target location does not change the behavior of cur control (since no novel obj) or random (since actions are env independent)
+    # TODO: Very idiosyncratic
+    ctrl_val = False if target_loc == [14, 7] else None
 
-    data_rand = fetch_data(agent_type="rand", with_obs=False, target_loc=target_loc, entropy_coef=ec, ctrl=False, project="curious-george-ctrl")
-    data_cur_exp = fetch_data(agent_type="cur", with_obs=False, target_loc=target_loc, entropy_coef=ec, ctrl=None, project="curious-george-omt")
-    data_cur_ctrl = fetch_data(agent_type="cur", with_obs=False, target_loc=target_loc, entropy_coef=ec, ctrl=True, project="curious-george-ctrl")
+    data_rand = fetch_data(agent_type="rand", with_obs=False, target_loc=default_ctrl_target_loc, entropy_coef=ec, ctrl=False, project="curious-george-ctrl")
+    data_cur_exp = fetch_data(agent_type="cur", with_obs=False, target_loc=target_loc, entropy_coef=ec, ctrl=ctrl_val, project="curious-george-omt")
+    data_cur_ctrl = fetch_data(agent_type="cur", with_obs=False, target_loc=default_ctrl_target_loc, entropy_coef=ec, ctrl=True, project="curious-george-ctrl")
     data_list = [data_cur_exp, data_cur_ctrl, data_rand]
     labels = ["Curious", "Curious CTRL", "Random"]
 
-    show_prob_roi(data=data_list, colors=["purple", "turquoise", "blue"], labels=labels, radius=radius, save_path=save_path, use_std=use_std)
+    show_prob_roi(data=data_list, colors=["purple", "turquoise", "blue"], labels=labels, radius=radius, save_path=save_path, use_std=use_std, target_loc=target_loc,
+                  exp_label="Curious", sig_height=sig_height, sig_row_spacing=0.04, peak_label=["Curious", "Curious CTRL", "Random"])
 
 # %% [markdown]
 # ## Novel Object
@@ -172,9 +213,10 @@ R = 3
 # %%
 # Probabilities Plot
 if __name__ == "__main__":
-    LOC = [7, 11]
+    LOC = [14, 7]
     USE_STD = False
-    main_multiple(target_loc=LOC, radius=R, use_std=USE_STD)
+    SIG_HEIGHT = 0.25 # 0.35 for [7,2] and 0.45 for [7, 11]
+    main_multiple(target_loc=LOC, radius=R, use_std=USE_STD, sig_height=0.25)
 
 # %%
 # CURIOUS

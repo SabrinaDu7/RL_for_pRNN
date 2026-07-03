@@ -26,11 +26,13 @@ import matplotlib.pyplot as plt
 import torch
 from typing import Literal, Sequence
 from pathlib import Path
+import numpy as np
 from scripts.wandb_data import (
     fetch_subroom_counts,
     plot_subroom_percentage,
     save_subroom_data,
     load_subroom_data,
+    pairwise_ttest,
     SubroomData,
 )
 
@@ -120,6 +122,39 @@ def show_subroom_percentage(
     return fig, ax
 
 
+def print_subroom_dfs(
+    data_list: list[SubroomData],
+    labels: list[str],
+    step_range: tuple[int, int] | None = None,
+    room_labels: list[str] | None = None,
+) -> None:
+    """Print Welch's t-test df per room for all group pairs."""
+    # Reorder rooms to match plot_subroom_percentage: (1,2,3,4) → (1,3,4,2)
+    tensors = [d.subroom_ids[:, :, [0, 2, 3, 1]] for d in data_list]
+    n_rooms = tensors[0].shape[-1]
+    rooms = room_labels or [f"Room {i + 1}" for i in range(n_rooms)]
+
+    def per_run_means(tensor):
+        data = tensor.numpy()
+        if step_range is not None:
+            data = data[:, step_range[0]:step_range[1], :]
+        row_totals = np.nansum(data, axis=-1, keepdims=True)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            pct = np.where(row_totals > 0, data / row_totals * 100, np.nan)
+        return np.nanmean(pct, axis=1)  # (n_runs, n_rooms)
+
+    run_means = [per_run_means(t) for t in tensors]
+
+    from itertools import combinations
+    for (i, li), (j, lj) in combinations(enumerate(labels), 2):
+        pairs = [(run_means[i][:, r], run_means[j][:, r]) for r in range(n_rooms)]
+        print(f"\nWelch df — {li} vs {lj}:")
+        _, dfs, t_stats = pairwise_ttest(pairs, pair_labels=rooms)
+        print(f"  {'Room':<12} {'t':>8} {'df':>8}")
+        for room, t, df in zip(rooms, t_stats, dfs):
+            print(f"  {room:<12} {t:>8.4f} {df:>8.2f}")
+
+
 def main_single(
     agent: Literal["rand", "cur"],
     ec: float,
@@ -175,6 +210,7 @@ def main_multiple(
         step_range=step_range,
         save_path=save_path,
     )
+    print_subroom_dfs(data_list, labels=agents, step_range=step_range)
 
 
 # %% [markdown]
