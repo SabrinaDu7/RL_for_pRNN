@@ -1,12 +1,9 @@
-import torch
-
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.core import ObservationWrapper, Wrapper
 from gymnasium.wrappers.record_video import RecordVideo
 from minigrid.wrappers import *
 from functools import partial
-from jaxtyping import Integer
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -48,15 +45,6 @@ def get_env_name(env):
         else:
             break
     return " -> ".join(names)
-
-def get_subroom_id(agent_pos: Integer[torch.Tensor, "T 2"], subroom_size: int) -> Integer[torch.Tensor, "B"]:
-    """Helper method to get the subroom ID based on agent position and subroom size."""
-
-    col = (agent_pos[:, 0] > subroom_size).long()
-    row = (agent_pos[:, 1] > subroom_size).long()
-
-    return row * 2 + col + 1
-
 
 def make_env(
     env_key: str,

@@ -11,8 +11,10 @@ from prnn.utils import (
     load_pN,
 )
 
-import RLutils
-from RLutils import DEVICE, ACModel, ACModelSR, PredictivePPOAlgo, ActorCriticAgent
+from curious_george.common import DEVICE
+from curious_george.models import ACModel, ACModelSR
+from curious_george.rl.algo import PredictivePPOAlgo
+from curious_george.rl.agent import ActorCriticAgent
 from utils import (
     load_statedict_from_acmodel_status,
     StatusCkptKeys,
@@ -213,7 +215,7 @@ def get_agent(
 
 def save_status(status, model_dir):
     path = get_status_path(model_dir)
-    RLutils.create_folders_if_necessary(path)
+    create_folders_if_necessary(path)
     torch.save(status, path)
 
 

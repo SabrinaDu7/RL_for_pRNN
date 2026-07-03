@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-import RLutils
+from curious_george.rl.format import get_obss_preprocessor
 
 
 
@@ -64,7 +64,7 @@ class ActorCriticAgent:
 
         for t in range(tsteps):
             # obs_tensor = torch.tensor(obs[aa]['image'], device=self.device)
-            _, preprocess_obss = RLutils.get_obss_preprocessor(env.observation_space)
+            _, preprocess_obss = get_obss_preprocessor(env.observation_space)
             preprocessed_obs = preprocess_obss([obs[t]], device=self.device)
             with torch.no_grad():
                 dist, _ = self.acmodel(preprocessed_obs, SR=SR)

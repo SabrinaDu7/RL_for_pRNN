@@ -6,9 +6,9 @@ import plotly.graph_objects as go
 from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 
-from RLutils.format import get_obss_preprocessor
-from RLutils.other import DEVICE
-from RLutils.algo import PredictivePPOAlgo
+from curious_george.rl.format import get_obss_preprocessor
+from curious_george.common import DEVICE
+from curious_george.rl.algo import PredictivePPOAlgo
 
 SCALES = {
     "viridis": plotly.colors.sequential.Viridis,

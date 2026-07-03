@@ -12,8 +12,8 @@ from torch_ac.utils import DictList
 from scipy.spatial.distance import cosine
 
 from prnn.utils import PredictiveNet
-from RLutils.env import get_subroom_id
-from RLutils.other import mean_by_action
+from curious_george.envs.access import get_subroom_id
+from curious_george.common import mean_by_action
 
 def check_large_jump(loc0: tuple, loc1: tuple):
     x0, y0 = loc0
