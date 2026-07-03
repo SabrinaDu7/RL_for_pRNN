@@ -4,11 +4,13 @@ from dotenv import load_dotenv
 from utils.enums import AgentType
 from prnn.utils import MinigridEnvNames
 
-load_dotenv()  # Load variables from .env
-
 def get_env_var(var_name: str) -> str:
     """Return the value of an environment variable or raise if missing/empty.
+
+    Loads .env lazily on first use (idempotent) so importing this module has
+    no side effects.
     """
+    load_dotenv()  # Load variables from .env
     value = os.getenv(var_name)
     if value is None or str(value).strip() == "":
         raise EnvironmentError(

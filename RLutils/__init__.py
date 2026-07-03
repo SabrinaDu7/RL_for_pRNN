@@ -8,7 +8,6 @@ from RLutils.other import (
 
 # Agent classes and functions
 from RLutils.agent import (
-    Agent,
     ActorCriticAgent,
 )
 
@@ -17,8 +16,6 @@ from RLutils.algo import (
     compare_trajs,
     get_dist_travelled,
     PredictivePPOAlgo,
-    thetaPPOalgo,
-    SingleThetaPPOalgo,
 )
 
 # Analysis classes and functions
@@ -51,17 +48,8 @@ from RLutils.format import (
 # Model classes and functions
 from RLutils.model import (
     init_params,
-    RecACModel,
     ACModel,
     ACModelSR,
-    ACModelTheta,
-    ACModelThetaShared,
-    ACModelThetaSingle,
-)
-
-# Place cells class
-from RLutils.pc import (
-    FakePlaceCells,
 )
 
 # Storage functions
@@ -87,13 +75,10 @@ from RLutils.storage import (
 
 __all__ = [
     # Agent
-    "Agent",
     "ActorCriticAgent",
     # Algo
     "compare_trajs",
     "PredictivePPOAlgo",
-    "thetaPPOalgo",
-    "SingleThetaPPOalgo",
     # Analysis
     "mutual_info_policy",
     "plot_heatmaps",
@@ -115,19 +100,13 @@ __all__ = [
     "Vocabulary",
     # Model
     "init_params",
-    "RecACModel",
     "ACModel",
     "ACModelSR",
-    "ACModelTheta",
-    "ACModelThetaShared",
-    "ACModelThetaSingle",
     # Other
     "DEVICE",
     "seed",
     "synthesize",
     "grid_to_pixel_coords",
-    # PC
-    "FakePlaceCells",
     # Storage
     "create_folders_if_necessary",
     "get_storage_dir",

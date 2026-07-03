@@ -20,20 +20,14 @@ exp:
     start_rand: True # Wether to randomize the agent start position
     # wrapper: 
     #   _target_: minigrid.wrappers.RGBImgPartialObsWrapper_HD # Environment wrapper as python class
-    input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'PC', 'CANN', 'PC+PO', 'pRNN', 'pRNN+PO','CANN+PO', 'CANN_norecurrence']
+    input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'pRNN', 'pRNN+PO']
     exp_name: omt
     seed: 2 # Random seed
     pRNN: True # Wether to use pRNN for spatial input
-    PC: False # Wether to use fake place cells for spatial input
-    CANN: False # Wether to use CANN for spatial input
-    recurrence: 1 # Wether to use RNN for memory (1 = don't use, other number = number of recurrent steps)
-    with_obs: False # Wether to include visual input (in case of recurrency the one that would bypass RNN)
+    with_obs: False # Wether to include visual input
     with_HD: True
     rgb: True # Is visual input RGB?
     intrinsic: False # Use intrinsic rewards?
-    theta: False
-    single_theta: False
-    shared_weights: False
     random_action_agent: False # If True, overrides all PPO algorithms and chooses actions randomly. Used as control
     curious_agent: True # Use pRNN loss as reward ?
     random_init_control: False # If True, never update parameters i.e. test randomly initalized agent, usually as a control
@@ -60,13 +54,8 @@ rl:
     max_grad_norm: 0.5
     optim_eps: 1e-8 # Adam and RMSprop optimizer epsilon
     optim_alpha: 0.99 # RMSprop optimizer alpha
-    pc_sd: 4
-    pc_norm: True
-    cann_input_width: 100
     k_int: 1 # Coefficient for intrinsic reward. Only relevant if exp.intrinsic is True
     k_curious: 1 # Coeffecient for curious reward. Only relevant if exp.curious_agent is True
-    eval_type: rewards
-    value_type: single
 
 predNet:
     path: no_path/thcycRNN_5win_full-theta-s8 #example_nets_donut_long_prev_action/thRNN_5win_prevAct-PrevAct-s8
@@ -74,7 +63,6 @@ predNet:
     hiddensize: 500
     pRNNtype: thRNN_5win #AutoencoderPred_LN
     action_encoding: SpeedHD #OneHotHD, SpeedNextHD
-    cell: LayerNormRNNCell
     lr: 3e-3
     bptttrunc: 1e8
     weight_decay: 3e-3

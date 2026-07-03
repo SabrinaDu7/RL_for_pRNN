@@ -20,16 +20,9 @@ import RLutils
 from RLutils import (
     DEVICE,
     ACModel,
-    RecACModel,
     ACModelSR,
-    ACModelTheta,
-    ACModelThetaShared,
-    ACModelThetaSingle,
     ActorCriticAgent,
-    PredictivePPOAlgo, 
-    thetaPPOalgo, 
-    SingleThetaPPOalgo,
-    FakePlaceCells,
+    PredictivePPOAlgo,
     OnPolicyAnalysis,
     mutual_info_policy,
     get_agent,
@@ -37,15 +30,11 @@ from RLutils import (
 
 from prnn.utils import (
     PredictiveNet,
-    CANNnet,
-    LayerNormRNNCell,
-    RNNCell,
     RandomActionAgent,
-    load_pN, 
-    save_pN, 
+    load_pN,
+    save_pN,
 )
 from utils import load_statedict_from_acmodel_status
-RNNoptions = {"LayerNormRNNCell": LayerNormRNNCell, "RNNCell": RNNCell}
 
 class RL_Trainer(object):
     def __init__(self, params):
@@ -172,46 +161,7 @@ class RL_Trainer(object):
 
         # Load ACModel
         acmodel: nn.Module
-        if args.exp.recurrence - 1:
-            acmodel = RecACModel(
-                obs_space,
-                env.action_space,
-                RNNoptions[args.predNet.cell],
-                args.predNet.hiddensize,
-                args.exp.with_obs,
-                args.exp.rgb,
-                args.exp.with_HD,
-            )
-
-        elif args.exp.theta:
-            if args.exp.single_theta:
-                acmodel = ACModelThetaSingle(
-                    obs_space,
-                    env.action_space,
-                    args.predNet.hiddensize,
-                    predictiveNet.pRNN.k,
-                    args.rl.value_type,
-                )
-            elif args.exp.shared_weights:
-                acmodel = ACModelThetaShared(
-                    obs_space,
-                    env.action_space,
-                    args.predNet.hiddensize,
-                    predictiveNet.pRNN.k,
-                    args.rl.value_type,
-                )
-            else:
-                acmodel = ACModelTheta(
-                    obs_space,
-                    env.action_space,
-                    args.predNet.hiddensize,
-                    args.exp.with_obs,
-                    args.exp.rgb,
-                    predictiveNet.pRNN.k,
-                    args.rl.value_type,
-                )
-
-        elif args.exp.PC or args.exp.CANN or args.exp.pRNN:
+        if args.exp.pRNN:
             acmodel = ACModelSR(
                 obs_space,
                 env.action_space,
@@ -240,23 +190,6 @@ class RL_Trainer(object):
         acmodel.to(DEVICE)
         print("AC model loaded\n")
 
-        # Load place cells
-        if args.exp.PC:
-            PC = FakePlaceCells(
-                env, args.predNet.hiddensize, args.rl.pc_sd, args.exp.seed
-            )
-        else:
-            PC = None
-
-        if args.exp.CANN:
-            CANN = CANNnet(
-                env,
-                hidden_size=args.predNet.hiddensize,
-                mapsize=[env.width, env.height],
-            )
-        else:
-            CANN = None
-
         if args.predNet.train:
             assert args.predNet.seqdur > 0, "Set an appropriate seqdur"
         else:
@@ -265,98 +198,36 @@ class RL_Trainer(object):
         # Load algo
         pastSR = not ("prevAct" in str(predictiveNet.pRNN))
         print("pastSR:", pastSR)
-        if args.exp.single_theta:
-            algo = SingleThetaPPOalgo(
-                env,
-                acmodel,
-                predictiveNet,
-                DEVICE,
-                args.rl.frames,
-                args.rl.discount,
-                args.rl.lr,
-                args.rl.gae_lambda,
-                args.rl.entropy_coef,
-                args.rl.value_loss_coef,
-                args.rl.max_grad_norm,
-                args.exp.recurrence,
-                args.rl.optim_eps,
-                args.rl.ppo_clip_eps,
-                args.rl.ppo_epochs,
-                args.rl.ppo_batch_size,
-                preprocess_obss,
-                PC,
-                CANN,
-                args.predNet.train,
-                args.predNet.noisemean,
-                args.predNet.noisestd,
-                args.exp.intrinsic,
-                args.rl.k_int,
-                pastSR,
-                args.rl.eval_type,
-                args.rl.value_type,
-            )
-
-        elif args.exp.theta:
-            algo = thetaPPOalgo(
-                env,
-                acmodel,
-                predictiveNet,
-                DEVICE,
-                args.rl.frames,
-                args.rl.discount,
-                args.rl.lr,
-                args.rl.gae_lambda,
-                args.rl.entropy_coef,
-                args.rl.value_loss_coef,
-                args.rl.max_grad_norm,
-                args.exp.recurrence,
-                args.rl.optim_eps,
-                args.rl.ppo_clip_eps,
-                args.rl.ppo_epochs,
-                args.rl.ppo_batch_size,
-                preprocess_obss,
-                PC,
-                CANN,
-                args.predNet.train,
-                args.predNet.noisemean,
-                args.predNet.noisestd,
-                args.exp.intrinsic,
-                args.rl.k_int,
-                pastSR,
-                args.rl.eval_type,
-                args.rl.value_type,
-            )
-        else:
-            algo = PredictivePPOAlgo(
-                env,
-                acmodel,
-                predictiveNet,
-                DEVICE,
-                args.rl.frames,
-                args.rl.discount,
-                args.rl.lr,
-                args.rl.gae_lambda,
-                args.rl.entropy_coef,
-                args.rl.value_loss_coef,
-                args.rl.max_grad_norm,
-                args.exp.recurrence,
-                args.rl.optim_eps,
-                args.rl.ppo_clip_eps,
-                args.rl.ppo_epochs,
-                args.rl.ppo_batch_size,
-                preprocess_obss,
-                PC,
-                CANN,
-                args.predNet.train,
-                args.predNet.noisemean,
-                args.predNet.noisestd,
-                args.predNet.seqdur,
-                args.exp.intrinsic,
-                args.rl.k_int,
-                pastSR,
-                args.exp.curious_agent,
-                args.rl.k_curious,
-            )
+        algo = PredictivePPOAlgo(
+            env,
+            acmodel,
+            predictiveNet,
+            DEVICE,
+            args.rl.frames,
+            args.rl.discount,
+            args.rl.lr,
+            args.rl.gae_lambda,
+            args.rl.entropy_coef,
+            args.rl.value_loss_coef,
+            args.rl.max_grad_norm,
+            1,  # recurrence (recurrent path removed)
+            args.rl.optim_eps,
+            args.rl.ppo_clip_eps,
+            args.rl.ppo_epochs,
+            args.rl.ppo_batch_size,
+            preprocess_obss,
+            None,  # place_cells
+            None,  # cann
+            args.predNet.train,
+            args.predNet.noisemean,
+            args.predNet.noisestd,
+            args.predNet.seqdur,
+            args.exp.intrinsic,
+            args.rl.k_int,
+            pastSR,
+            args.exp.curious_agent,
+            args.rl.k_curious,
+        )
 
         if StatusCkptKeys.OPTIMIZER_STATE.value in status:
             load_statedict_from_acmodel_status(
@@ -487,7 +358,7 @@ class RL_Trainer(object):
                     args.logging.analysis_interval > 0
                     and update % args.logging.analysis_interval == 0
                 ):
-                    if prnn_eval_bool and not args.exp.CANN:
+                    if prnn_eval_bool:
                         predictiveNet.pRNN.to("cpu")
 
                         if args.exp.onpolicy_prnn_eval:

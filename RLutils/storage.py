@@ -14,14 +14,12 @@ from prnn.utils import (
 import RLutils
 from RLutils import DEVICE, ACModel, ACModelSR, PredictivePPOAlgo, ActorCriticAgent
 from utils import (
-    get_ckpt_env_vars, 
-    load_statedict_from_acmodel_status, 
+    load_statedict_from_acmodel_status,
     StatusCkptKeys,
     AgentType,
 )
 from prnn.utils import save_pN
 
-PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars()
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 
 def create_folders_if_necessary(path):
@@ -67,7 +65,7 @@ def get_status(model_dir):
     return torch.load(path, map_location=DEVICE, weights_only=False)
 
 
-def get_pN(args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt: str = PRNN_CKPT) -> PredictiveNet:
+def get_pN(args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt: str) -> PredictiveNet:
     predictiveNet = PredictiveNet(
         env,
         hidden_size=args.predNet.hiddensize,
@@ -149,14 +147,14 @@ def get_algo(args,
         entropy_coef=args.rl.entropy_coef,
         value_loss_coef=args.rl.value_loss_coef,
         max_grad_norm=args.rl.max_grad_norm,
-        recurrence=args.exp.recurrence,
+        recurrence=1,
         adam_eps=args.rl.optim_eps,
         clip_eps=args.rl.ppo_clip_eps,
         epochs=args.rl.ppo_epochs,
         batch_size=args.rl.ppo_batch_size,
         preprocess_obss=preprocess_obss,
-        place_cells=args.exp.PC,
-        cann=args.exp.CANN,
+        place_cells=None,
+        cann=None,
         train_pN=args.predNet.train,
         noise_mu=args.predNet.noisemean,
         noise_std=args.predNet.noisestd,
