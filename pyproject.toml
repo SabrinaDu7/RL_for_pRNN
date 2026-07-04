@@ -3,7 +3,7 @@ name = "rl-for-prnn"
 version = "0.1.0"
 description = "pRNN embodied by curiosity-driven RL agents"
 readme = "README.md"
-requires-python = ">=3.9, <=3.10.15"
+requires-python = ">=3.10, <=3.10.15"
 license = "MIT"
 authors = [
     { name = "Daniel Levenstein", email = "daniel.levenstein@mila.quebec" },
@@ -29,7 +29,6 @@ dependencies = [
     "importlib-metadata>=7.0.1",
     "pyparsing>=3.1.1",
     "zipp>=3.17.0",
-    "wandb[media]>=0.21.3",
     "hydra-core>=1.3.2",
     "torch-ac>=1.4.0",
     "plotly>=6.3.0",
@@ -42,6 +41,7 @@ dependencies = [
     "pyarrow>=21.0.0",
     "nbformat>=5.10.4",
     "pypatree>=0.4.0",
+    "wandb==0.28.0",
 ]
 
 [dependency-groups]
