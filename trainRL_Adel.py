@@ -402,7 +402,13 @@ class RL_Trainer(object):
 
 
                     if args.exp.analyze_agent_behav:
-                        opa = OnPolicyAnalysis(algo, timesteps=25000)
+                        # Reuse the training rollout (free) unless the random-
+                        # action path is active, which never fills the buffers.
+                        opa = OnPolicyAnalysis(
+                            algo,
+                            timesteps=25000,
+                            reuse_last_rollout=not args.exp.random_action_agent,
+                        )
                         if self.wandb_log:
                             wandb.log({"MI_policy_eval": opa.mi})
                             wandb.log({"OPA_Advantages": wandb.Plotly(opa.plot_advantages())})

@@ -342,7 +342,24 @@ class OnPolicyAnalysis:
     Class for analyzing the on-policy representations of the environment learned or used by RL agent.
     """
 
-    def __init__(self, PPOalgo=None, timesteps=10000, **kwargs):
+    def __init__(self, PPOalgo=None, timesteps=10000, reuse_last_rollout=False, **kwargs):
+        """With reuse_last_rollout=True, analyze the rollout already sitting in
+        PPOalgo's buffers (the last collect_experiences) instead of building a
+        fresh algo and collecting `timesteps` new steps - this is free, whereas
+        the fresh collection used to dominate analysis wall-clock time.
+        """
+        if reuse_last_rollout:
+            assert PPOalgo is not None, "reuse_last_rollout requires PPOalgo"
+            assert hasattr(PPOalgo, "last_joint_dist"), (
+                "PPOalgo has no collected rollout yet - call collect_experiences first"
+            )
+            self.algo = PPOalgo
+            self.timesteps = PPOalgo.num_frames
+            self.joint_probs = PPOalgo.last_joint_dist
+            self.mi = mutual_info_policy(self.joint_probs)
+            self._compute_deltas()
+            return
+
         self.timesteps = timesteps
         # def __init__(self, env, acmodel, predictiveNet=None, device=None, num_frames=None, discount=0.99, lr=0.001,
         #              gae_lambda=0.95, entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=1,
@@ -399,6 +416,9 @@ class OnPolicyAnalysis:
         _, logs = self.algo.collect_experiences()
         self.joint_probs = logs["joint_dist"]
         self.mi = mutual_info_policy(self.joint_probs)
+        self._compute_deltas()
+
+    def _compute_deltas(self):
         self.deltas = (
             (
                 self.algo.advantages[:-1]

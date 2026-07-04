@@ -32,9 +32,18 @@ reward-alignment fix behind a flag, default `legacy`). Baselines in
   {sRSA, SWdist, SI} (SWdist was wandb-only before). Fixed 2 pre-existing
   `test_ckpts` failures: the stub said `with_obs=True` but the `.env`
   checkpoints are from the noObs config.
-- **Phase 4** (next): perf - OnPolicyAnalysis reuse, vectorized
-  get_obs_at_loc_fast swap, batched np->torch, batched getTestTrial predict
-  (direct pN.pRNN 4-D call, NOT predict(batched=True)).
+- **Phase 4** (done): `OnPolicyAnalysis(reuse_last_rollout=True)` analyzes
+  the training rollout already in the algo's buffers instead of collecting
+  25,000 fresh steps - measured 0.8ms vs ~48s (CPU) per analysis interval;
+  trainRL uses it except on the random-agent path (whose buffers are never
+  filled). `quantifyObjectLearning` now uses the vectorized
+  `get_obs_at_loc_fast` (looped versions kept solely as the tests' reference
+  oracle); OMT outputs still bitwise-equal to pre-refactor.
+  `subroom_size` cached out of the per-step hot loop. Deferred to Phase 5:
+  batching getTestTrial's B predict calls (needs the direct pN.pRNN 4-D
+  call machinery Phase 5 builds anyway); `preprocess_images` micro-opt
+  skipped (uint8->float conversion forces the copy regardless; the real fix
+  is batched collection).
 - **Phase 5** (pending): [T,B] buffer/collector, SyncVectorEnv, B=1 default.
 - **Phase 6** (pending): delete RLutils shim, migrate scripts/, docs.
 

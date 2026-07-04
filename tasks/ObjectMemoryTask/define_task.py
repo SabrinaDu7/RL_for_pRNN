@@ -374,8 +374,8 @@ class ObjectMemoryTask:
         obs_np = self.pN_post.env_shell.pred2np(obs_pred)
         obs_notrain_np = self.pN_post.env_shell.pred2np(obs_pred_notrain)
         
-        locobs, inviewtimes, viewcoords = get_obs_at_loc(obs_np, self.new_obj_pos, pos, HD)
-        locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc(obs_notrain_np, self.new_obj_pos, pos, HD)
+        locobs, inviewtimes, viewcoords = get_obs_at_loc_fast(obs_np, self.new_obj_pos, pos, HD)
+        locobs_notrain, inviewtimes, viewcoords = get_obs_at_loc_fast(obs_notrain_np, self.new_obj_pos, pos, HD)
 
         if locobs is None:
             print("No views of the goal or control location were found during the test trial.")
@@ -389,8 +389,8 @@ class ObjectMemoryTask:
 
         ctl_mods = []
         for control_location in ctrl_locs:
-            conobs, _, _ = get_obs_at_loc(obs_np, control_location, pos, HD)
-            conobs_notrain, _, _ = get_obs_at_loc(obs_notrain_np, control_location, pos, HD)
+            conobs, _, _ = get_obs_at_loc_fast(obs_np, control_location, pos, HD)
+            conobs_notrain, _, _ = get_obs_at_loc_fast(obs_notrain_np, control_location, pos, HD)
 
             if conobs is not None:
                 controlloc_deltaobs = conobs - conobs_notrain

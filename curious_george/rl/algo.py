@@ -112,6 +112,7 @@ class PredictivePPOAlgo:
         assert pastSR ^ ("Next" in str(env.encodeAction))
 
         self.adapter = PRNNAdapter(self.pN, self.device, pastSR) if self.pN else None
+        self._subroom_size = subroom_size(self.env)
 
         if hasattr(self.env, "loc_mask"):
             self.loc_mask = self.env.loc_mask
@@ -233,8 +234,8 @@ class PredictivePPOAlgo:
             self.obss.append(self.obs)
             self.obs = obs
             self.locs.append(self.loc)
-            if subroom_size(self.env) is not None:
-                self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), subroom_size(self.env)).item())
+            if self._subroom_size is not None:
+                self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self._subroom_size).item())
             self.loc = loc
 
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
@@ -404,6 +405,9 @@ class PredictivePPOAlgo:
         }
         logs.update(new_logs)
 
+        # Stash for analysis that reuses this rollout (OnPolicyAnalysis)
+        self.last_joint_dist = joint_probabilities
+
         self.log_return = []
         self.log_reshaped_return = []
         self.log_num_frames = []
@@ -477,8 +481,8 @@ class PredictivePPOAlgo:
             # Collect location info
             locs_array = state["agent_pos"][:-1, :] # Shape np.ndarray [seqdur, 2]
             loc_list_current = [tuple(thisloc) for thisloc in locs_array]
-            if subroom_size(self.env) is not None:
-                subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), subroom_size(self.env)))
+            if self._subroom_size is not None:
+                subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self._subroom_size))
 
             init_pos = state["agent_pos"][0, :]
             final_pos = state["agent_pos"][-1, :]
