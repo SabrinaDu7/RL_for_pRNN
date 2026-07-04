@@ -135,6 +135,9 @@ class PRNNAdapter:
 
         return MSEs
 
+    def make_batched_tracker(self, num_envs: int) -> "BatchedSRTracker":
+        return BatchedSRTracker(self.pN, self.device, num_envs)
+
     def train_on_episode(self, images_tensor, hd_tensor, act_np: np.ndarray, last_obs) -> None:
         """One pRNN gradient step on a single episode segment."""
         obs_for_pN = [
@@ -148,3 +151,74 @@ class PRNNAdapter:
         act = act.to(self.device)
         _, _, _ = self.pN.trainStep(obs, act)
         self.pN.numTrainingEpochs += 1
+
+
+class BatchedSRTracker:
+    """Stateful batched equivalent of PredictiveNet.predict_single.
+
+    Steps B independent pRNN streams in one forward pass by calling the RNN
+    layer directly with its `batched=True` 4-D layout (input (k+1, T=1, D, B),
+    trailing batch dim) - `pRNN.forward(single=True)` does not forward the
+    `batched` flag, so this is the sanctioned workaround (same pattern as
+    scripts/analysis_OMT.py; predict(batched=True) has a known permutation
+    bug and is NOT used).
+
+    Per-env phase counters and hidden states allow envs to reset at different
+    times. With trainNoiseMeanStd=(0,0) a batched step is exactly equal to B
+    serial predict_single calls (see tests/test_batched_tracker.py); with
+    noise the streams are distributionally identical but consume the RNG in a
+    different order than serial stepping.
+
+    Only used for num_envs > 1; the B=1 path keeps using predict_single so
+    the golden fixture is untouched.
+    """
+
+    def __init__(self, pN: PredictiveNet, device: torch.device, num_envs: int):
+        assert not hasattr(pN.pRNN, "k") or pN.pRNN.k == 0, (
+            "BatchedSRTracker supports the masked (thRNN_*win) nets; "
+            "theta-cycle nets need the k+1 window rollout."
+        )
+        self.pN = pN
+        self.device = device
+        self.B = num_envs
+        self.hidden_size = pN.pRNN.rnn.cell.hidden_size
+        self.in_mask = np.asarray(pN.pRNN.inMask, dtype=np.float32)
+        self.act_mask = np.asarray(pN.pRNN.actMask, dtype=np.float32)
+        self.phase_k = pN.phase_k
+        self.reset_all()
+
+    def reset_all(self) -> None:
+        self.state = torch.zeros((self.B, 1, self.hidden_size), device=self.device)
+        self.phases = np.zeros(self.B, dtype=np.int64)
+
+    def reset_env(self, i: int) -> None:
+        self.state[i].zero_()
+        self.phases[i] = 0
+
+    def sr(self) -> torch.Tensor:
+        """Current SRs, shape (B, hidden_size) (trimmed to pN.hidden_size)."""
+        return self.state[:, 0, : self.pN.hidden_size]
+
+    def step(self, obs_x: torch.Tensor, act_x: torch.Tensor) -> torch.Tensor:
+        """One batched step. obs_x (B, obs_size), act_x (B, act_size) -
+        the single-timestep rows produced by env2pred per env.
+        Returns the new SRs, shape (B, pN.hidden_size).
+        """
+        pRNN = self.pN.pRNN
+        obs_m = torch.as_tensor(self.in_mask[self.phases], dtype=obs_x.dtype, device=self.device)
+        act_m = torch.as_tensor(self.act_mask[self.phases], dtype=act_x.dtype, device=self.device)
+        obs_x = obs_x * obs_m[:, None]
+        act_x = act_x * act_m[:, None]
+        self.phases = (self.phases + 1) % self.phase_k
+
+        x = torch.cat((obs_x, act_x), dim=1)          # (B, D)
+        x = x.permute(1, 0)[None, None]                # (1, 1, D, B)
+        noise = pRNN.generate_noise(
+            self.pN.trainNoiseMeanStd, (1, 1, self.hidden_size, self.B)
+        ).to(self.device)
+
+        with torch.no_grad():
+            _, state = pRNN.rnn(x, internal=noise, state=self.state, batched=True)
+        self.state = state[0].unsqueeze(1)             # (B, 1, H)
+        return self.sr()
+

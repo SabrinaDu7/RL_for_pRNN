@@ -29,6 +29,7 @@ from RLutils import (
 )
 from curious_george.world_model.device import on_device
 from curious_george.evaluation.spatial import evaluate_spatial_representation
+from curious_george.rl.collector import BatchedPredictivePPOAlgo
 
 from prnn.utils import (
     PredictiveNet,
@@ -200,8 +201,32 @@ class RL_Trainer(object):
         # Load algo
         pastSR = not ("prevAct" in str(predictiveNet.pRNN))
         print("pastSR:", pastSR)
-        algo = PredictivePPOAlgo(
-            env,
+
+        num_envs = args.exp.get("num_envs", 1)
+        if num_envs > 1:
+            extra_envs = [
+                RLutils.make_env(
+                    env_key=args.exp.env_name,
+                    input_type=args.exp.input_type,
+                    seed=args.exp.seed + 10000 + 1000 * (i + 1),
+                    act_enc=args.predNet.action_encoding,
+                    open_all_paths=False,
+                    subroom_size=args.exp.env_subroom_size,
+                    door_poss=args.exp.door_poss,
+                    agent_start_pos=agent_start_pos,
+                    agent_start_dir=agent_start_dir,
+                    agent_start_room=start_room,
+                )
+                for i in range(num_envs - 1)
+            ]
+            AlgoCls = BatchedPredictivePPOAlgo
+            first_arg = [env] + extra_envs
+        else:
+            AlgoCls = PredictivePPOAlgo
+            first_arg = env
+
+        algo = AlgoCls(
+            first_arg,
             acmodel,
             predictiveNet,
             DEVICE,
@@ -272,6 +297,7 @@ class RL_Trainer(object):
 
                 num_frames += logs["num_frames"]
                 update += 1 # Update represents the number of 2048 steps taken. One update is the collection of 2048 steps (as seen in collect experiences)
+                pbar.update(logs["num_frames"])  # was never updated before (bar stuck at 0%)
 
                 # Print logs
 

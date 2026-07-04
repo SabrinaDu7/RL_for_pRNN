@@ -23,6 +23,7 @@ exp:
     input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'pRNN', 'pRNN+PO']
     exp_name: omt
     seed: 2 # Random seed
+    num_envs: 1 # Parallel envs for rollout collection (1 = original serial path; >1 uses BatchedPredictivePPOAlgo)
     pRNN: True # Wether to use pRNN for spatial input
     with_obs: False # Wether to include visual input
     with_HD: True
