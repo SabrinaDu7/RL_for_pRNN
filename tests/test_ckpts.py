@@ -71,7 +71,7 @@ def _get_acmodel(acmodel_status_ckpt: str, env: FaramaMinigridShell, predNet: Pr
 
     @dataclass
     class ExperimentArgs:
-        with_obs: bool = True
+        with_obs: bool = False  # .env checkpoints are from the noObs config (matches Conf1_Adel exp.with_obs)
         rgb: bool = True
         with_HD: bool = True
 

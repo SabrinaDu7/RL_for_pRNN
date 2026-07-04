@@ -56,6 +56,8 @@ rl:
     optim_alpha: 0.99 # RMSprop optimizer alpha
     k_int: 1 # Coefficient for intrinsic reward. Only relevant if exp.intrinsic is True
     k_curious: 1 # Coeffecient for curious reward. Only relevant if exp.curious_agent is True
+    reward_alignment: legacy # [legacy, next_obs] - which obs the curiosity reward credits an action with.
+                             # legacy: pre-action obs (historical behavior); next_obs: the obs the action produced.
 
 predNet:
     path: no_path/thcycRNN_5win_full-theta-s8 #example_nets_donut_long_prev_action/thRNN_5win_prevAct-PrevAct-s8

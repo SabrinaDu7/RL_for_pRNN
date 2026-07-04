@@ -27,6 +27,8 @@ from RLutils import (
     mutual_info_policy,
     get_agent,
 )
+from curious_george.world_model.device import on_device
+from curious_george.evaluation.spatial import evaluate_spatial_representation
 
 from prnn.utils import (
     PredictiveNet,
@@ -225,6 +227,7 @@ class RL_Trainer(object):
             pastSR,
             args.exp.curious_agent,
             args.rl.k_curious,
+            reward_alignment=args.rl.reward_alignment,
         )
 
         if StatusCkptKeys.OPTIMIZER_STATE.value in status:
@@ -279,11 +282,13 @@ class RL_Trainer(object):
                         logs["num_frames_per_episode"]
                     )
 
-                    predictiveNet.plotSampleTrajectory(
-                            env=env,
-                            agent=ac_agent,
-                        ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
-                    predictiveNet.pRNN.to(DEVICE) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
+                    # plotSampleTrajectory runs predict on CPU tensors, so pin
+                    # the models to CPU for the call; placement is restored on exit.
+                    with on_device([predictiveNet, acmodel], "cpu"):
+                        predictiveNet.plotSampleTrajectory(
+                                env=env,
+                                agent=ac_agent,
+                            ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
 
                     if not args.exp.random_action_agent:
                         return_per_episode = RLutils.synthesize(
@@ -357,8 +362,6 @@ class RL_Trainer(object):
                     and update % args.logging.analysis_interval == 0
                 ):
                     if prnn_eval_bool:
-                        predictiveNet.pRNN.to("cpu")
-
                         if args.exp.onpolicy_prnn_eval:
                             analysisagent = (
                                 randomagent
@@ -366,17 +369,17 @@ class RL_Trainer(object):
                                 else ac_agent
                             )
 
-                            _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
+                            spatial_metrics = evaluate_spatial_representation(
+                                predictiveNet,
                                 env,
                                 analysisagent,
-                                trainDecoder=True,
-                                trainHDDecoder=False,
-                                saveTrainingData=False,
-                                bitsec=False,
-                                calculatesRSA=True,
                                 sleepstd=0.03,
                                 wandb_nameext="_onPolicy",
                             )
+                            print(f"onPolicy sRSA={spatial_metrics['sRSA']:.4f} "
+                                  f"SWdist={spatial_metrics['SWdist']:.4f}")
+                            if self.wandb_log:
+                                wandb.log({"SWdist_direct_onPolicy": spatial_metrics["SWdist"]})
 
                         if args.exp.offpolicy_prnn_eval:
                             analysisagent = (
@@ -385,20 +388,19 @@ class RL_Trainer(object):
                                 else randomagent
                             )
 
-                            _, _, _, sRSA = predictiveNet.calculateSpatialRepresentation(
+                            spatial_metrics = evaluate_spatial_representation(
+                                predictiveNet,
                                 env,
                                 analysisagent,
-                                trainDecoder=True,
-                                trainHDDecoder=False,
-                                saveTrainingData=False,
-                                bitsec=False,
-                                calculatesRSA=True,
                                 sleepstd=0.03,
                                 wandb_nameext="_offPolicy",
                             )
+                            print(f"offPolicy sRSA={spatial_metrics['sRSA']:.4f} "
+                                  f"SWdist={spatial_metrics['SWdist']:.4f}")
+                            if self.wandb_log:
+                                wandb.log({"SWdist_direct_offPolicy": spatial_metrics["SWdist"]})
 
-                        predictiveNet.pRNN.to(DEVICE)
-                        
+
                     if args.exp.analyze_agent_behav:
                         opa = OnPolicyAnalysis(algo, timesteps=25000)
                         if self.wandb_log:

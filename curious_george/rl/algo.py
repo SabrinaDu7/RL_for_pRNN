@@ -12,7 +12,7 @@ from torch_ac.utils import DictList
 from scipy.spatial.distance import cosine
 
 from prnn.utils import PredictiveNet
-from curious_george.envs.access import get_subroom_id
+from curious_george.envs.access import get_subroom_id, subroom_size, grid_shape
 from curious_george.common import mean_by_action
 from curious_george.world_model.adapter import PRNNAdapter
 from curious_george.rl.buffer import compute_gae
@@ -82,6 +82,7 @@ class PredictivePPOAlgo:
         pastSR=False,
         curious_agent=False,
         k_curious=1,
+        reward_alignment="legacy",
     ):
         # Store parameters
         print("Store parameters")
@@ -107,6 +108,7 @@ class PredictivePPOAlgo:
         self.pastSR = pastSR
         self.curious_agent = curious_agent
         self.k_curious = k_curious
+        self.reward_alignment = reward_alignment
         assert pastSR ^ ("Next" in str(env.encodeAction))
 
         self.adapter = PRNNAdapter(self.pN, self.device, pastSR) if self.pN else None
@@ -231,8 +233,8 @@ class PredictivePPOAlgo:
             self.obss.append(self.obs)
             self.obs = obs
             self.locs.append(self.loc)
-            if hasattr(self.env.env.unwrapped, "subroom_size"):
-                self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self.env.env.unwrapped.subroom_size).item())
+            if subroom_size(self.env) is not None:
+                self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), subroom_size(self.env)).item())
             self.loc = loc
 
             # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
@@ -296,6 +298,7 @@ class PredictivePPOAlgo:
                 done_indices=self.done_indices,
                 last_observations=self.last_observations,
                 num_frames=self.num_frames,
+                alignment=self.reward_alignment,
             )
             # Separate curious rewards by action type
             curious_by_action = mean_by_action(self.curious_rewards.cpu().numpy(), actions_preformatted)
@@ -366,7 +369,7 @@ class PredictivePPOAlgo:
         self.loc_history.pop(0)
         self.loc_history.append(self.loc_visits)
         loc_entropy_5 = entropy(np.sum(self.loc_history, axis=0), base=2)
-        self.loc_visits = np.zeros([self.env.env.grid.width, self.env.env.grid.height])
+        self.loc_visits = np.zeros(grid_shape(self.env))
 
         # Preprocess experiences
 
@@ -474,8 +477,8 @@ class PredictivePPOAlgo:
             # Collect location info
             locs_array = state["agent_pos"][:-1, :] # Shape np.ndarray [seqdur, 2]
             loc_list_current = [tuple(thisloc) for thisloc in locs_array]
-            if hasattr(self.env.env.unwrapped, "subroom_size"):
-                subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self.env.env.unwrapped.subroom_size))
+            if subroom_size(self.env) is not None:
+                subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), subroom_size(self.env)))
 
             init_pos = state["agent_pos"][0, :]
             final_pos = state["agent_pos"][-1, :]

@@ -4,17 +4,29 @@ import numpy as np
 from curious_george.rl.format import get_obss_preprocessor
 
 
-
 class ActorCriticAgent:
+    """Samples actions from the AC model using pRNN-derived SRs.
+
+    Device policy: the agent follows the AC model's parameters (`self.device`
+    is dynamic). `getObservations` aligns the pRNN to that device on entry and
+    leaves it there - it never moves models behind the caller's back. Callers
+    that need a specific device (e.g. CPU for numpy-based analysis) wrap the
+    call in `curious_george.world_model.device.on_device`.
+    """
+
     def __init__(self, action_space, acmodel, prnn, device, argmax: bool, pastSR=True):
         self.action_space = action_space
         self.acmodel = acmodel
         self.prnn = prnn
-        self.device = device
         self.pastSR = pastSR
         self.argmax = argmax
         self.name = "ActorCritic Agent"
         assert pastSR is not ("prevAct" in str(prnn.pRNN))
+
+    @property
+    def device(self) -> torch.device:
+        """The AC model's current device (moves with on_device contexts)."""
+        return next(self.acmodel.parameters()).device
 
     def next_SR(self, obs, act):
         obs = [obs, obs]
@@ -28,13 +40,13 @@ class ActorCriticAgent:
 
         return SR
 
-    def getObservations(self, 
-                        env, 
+    def getObservations(self,
+                        env,
                         tsteps,
-                        reset=True, 
+                        reset=True,
                         includeRender=False,
                         start_pos: tuple | None = None,
-                        start_dir: int | None = None, 
+                        start_dir: int | None = None,
                         **kwargs):
         self.prnn.pRNN.to(self.device)
         render = False
@@ -62,9 +74,8 @@ class ActorCriticAgent:
         SR = torch.zeros((1, self.prnn.hidden_size), device=self.device)
         state["SRs"] = SR.cpu().numpy()
 
+        _, preprocess_obss = get_obss_preprocessor(env.observation_space)
         for t in range(tsteps):
-            # obs_tensor = torch.tensor(obs[aa]['image'], device=self.device)
-            _, preprocess_obss = get_obss_preprocessor(env.observation_space)
             preprocessed_obs = preprocess_obss([obs[t]], device=self.device)
             with torch.no_grad():
                 dist, _ = self.acmodel(preprocessed_obs, SR=SR)
@@ -91,8 +102,6 @@ class ActorCriticAgent:
 
             if includeRender:
                 render[t + 1] = env.render(mode=None)
-
-        self.prnn.pRNN.to("cpu") # LANDMINE: WHERE SETTING TO CPU AGAIN???
 
         act = np.array(act).reshape(-1)
         return obs, act, state, render

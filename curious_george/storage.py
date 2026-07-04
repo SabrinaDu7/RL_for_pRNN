@@ -12,6 +12,7 @@ from prnn.utils import (
 )
 
 from curious_george.common import DEVICE
+from curious_george.envs.access import get_goal_loc as access_get_goal_loc
 from curious_george.models import ACModel, ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.agent import ActorCriticAgent
@@ -164,6 +165,7 @@ def get_algo(args,
         pastSR=pastSR,
         curious_agent=args.exp.curious_agent,
         k_curious=args.rl.k_curious,
+        reward_alignment=args.rl.get("reward_alignment", "legacy"),
     )
 
     if StatusCkptKeys.OPTIMIZER_STATE.value in status:
@@ -173,14 +175,7 @@ def get_algo(args,
 
 
 def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
-    env_farama_shell = env
-    env_rgb_wrapper = env_farama_shell.env
-    env_order_enforcing = env_rgb_wrapper.env
-    env_passive_checker = env_order_enforcing.env
-    env_goal = env_passive_checker.env
-
-    goal_loc = env_goal.goal_pos
-    return goal_loc
+    return access_get_goal_loc(env)
 
 
 def get_agent(

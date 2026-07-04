@@ -25,6 +25,8 @@ from RLutils import (
     ActorCriticAgent,
 )
 
+from curious_george.world_model.device import on_device, eval_mode
+from curious_george.envs.access import base_env
 from utils import StatusCkptKeys
 from prnn.utils import save_pN
 from prnn.utils.Shell import FaramaMinigridShell
@@ -124,6 +126,14 @@ class ObjectMemoryTask:
         self.testTrial = None  # Updated after getTestTrial() called
         self.objectLearning = None  # Updated after quantifyObjectLearning() called
 
+    def _agent_modules(self):
+        """Modules whose device placement tracks the agent: the trained pRNN
+        plus the AC model when the agent is an ActorCriticAgent."""
+        modules = [self.pN_post]
+        if hasattr(self.agent, "acmodel"):
+            modules.append(self.agent.acmodel)
+        return modules
+
     def trainDecoder(self):
         env = self.pN_control.EnvLibrary[0]
         _, _, decoder, sRSA = self.pN_control.calculateSpatialRepresentation(
@@ -133,8 +143,8 @@ class ObjectMemoryTask:
 
     def set_start_pos(self):
         if not self.args.tasks.testing.start_random:
-            self.env_orig.env.unwrapped.agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
-            self.env_orig.env.unwrapped.agent_start_dir = np.random.randint(0, 4)
+            base_env(self.env_orig).agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
+            base_env(self.env_orig).agent_start_dir = np.random.randint(0, 4)
 
     def trainNovelObject(
         self,
@@ -217,13 +227,13 @@ class ObjectMemoryTask:
                 with torch.no_grad():
                     # Plotting Trajectories
                     if self.traj_fig:
-                        self.pN_post.pRNN.to("cpu") # LANDMINE: pRNN's hidden state must be on cpu for plotSampleTrajectory
-                        self.pN_post.plotSampleTrajectory(
-                                env=self.env_novel,
-                                agent=self.agent,
-                            ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
-
-                        self.pN_post.pRNN.to(device) # LANDMINE: plotSampleTraj calls agent's getObs, which for some reason sets pRNN to cpu!!!
+                        # plotSampleTrajectory runs predict on CPU tensors;
+                        # placement is restored on exit.
+                        with on_device(self._agent_modules(), "cpu"):
+                            self.pN_post.plotSampleTrajectory(
+                                    env=self.env_novel,
+                                    agent=self.agent,
+                                ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
 
                     # Object Learning Analysis
                     testTrial = self.getTestTrial(n_trajs=self.trajs_test)
@@ -273,64 +283,56 @@ class ObjectMemoryTask:
         obs: Float[torch.Tensor, "T+1 X"] # NOTE: To check with Alex, what is X here? obs.shape=torch.Size([1, 257, 147])
         act: Float[torch.Tensor, "T A"] # Ex: act.shape=torch.Size([1, 256, 8]) for SpeedHD
         state: State
- 
-        # Store original device before moving to CPU
-        original_device = next(self.pN_post.pRNN.parameters()).device
 
-        # Setting to eval mode
-        self.pN_post.pRNN.eval()
-        self.pN_control.pRNN.eval()
-        
+        eval_modules = [self.pN_post, self.pN_control]
         if hasattr(self.agent, "acmodel"):
             assert isinstance(self.agent, ActorCriticAgent)
-            self.agent.acmodel.eval()
-            self.agent.argmax = True
-        
-        self.set_start_pos()
-        opa = OnPolicyAnalysis(self.algo, timesteps=int(T * 30))
-        if self.wandb_log:
-            wandb.log({"Eval/MI_policy": opa.mi})
-            wandb.log({"Eval/OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
-            wandb.log({"Eval/OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
+            eval_modules.append(self.agent.acmodel)
 
-            if self.args.tasks.analysis.occupancy :
-                wandb.log({"Eval/OPA_Occupancy": wandb.Plotly(opa.plot_occupancy())})
-        
-        # Ensure that pN's are on cpu since using numpy
-        self.pN_post.pRNN.to(torch.device("cpu"))
-        self.pN_control.pRNN.to(torch.device("cpu"))
-        
-        # Collect observation sequence in the environment
-        all_obs = torch.zeros((B, T + 1, view_size * view_size * C), dtype=torch.float32)
-        all_obs_pred = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
-        all_obs_pred_no_train = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
-
-        all_agent_pos = np.zeros((B, T + 1, 2), dtype=np.float32)
-        all_agent_dir = np.zeros((B, T + 1), dtype=np.int32)
-        all_renders = np.zeros((B, T + 1, render_size, render_size, C), dtype=np.uint8)
-
-        for n in range(B):
-
+        with eval_mode(eval_modules, agent=self.agent):
             self.set_start_pos()
-            obs, act, state, render = self.pN_post.collectObservationSequence(
-                env=self.env_orig, agent=self.agent, tsteps= T, includeRender=self.oL_fig # Critical self.env_orig
-            )
+            opa = OnPolicyAnalysis(self.algo, timesteps=int(T * 30))
+            if self.wandb_log:
+                wandb.log({"Eval/MI_policy": opa.mi})
+                wandb.log({"Eval/OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
+                wandb.log({"Eval/OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
 
-            # TODO: Ask if pN should start from the same random state for both trained and control nets. This is what happens internally if randInit=True
-            # Experimental decision
-            h_state = self.pN_post.pRNN.generate_noise((0, 0.03), (1, 1, 500))
-            h_state = self.pN_post.pRNN.rnn.cell.actfun(h_state)
+                if self.args.tasks.analysis.occupancy :
+                    wandb.log({"Eval/OPA_Occupancy": wandb.Plotly(opa.plot_occupancy())})
 
-            obs_pred, obs_next, _ = self.pN_post.predict(obs, act, state=h_state, randInit=False) # TODO: Ask if we should have state as an input??
-            obs_pred_notrain, _, _ = self.pN_control.predict(obs, act, state=h_state, randInit=False)
+            # The B-loop below runs predict on CPU tensors (numpy interop)
+            with on_device(eval_modules, "cpu"):
+                # Collect observation sequence in the environment
+                all_obs = torch.zeros((B, T + 1, view_size * view_size * C), dtype=torch.float32)
+                all_obs_pred = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
+                all_obs_pred_no_train = torch.zeros((B, T, view_size * view_size * C), dtype=torch.float32)
 
-            all_obs[n, :, :] = obs
-            all_obs_pred[n, :, :] = obs_pred
-            all_obs_pred_no_train[n, :, :] = obs_pred_notrain
-            all_agent_pos[n, :, :] = state["agent_pos"]
-            all_agent_dir[n, :] = state["agent_dir"]
-            if self.oL_fig:
-                all_renders[n, :, :, :, :] = np.stack(render, axis=0)
+                all_agent_pos = np.zeros((B, T + 1, 2), dtype=np.float32)
+                all_agent_dir = np.zeros((B, T + 1), dtype=np.int32)
+                all_renders = np.zeros((B, T + 1, render_size, render_size, C), dtype=np.uint8)
+
+                for n in range(B):
+
+                    self.set_start_pos()
+                    obs, act, state, render = self.pN_post.collectObservationSequence(
+                        env=self.env_orig, agent=self.agent, tsteps= T, includeRender=self.oL_fig # Critical self.env_orig
+                    )
+
+                    # TODO: Ask if pN should start from the same random state for both trained and control nets. This is what happens internally if randInit=True
+                    # Experimental decision
+                    h_state = self.pN_post.pRNN.generate_noise((0, 0.03), (1, 1, 500))
+                    h_state = self.pN_post.pRNN.rnn.cell.actfun(h_state)
+
+                    obs_pred, obs_next, _ = self.pN_post.predict(obs, act, state=h_state, randInit=False) # TODO: Ask if we should have state as an input??
+                    obs_pred_notrain, _, _ = self.pN_control.predict(obs, act, state=h_state, randInit=False)
+
+                    all_obs[n, :, :] = obs
+                    all_obs_pred[n, :, :] = obs_pred
+                    all_obs_pred_no_train[n, :, :] = obs_pred_notrain
+                    all_agent_pos[n, :, :] = state["agent_pos"]
+                    all_agent_dir[n, :] = state["agent_dir"]
+                    if self.oL_fig:
+                        all_renders[n, :, :, :, :] = np.stack(render, axis=0)
 
         objectTest = {
             "obs": all_obs,
@@ -340,14 +342,6 @@ class ObjectMemoryTask:
             "agent_dir": all_agent_dir,
             "render": all_renders if self.oL_fig else None,
         }
-
-        self.pN_post.pRNN.to(original_device)
-        self.pN_control.pRNN.to(original_device)
-        self.pN_post.pRNN.train()
-
-        if hasattr(self.agent, "acmodel"):
-            self.agent.acmodel.train()  # type: ignore[attr-defined]
-            self.agent.argmax = False # type: ignore
 
         self.testTrial = objectTest
         return objectTest
