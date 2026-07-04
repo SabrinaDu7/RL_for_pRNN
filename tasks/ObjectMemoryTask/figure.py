@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from prnn.utils import PredictiveNet, ActionEncodingsEnum, MinigridEnvNames
 from prnn.utils.Shell import FaramaMinigridShell
 from utils import get_env_var, AgentInputType
-from RLutils import get_pN, make_env, grid_to_pixel_coords
+from curious_george import get_pN, make_env, grid_to_pixel_coords
 
 RL_STORAGE = get_env_var("RL_STORAGE")
 DEVICE = torch.device("cpu")

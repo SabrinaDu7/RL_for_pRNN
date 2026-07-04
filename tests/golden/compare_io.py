@@ -11,8 +11,14 @@ import inspect
 import numpy as np
 import torch
 
-import RLutils
-from RLutils import ACModelSR, PredictivePPOAlgo, ActorCriticAgent
+try:
+    import curious_george as RLutils
+except ImportError:  # pre-refactor tree
+    import RLutils
+try:
+    from curious_george import ACModelSR, PredictivePPOAlgo, ActorCriticAgent
+except ImportError:  # pre-refactor tree
+    from RLutils import ACModelSR, PredictivePPOAlgo, ActorCriticAgent
 from prnn.utils import PredictiveNet, load_pN
 from utils import get_ckpt_env_vars, StatusCkptKeys
 

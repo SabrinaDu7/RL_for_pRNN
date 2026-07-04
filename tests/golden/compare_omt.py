@@ -11,7 +11,10 @@ from pathlib import Path
 
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from utils import get_ckpt_env_vars, AgentType, AgentInputType
-from RLutils import make_env
+try:
+    from curious_george import make_env
+except ImportError:  # pre-refactor tree
+    from RLutils import make_env
 from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
 
 OUT = sys.argv[1]

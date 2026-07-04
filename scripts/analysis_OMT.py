@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from prnn.utils import PredictiveNet, RandomActionAgent
 from prnn.utils.Shell import FaramaMinigridShell
-from RLutils import ActorCriticAgent
+from curious_george import ActorCriticAgent
 
 from tasks.ObjectMemoryTask.define_task import State
 

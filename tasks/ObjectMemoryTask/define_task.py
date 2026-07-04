@@ -8,7 +8,7 @@ from tqdm import tqdm
 from omegaconf import DictConfig, OmegaConf, open_dict
 from typing import TypedDict, Optional, Iterable
 
-from RLutils import (
+from curious_george import (
     save_status,
     get_pN,
     get_SR_acmodel,

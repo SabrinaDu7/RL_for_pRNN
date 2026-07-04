@@ -44,8 +44,18 @@ reward-alignment fix behind a flag, default `legacy`). Baselines in
   call machinery Phase 5 builds anyway); `preprocess_images` micro-opt
   skipped (uint8->float conversion forces the copy regardless; the real fix
   is batched collection).
-- **Phase 5** (pending): [T,B] buffer/collector, SyncVectorEnv, B=1 default.
-- **Phase 6** (pending): delete RLutils shim, migrate scripts/, docs.
+- **Phase 5** (done): `exp.num_envs` (default 1 = untouched serial path).
+  `BatchedSRTracker` (batched stateful predict_single equivalent via direct
+  `pN.pRNN.rnn(batched=True)` calls; proven exactly equal to serial streams
+  at zero noise incl. per-env resets) + `BatchedPredictivePPOAlgo` (lockstep
+  B-env collection, env-major flat layout, per-stream GAE). End-to-end runs
+  pass at num_envs=1 and 2. No upstream pRNN change was needed.
+- **Phase 6** (done): RLutils shim deleted; all imports (trainRL, tasks,
+  tests, scripts) migrated to curious_george; comparison harnesses stay
+  dual-compatible for worktree runs; pyproject updated;
+  docs/refactor_notes.md written (contracts, batched-mode constraints,
+  follow-up experiments). Final: 187 passed / 16 failed (all pre-existing
+  wandb_data/analysis_omt) / 7 deselected; golden fixture bitwise match.
 
 ## Verification evidence
 

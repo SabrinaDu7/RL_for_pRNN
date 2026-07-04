@@ -16,8 +16,8 @@ import wandb
 from tqdm import tqdm
 
 from utils import get_ckpt_env_vars, get_wandb_env_vars, StatusCkptKeys, AgentType
-import RLutils
-from RLutils import (
+import curious_george as RLutils
+from curious_george import (
     DEVICE,
     ACModel,
     ACModelSR,

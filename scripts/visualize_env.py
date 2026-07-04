@@ -26,7 +26,7 @@
 # %%
 from matplotlib import pyplot as plt
 
-from RLutils import make_env
+from curious_george import make_env
 from utils import AgentInputType
 
 from prnn.utils import (
@@ -40,7 +40,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # %%
-from RLutils import get_subroom_id
+from curious_george import get_subroom_id
 import torch
 
 def get_env_img(env_key: MinigridEnvNames):
@@ -100,7 +100,7 @@ from omegaconf import DictConfig
 import matplotlib.pyplot as plt
 
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
-from RLutils import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor, seed, DEVICE
+from curious_george import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor, seed, DEVICE
 from utils import get_ckpt_env_vars, AgentInputType, AgentType
 
 from scripts.analysis_OMT import collect_eval_trajectories, EvalTrajectoryConfig, EvalTrajectories

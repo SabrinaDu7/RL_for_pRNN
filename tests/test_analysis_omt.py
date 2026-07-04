@@ -14,7 +14,7 @@ from prnn.utils import (
 )
 from prnn.utils.Shell import FaramaMinigridShell
 
-from RLutils import make_env, get_pN, get_SR_acmodel, get_obss_preprocessor, ActorCriticAgent, seed, DEVICE
+from curious_george import make_env, get_pN, get_SR_acmodel, get_obss_preprocessor, ActorCriticAgent, seed, DEVICE
 from utils import get_ckpt_env_vars, AgentInputType, AgentType
 
 from scripts.analysis_OMT import (

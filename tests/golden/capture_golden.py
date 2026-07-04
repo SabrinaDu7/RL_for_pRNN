@@ -16,8 +16,8 @@ RNG consumption order) while the `reward_alignment=legacy` default holds.
 import numpy as np
 import torch
 
-import RLutils
-from RLutils import ACModelSR, PredictivePPOAlgo
+import curious_george as RLutils
+from curious_george import ACModelSR, PredictivePPOAlgo
 from prnn.utils import PredictiveNet
 
 SEED = 2

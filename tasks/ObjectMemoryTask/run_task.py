@@ -13,7 +13,7 @@ from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
 from utils import get_ckpt_env_vars, get_env_var, AgentType, AgentInputType
-from RLutils import make_env
+from curious_george import make_env
  
 # ===== Constants =====
 DEVICE = torch.device("cuda")

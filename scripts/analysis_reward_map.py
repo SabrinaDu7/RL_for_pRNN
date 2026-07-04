@@ -37,7 +37,7 @@ from prnn.utils import (
     ActionEncodingsEnum,
     MinigridEnvNames,
 )
-from RLutils import (
+from curious_george import (
     make_env,
     get_pN,
     get_SR_acmodel,
