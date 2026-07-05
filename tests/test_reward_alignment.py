@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from curious_george.rl.rewards import (
+from curious_george.rl.update.rewards import (
     align_to_next_obs,
     compute_curious_rewards,
 )

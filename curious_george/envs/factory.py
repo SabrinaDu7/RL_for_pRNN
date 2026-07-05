@@ -1,14 +1,17 @@
+import warnings
+from functools import partial
+
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.core import ObservationWrapper, Wrapper
 from gymnasium.wrappers.record_video import RecordVideo
 from minigrid.wrappers import *
-from functools import partial
-import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
+from prnn.utils import ActionEncodingsEnum, MinigridEnvNames
 from prnn.utils.Shell import FaramaMinigridShell
-from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
+
 from utils import AgentInputType
 
 wrappers = {
@@ -33,6 +36,7 @@ wrappers = {
 def episode_video_trigger(episode, vid_n_episodes):
     return episode % vid_n_episodes == 0
 
+
 def get_env_name(env):
     """Helper method to get the actual environment class name through the wrapper hierarchy."""
     temp_env = env
@@ -46,6 +50,7 @@ def get_env_name(env):
             break
     return " -> ".join(names)
 
+
 def make_env(
     env_key: str,
     input_type: str,
@@ -57,17 +62,19 @@ def make_env(
     wrapper=None,
     render_mode="rgb_array",
     act_enc: str | None = None,
-    **kwargs, # e.g., subroom_size and open_all_paths for FourRooms, size for LRoom
+    **kwargs,  # e.g., subroom_size and open_all_paths for FourRooms, size for LRoom
 ):
     assert input_type in AgentInputType
     assert env_key in MinigridEnvNames
     assert act_enc in ActionEncodingsEnum
 
-    env = gym.make(env_key, 
-                   agent_start_pos=agent_start_pos, 
-                   agent_start_dir=agent_start_dir,
-                   render_mode=render_mode,
-                   **kwargs)
+    env = gym.make(
+        env_key,
+        agent_start_pos=agent_start_pos,
+        agent_start_dir=agent_start_dir,
+        render_mode=render_mode,
+        **kwargs,
+    )
 
     if input_type == "Visual_FO":
         # Not RGB one here because we want RL agent to have as much info as possible
@@ -89,7 +96,7 @@ def make_env(
         # env = RecordVideo(env, video_folder=vid_folder, episode_trigger=lambda x: x%vid_n_episodes == 0)
         trigger_func = partial(episode_video_trigger, vid_n_episodes=vid_n_episodes)
         env = RecordVideo(env, video_folder=vid_folder, episode_trigger=trigger_func)
-    
+
     env.reset(seed=seed)
     env = FaramaMinigridShell(env, act_enc, env_key)
 
@@ -121,7 +128,7 @@ class HDObsWrapper(ObservationWrapper):
     Including direction information (HD)
     """
 
-    def __init__(self, env):
+    def __init__(self, env: FaramaMinigridShell):
         super().__init__(env)
         HD_space = spaces.Discrete(4)
         self.observation_space = spaces.Dict(

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from curious_george.rl.format import get_obss_preprocessor
+from curious_george.rl.collect.format import get_obss_preprocessor
 
 
 class ActorCriticAgent:

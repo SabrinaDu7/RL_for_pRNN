@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 
-from curious_george.rl.format import get_obss_preprocessor
+from curious_george.rl.collect.format import get_obss_preprocessor
 from curious_george.common import DEVICE
 from curious_george.rl.algo import PredictivePPOAlgo
 

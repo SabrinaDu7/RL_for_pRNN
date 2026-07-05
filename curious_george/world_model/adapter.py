@@ -153,6 +153,98 @@ class PRNNAdapter:
         self.pN.numTrainingEpochs += 1
 
 
+class SingleSRTracker:
+    """B=1 SR tracker delegating to the adapter's predict_single/reset_state
+    path - bitwise-identical to the historical serial rollout (same calls,
+    same RNG consumption order, including the randInit noise draw on reset).
+    """
+
+    def __init__(self, adapter: "PRNNAdapter", initial_obs):
+        self.adapter = adapter
+        self._initial = adapter.init_sr(initial_obs)
+
+    def initial_sr(self) -> torch.Tensor:  # (1, H)
+        return self._initial
+
+    def step(self, det_np: np.ndarray, pre_obss: list, post_obss: list) -> torch.Tensor:
+        obs = pre_obss[0] if self.adapter.pastSR else post_obss[0]
+        return self.adapter.next_sr(det_np, obs)
+
+    def reset_env(self, b: int, current_obs) -> torch.Tensor:
+        assert b == 0
+        self.adapter.reset_state()  # randInit noise draw, same order as before
+        return self.adapter.init_sr(current_obs)
+
+    def end_rollout(self) -> None:
+        self.adapter.reset_state()
+
+
+class NullSRTracker:
+    """No world model: SRs are empty tensors (shape (B, 0))."""
+
+    def __init__(self, device: torch.device, num_envs: int):
+        self.device = device
+        self.B = num_envs
+
+    def initial_sr(self) -> torch.Tensor:
+        return torch.zeros((self.B, 0), device=self.device)
+
+    def step(self, det_np, pre_obss, post_obss) -> torch.Tensor:
+        return torch.zeros((self.B, 0), device=self.device)
+
+    def reset_env(self, b: int, current_obs) -> torch.Tensor:
+        return torch.zeros((1, 0), device=self.device)
+
+    def end_rollout(self) -> None:
+        pass
+
+
+class BatchedSRTrackerShim:
+    """Adapts BatchedSRTracker to the shared tracker interface (B > 1).
+
+    Resets are to zero state/phase (not the serial path's randInit noise) -
+    a documented Phase 5 semantic; B>1 runs are not bit-comparable to B=1.
+    """
+
+    def __init__(self, adapter: "PRNNAdapter", num_envs: int):
+        assert adapter.pastSR, "batched mode currently supports pastSR nets only"
+        self.adapter = adapter
+        self.tracker = adapter.make_batched_tracker(num_envs)
+
+    def initial_sr(self) -> torch.Tensor:
+        return self.tracker.sr().clone()
+
+    def step(self, det_np: np.ndarray, pre_obss: list, post_obss: list) -> torch.Tensor:
+        obs_src = pre_obss if self.adapter.pastSR else post_obss
+        obs_rows, act_rows = [], []
+        for b, obs in enumerate(obs_src):
+            o_x, a_x = self.adapter.pN.env_shell.env2pred([obs, obs], det_np[b:b + 1])
+            obs_rows.append(o_x[:, 0, :])
+            act_rows.append(a_x[:, 0, :])
+        obs_x = torch.cat(obs_rows, dim=0).to(self.adapter.device)
+        act_x = torch.cat(act_rows, dim=0).to(self.adapter.device)
+        return self.tracker.step(obs_x, act_x).clone()
+
+    def reset_env(self, b: int, current_obs) -> torch.Tensor:
+        self.tracker.reset_env(b)
+        return torch.zeros((1, self.adapter.pN.hidden_size), device=self.adapter.device)
+
+    def end_rollout(self) -> None:
+        self.adapter.reset_state()
+        self.tracker.reset_all()
+
+
+def make_sr_tracker(adapter, device: torch.device, envs_obs: list):
+    """Pick the tracker for B environments: exact serial path at B=1,
+    batched stepping at B>1, empty SRs without a world model."""
+    B = len(envs_obs)
+    if adapter is None:
+        return NullSRTracker(device, B)
+    if B == 1:
+        return SingleSRTracker(adapter, envs_obs[0])
+    return BatchedSRTrackerShim(adapter, B)
+
+
 class BatchedSRTracker:
     """Stateful batched equivalent of PredictiveNet.predict_single.
 

@@ -1,11 +1,34 @@
-"""PPO update, extracted from PredictivePPOAlgo.update_parameters.
+"""Loss-agnostic policy update driver.
 
-Pure function of (model, optimizer, experiences, hyperparams) plus the
-`batch_num` counter that alternates the half-shifted minibatch indexing.
+Owns the epoch / minibatch / optimizer / grad-clip machinery (extracted from
+the old rl/ppo.py). Which objective is optimized is a `loss_fn` argument -
+see update/losses.py for available losses and their shared signature.
 """
+
+from dataclasses import dataclass
 
 import numpy as np
 import torch
+
+from curious_george.rl.update.losses import LOSSES, ppo_clip_loss
+
+
+@dataclass
+class UpdateLogs:
+    entropy: float
+    value: float
+    policy_loss: float
+    value_loss: float
+    grad_norm: float
+
+    def as_dict(self) -> dict:
+        return {
+            "entropy": self.entropy,
+            "value": self.value,
+            "policy_loss": self.policy_loss,
+            "value_loss": self.value_loss,
+            "grad_norm": self.grad_norm,
+        }
 
 
 def get_batches_starting_indexes(num_frames: int, recurrence: int, batch_size: int, batch_num: int):
@@ -33,23 +56,24 @@ def get_batches_starting_indexes(num_frames: int, recurrence: int, batch_size: i
     return batches_starting_indexes
 
 
-def ppo_update(
+def update_policy(
     acmodel,
     optimizer,
     exps,
     *,
+    loss_fn=ppo_clip_loss,
+    loss_kwargs: dict,
     epochs: int,
     batch_size: int,
     recurrence: int,
     num_frames: int,
-    clip_eps: float,
-    entropy_coef: float,
-    value_loss_coef: float,
     max_grad_norm: float,
     batch_num: int,
     update_params: bool = True,
-) -> tuple[dict, int]:
-    """Runs the PPO epochs over `exps` and returns (logs, new_batch_num)."""
+) -> tuple[UpdateLogs, int]:
+    """Runs the update epochs over `exps`; returns (logs, new_batch_num)."""
+    if isinstance(loss_fn, str):
+        loss_fn = LOSSES[loss_fn]
 
     for _ in range(epochs):
         # Initialize log values
@@ -80,38 +104,14 @@ def ppo_update(
                 # Compute loss
 
                 dist, value = acmodel(sb.obs, SR=sb.SR)
-
-                policy_entropy = dist.entropy().mean()
-
-                ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
-                surr1 = ratio * sb.advantage
-                surr2 = (
-                    torch.clamp(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
-                    * sb.advantage
-                )
-                policy_loss = -torch.min(surr1, surr2).mean()
-
-                value_clipped = sb.value + torch.clamp(
-                    value - sb.value, -clip_eps, clip_eps
-                )
-                surr1 = (value - sb.returnn).pow(2) # AC_model value estimate - target return
-                surr2 = (value_clipped - sb.returnn).pow(2) # ppo clipping
-                value_loss = torch.max(surr1, surr2).mean()
-
-                loss = (
-                    policy_loss
-                    - entropy_coef * policy_entropy
-                    + value_loss_coef * value_loss
-                )
+                loss, terms = loss_fn(dist, value, sb, **loss_kwargs)
 
                 # Update batch values
 
-                batch_entropy += policy_entropy.item() / torch.log(
-                    torch.tensor(2.0)
-                )  # convert nats to bits
-                batch_value += value.mean().item()
-                batch_policy_loss += policy_loss.item()
-                batch_value_loss += value_loss.item()
+                batch_entropy += terms.policy_entropy_bits
+                batch_value += terms.value_mean
+                batch_policy_loss += terms.policy_loss
+                batch_value_loss += terms.value_loss
                 batch_loss += loss
 
             # Update batch values
@@ -149,12 +149,12 @@ def ppo_update(
             log_value_losses.append(batch_value_loss)
             log_grad_norms.append(grad_norm)
 
-    logs = {
-        "entropy": np.mean(log_entropies),
-        "value": np.mean(log_values),
-        "policy_loss": np.mean(log_policy_losses),
-        "value_loss": np.mean(log_value_losses),
-        "grad_norm": np.mean(log_grad_norms),
-    }
+    logs = UpdateLogs(
+        entropy=float(np.mean(log_entropies)),
+        value=float(np.mean(log_values)),
+        policy_loss=float(np.mean(log_policy_losses)),
+        value_loss=float(np.mean(log_value_losses)),
+        grad_norm=float(np.mean(log_grad_norms)),
+    )
 
     return logs, batch_num

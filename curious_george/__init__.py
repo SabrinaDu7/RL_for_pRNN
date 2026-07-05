@@ -17,7 +17,7 @@ from curious_george.common import (
     grid_to_pixel_coords,
 )
 
-from curious_george.rl.agent import (
+from curious_george.rl.collect.agent import (
     ActorCriticAgent,
 )
 
@@ -46,7 +46,7 @@ from curious_george.envs.access import (
     get_subroom_id,
 )
 
-from curious_george.rl.format import (
+from curious_george.rl.collect.format import (
     get_obss_preprocessor,
     preprocess_images,
     preprocess_int,

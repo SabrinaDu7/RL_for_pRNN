@@ -1,29 +1,30 @@
 import os
-import torch
-import numpy as np
 from typing import Callable, Type
 
-from prnn.utils.Shell import FaramaMinigridShell
+import numpy as np
+import torch
 from prnn.utils import (
     PredictiveNet,
-    pRNNtypes,
     RandomActionAgent,
     load_pN,
+    pRNNtypes,
+    save_pN,
 )
+from prnn.utils.Shell import FaramaMinigridShell
 
 from curious_george.common import DEVICE
-from curious_george.envs.access import get_goal_loc as access_get_goal_loc
+from curious_george.envs.access import get_new_obj_pos as access_get_goal_loc
 from curious_george.models import ACModel, ACModelSR
+from curious_george.rl.collect.agent import ActorCriticAgent
 from curious_george.rl.algo import PredictivePPOAlgo
-from curious_george.rl.agent import ActorCriticAgent
 from utils import (
-    load_statedict_from_acmodel_status,
-    StatusCkptKeys,
     AgentType,
+    StatusCkptKeys,
+    load_statedict_from_acmodel_status,
 )
-from prnn.utils import save_pN
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
+
 
 def create_folders_if_necessary(path):
     if path == "":
@@ -68,7 +69,9 @@ def get_status(model_dir):
     return torch.load(path, map_location=DEVICE, weights_only=False)
 
 
-def get_pN(args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt: str) -> PredictiveNet:
+def get_pN(
+    args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt: str
+) -> PredictiveNet:
     predictiveNet = PredictiveNet(
         env,
         hidden_size=args.predNet.hiddensize,
@@ -82,16 +85,22 @@ def get_pN(args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt
         f=args.predNet.sparsity,
         wandb_log=args.logging.wandb_log,
     )
-    load_pN(model_ckpt_filepath=pRNN_ckpt, device=device, pRNNtype=args.predNet.pRNNtype, predictive_net=predictiveNet)
+    load_pN(
+        model_ckpt_filepath=pRNN_ckpt,
+        device=device,
+        pRNNtype=args.predNet.pRNNtype,
+        predictive_net=predictiveNet,
+    )
     return predictiveNet
 
 
-def get_SR_acmodel(args, 
-                   env_act_space, 
-                   obs_space: dict,
-                   device: torch.device,
-                   acmodel_status_ckpt: str | None = None) -> ACModelSR:
-
+def get_SR_acmodel(
+    args,
+    env_act_space,
+    obs_space: dict,
+    device: torch.device,
+    acmodel_status_ckpt: str | None = None,
+) -> ACModelSR:
     """
     Loads ACModel and Optimizer State Dictionaries from checkpoint.
     """
@@ -109,34 +118,31 @@ def get_SR_acmodel(args,
         return acmodel.to(device)
     else:
         status = torch.load(
-            acmodel_status_ckpt,
-            map_location=device,
-            weights_only=False
+            acmodel_status_ckpt, map_location=device, weights_only=False
         )
 
     if StatusCkptKeys.MODEL_STATE.value in status:
         acmodel.load_state_dict(status[StatusCkptKeys.MODEL_STATE.value])
     else:
-        print("Warning: model_state not found in acmodel status ckpt. Random agent was used. Returning fresh ACModel")
-    
+        print(
+            "Warning: model_state not found in acmodel status ckpt. Random agent was used. Returning fresh ACModel"
+        )
+
     return acmodel.to(device)
 
 
-def get_algo(args, 
-             env: FaramaMinigridShell, 
-             predictiveNet: PredictiveNet, 
-             acmodel: ACModelSR,
-             preprocess_obss: Callable,
-             AlgoClass: Type[PredictivePPOAlgo],
-             acmodel_status_ckpt: str,
-             device: torch.device) -> PredictivePPOAlgo:
-    
-    status = torch.load(
-        acmodel_status_ckpt,
-        map_location=device,
-        weights_only=False
-    )
-    
+def get_algo(
+    args,
+    env: FaramaMinigridShell,
+    predictiveNet: PredictiveNet,
+    acmodel: ACModelSR,
+    preprocess_obss: Callable,
+    AlgoClass: Type[PredictivePPOAlgo],
+    acmodel_status_ckpt: str,
+    device: torch.device,
+) -> PredictivePPOAlgo:
+    status = torch.load(acmodel_status_ckpt, map_location=device, weights_only=False)
+
     pastSR = not ("prevAct" in str(predictiveNet.pRNN))
     algo = AlgoClass(
         env=env,
@@ -179,16 +185,15 @@ def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
 
 
 def get_agent(
-        env: FaramaMinigridShell, 
-        agent_Type: AgentType, 
-        rand_act_prob: np.ndarray = RAND_ACT_PROBA,
-        prnn: PredictiveNet | None = None, 
-        device: torch.device | None = None,
-        ac_model: ACModel | None = None, 
-        argmax = False,
-        pastSR = True,
-    ) -> ActorCriticAgent | RandomActionAgent:
-
+    env: FaramaMinigridShell,
+    agent_Type: AgentType,
+    rand_act_prob: np.ndarray = RAND_ACT_PROBA,
+    prnn: PredictiveNet | None = None,
+    device: torch.device | None = None,
+    ac_model: ACModel | None = None,
+    argmax=False,
+    pastSR=True,
+) -> ActorCriticAgent | RandomActionAgent:
     if agent_Type == AgentType.RANDOM:
         agent = RandomActionAgent(env.action_space, rand_act_prob)
     elif agent_Type == AgentType.AC:
@@ -196,12 +201,14 @@ def get_agent(
         assert prnn is not None, "PredictiveNet must be provided for ActorCriticAgent"
         assert device is not None, "Device must be provided for ActorCriticAgent"
 
-        agent = ActorCriticAgent(action_space=env.action_space, 
-                                 acmodel=ac_model, 
-                                 prnn=prnn, 
-                                 device=device, 
-                                 argmax=argmax,
-                                 pastSR=pastSR)
+        agent = ActorCriticAgent(
+            action_space=env.action_space,
+            acmodel=ac_model,
+            prnn=prnn,
+            device=device,
+            argmax=argmax,
+            pastSR=pastSR,
+        )
 
     return agent
 
@@ -228,7 +235,10 @@ def save_analysis_of_agent_behav(onpolicyAnalysis, model_dir, update_step):
         fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
         fig.write_image(savename)
 
-def save_pN_and_acmodel(pN: PredictiveNet, ac_model: ACModel, save_path: str, count: int):
+
+def save_pN_and_acmodel(
+    pN: PredictiveNet, ac_model: ACModel, save_path: str, count: int
+):
     save_pN(pN, f"{save_path}/{count}/pN-{count}.pt")
     print(f"Saved trained net to {save_path}/pN-{count}.pt")
     status_save = {
@@ -236,6 +246,7 @@ def save_pN_and_acmodel(pN: PredictiveNet, ac_model: ACModel, save_path: str, co
         StatusCkptKeys.OPTIMIZER_STATE.value: pN.optimizer.state_dict(),
     }
     save_status(status_save, f"{save_path}/{count}")
+
 
 # def get_vocab(model_dir):
 #     return get_status(model_dir)["vocab"]

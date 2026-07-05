@@ -3,45 +3,49 @@ import warnings
 ### Suppress warnings ###
 warnings.filterwarnings("ignore", category=UserWarning)
 
-import time
 import datetime
+import time
+
+import hydra
 import numpy as np
-from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
-
-from omegaconf import OmegaConf, DictConfig
-import hydra
-import wandb
+from matplotlib import pyplot as plt
+from omegaconf import DictConfig, OmegaConf
+from prnn.utils import (
+    PredictiveNet,
+    RandomActionAgent,
+    Shell,
+    load_pN,
+    save_pN,
+)
 from tqdm import tqdm
 
-from utils import get_ckpt_env_vars, get_wandb_env_vars, StatusCkptKeys, AgentType
 import curious_george as RLutils
+import wandb
 from curious_george import (
     DEVICE,
     ACModel,
     ACModelSR,
     ActorCriticAgent,
-    PredictivePPOAlgo,
     OnPolicyAnalysis,
-    mutual_info_policy,
+    PredictivePPOAlgo,
     get_agent,
+    mutual_info_policy,
 )
-from curious_george.world_model.device import on_device
 from curious_george.evaluation.spatial import evaluate_spatial_representation
-from curious_george.rl.collector import BatchedPredictivePPOAlgo
-
-from prnn.utils import (
-    PredictiveNet,
-    RandomActionAgent,
-    load_pN,
-    save_pN,
+from curious_george.world_model.device import on_device
+from utils import (
+    AgentType,
+    StatusCkptKeys,
+    get_ckpt_env_vars,
+    get_wandb_env_vars,
+    load_statedict_from_acmodel_status,
 )
-from utils import load_statedict_from_acmodel_status
+
 
 class RL_Trainer(object):
     def __init__(self, params):
-
         self.params = params
         self.group = params.exp.exp_name
         self.wandb_log = self.params.logging.wandb_log
@@ -72,7 +76,7 @@ class RL_Trainer(object):
                 id=run_name,
                 dir=self.model_dir,
                 resume="allow",
-                config=OmegaConf.to_container(params, resolve=True), # type: ignore
+                config=OmegaConf.to_container(params, resolve=True),  # type: ignore
             )
 
     def run_training_loop(self):
@@ -91,17 +95,17 @@ class RL_Trainer(object):
             start_room = args.exp.start_room
             print(f"Agent starting in room {start_room}")
 
-        env = RLutils.make_env(
+        env: Shell.FaramaMinigridShell = RLutils.make_env(
             env_key=args.exp.env_name,
             input_type=args.exp.input_type,
             seed=args.exp.seed + 10000,
             act_enc=args.predNet.action_encoding,
-            open_all_paths=False, # Only applicable for FourRooms env
-            subroom_size=args.exp.env_subroom_size, # Only applicable for FourRooms env
-            door_poss=args.exp.door_poss, # Only applicable for FourRooms env
+            open_all_paths=False,  # Only applicable for FourRooms env
+            subroom_size=args.exp.env_subroom_size,  # Only applicable for FourRooms env
+            door_poss=args.exp.door_poss,  # Only applicable for FourRooms env
             agent_start_pos=agent_start_pos,
             agent_start_dir=agent_start_dir,
-            agent_start_room=start_room, # Only applicable for FourRooms env
+            agent_start_room=start_room,  # Only applicable for FourRooms env
         )
         print("Environment loaded\n")
 
@@ -110,12 +114,13 @@ class RL_Trainer(object):
         if args.logging.load_acmodel:
             prnn_ckpt, acmodel_status_ckpt = get_ckpt_env_vars()
             status = torch.load(
-                acmodel_status_ckpt,
-                map_location=DEVICE,
-                weights_only=False
+                acmodel_status_ckpt, map_location=DEVICE, weights_only=False
             )
         else:
-            status = {StatusCkptKeys.NUM_FRAMES.value: 0, StatusCkptKeys.UPDATE.value: 0}
+            status = {
+                StatusCkptKeys.NUM_FRAMES.value: 0,
+                StatusCkptKeys.UPDATE.value: 0,
+            }
         print("Training status loaded\n")
 
         # Load observations preprocessor
@@ -150,13 +155,17 @@ class RL_Trainer(object):
         # Load pRNN
         if args.logging.load_worldmodel:
             prnn_ckpt, acmodel_status_ckpt = get_ckpt_env_vars()
-            load_pN(model_ckpt_filepath=prnn_ckpt, 
-                    device=DEVICE,
-                    pRNNtype=args.predNet.pRNNtype, 
-                    predictive_net=predictiveNet)
-            
+            load_pN(
+                model_ckpt_filepath=prnn_ckpt,
+                device=DEVICE,
+                pRNNtype=args.predNet.pRNNtype,
+                predictive_net=predictiveNet,
+            )
+
             print("\n" + "=" * 10)
-            print(f"Existing pRNN model found at {prnn_ckpt} and loaded from state dict")
+            print(
+                f"Existing pRNN model found at {prnn_ckpt} and loaded from state dict"
+            )
             print("=" * 10 + "\n")
 
         print("pRNN model initialized\n")
@@ -219,13 +228,11 @@ class RL_Trainer(object):
                 )
                 for i in range(num_envs - 1)
             ]
-            AlgoCls = BatchedPredictivePPOAlgo
             first_arg = [env] + extra_envs
         else:
-            AlgoCls = PredictivePPOAlgo
             first_arg = env
 
-        algo = AlgoCls(
+        algo = PredictivePPOAlgo(
             first_arg,
             acmodel,
             predictiveNet,
@@ -267,8 +274,17 @@ class RL_Trainer(object):
         # Create random agent for analysis
 
         action_probability = np.array([0.15, 0.15, 0.6, 0.1])
-        randomagent = get_agent(env=env, rand_act_prob=action_probability, agent_Type=AgentType.RANDOM)
-        ac_agent = get_agent(env=env, agent_Type=AgentType.AC, prnn=predictiveNet, device=DEVICE, ac_model=acmodel, pastSR=pastSR)
+        randomagent = get_agent(
+            env=env, rand_act_prob=action_probability, agent_Type=AgentType.RANDOM
+        )
+        ac_agent = get_agent(
+            env=env,
+            agent_Type=AgentType.AC,
+            prnn=predictiveNet,
+            device=DEVICE,
+            ac_model=acmodel,
+            pastSR=pastSR,
+        )
 
         # Train model
         num_frames = status[StatusCkptKeys.NUM_FRAMES.value]
@@ -278,9 +294,11 @@ class RL_Trainer(object):
 
         n_performance = 0
         error_map = None
-        
+
         with tqdm(total=args.rl.steps, desc="Processing") as pbar:
-            while num_frames < args.rl.steps: # num_frames' granularity is steps. It represents the number of steps taken in the env 
+            while (
+                num_frames < args.rl.steps
+            ):  # num_frames' granularity is steps. It represents the number of steps taken in the env
                 # Update model parameters
                 update_start_time = time.time()
 
@@ -296,8 +314,10 @@ class RL_Trainer(object):
                 update_end_time = time.time()
 
                 num_frames += logs["num_frames"]
-                update += 1 # Update represents the number of 2048 steps taken. One update is the collection of 2048 steps (as seen in collect experiences)
-                pbar.update(logs["num_frames"])  # was never updated before (bar stuck at 0%)
+                update += 1  # Update represents the number of 2048 steps taken. One update is the collection of 2048 steps (as seen in collect experiences)
+                pbar.update(
+                    logs["num_frames"]
+                )  # was never updated before (bar stuck at 0%)
 
                 # Print logs
 
@@ -312,9 +332,9 @@ class RL_Trainer(object):
                     # the models to CPU for the call; placement is restored on exit.
                     with on_device([predictiveNet, acmodel], "cpu"):
                         predictiveNet.plotSampleTrajectory(
-                                env=env,
-                                agent=ac_agent,
-                            ) # Logs to wandb inside the function if predictiveNet.wandb_log is True
+                            env=env,
+                            agent=ac_agent,
+                        )  # Logs to wandb inside the function if predictiveNet.wandb_log is True
 
                     if not args.exp.random_action_agent:
                         return_per_episode = RLutils.synthesize(
@@ -323,7 +343,9 @@ class RL_Trainer(object):
                         int_rewards = RLutils.synthesize(
                             logs["intrinsic_rewards"], abs=True
                         )
-                        cur_rewards = RLutils.synthesize(logs["curious_rewards"], abs=True)
+                        cur_rewards = RLutils.synthesize(
+                            logs["curious_rewards"], abs=True
+                        )
                         values = RLutils.synthesize(logs["values"])
                         advantages = RLutils.synthesize(logs["advantages"])
 
@@ -343,9 +365,15 @@ class RL_Trainer(object):
                             "duration",
                         ]
                         if not args.exp.random_action_agent:
-                            header += ["return_" + key for key in return_per_episode.keys()]
-                            header += ["int_reward_" + key for key in int_rewards.keys()]
-                            header += ["cur_reward_" + key for key in cur_rewards.keys()]
+                            header += [
+                                "return_" + key for key in return_per_episode.keys()
+                            ]
+                            header += [
+                                "int_reward_" + key for key in int_rewards.keys()
+                            ]
+                            header += [
+                                "cur_reward_" + key for key in cur_rewards.keys()
+                            ]
                             header += ["values_" + key for key in values]
                             header += ["advantages_" + key for key in advantages]
                             header += [
@@ -373,7 +401,11 @@ class RL_Trainer(object):
                         data += cur_rewards.values()
                         data += values.values()
                         data += advantages.values()
-                        data += [logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
+                        data += [
+                            logs["policy_loss"],
+                            logs["value_loss"],
+                            logs["grad_norm"],
+                        ]
                         data += [mutual_info_policy(logs["joint_dist"])]
 
                     if self.wandb_log:
@@ -402,10 +434,18 @@ class RL_Trainer(object):
                                 sleepstd=0.03,
                                 wandb_nameext="_onPolicy",
                             )
-                            print(f"onPolicy sRSA={spatial_metrics['sRSA']:.4f} "
-                                  f"SWdist={spatial_metrics['SWdist']:.4f}")
+                            print(
+                                f"onPolicy sRSA={spatial_metrics['sRSA']:.4f} "
+                                f"SWdist={spatial_metrics['SWdist']:.4f}"
+                            )
                             if self.wandb_log:
-                                wandb.log({"SWdist_direct_onPolicy": spatial_metrics["SWdist"]})
+                                wandb.log(
+                                    {
+                                        "SWdist_direct_onPolicy": spatial_metrics[
+                                            "SWdist"
+                                        ]
+                                    }
+                                )
 
                         if args.exp.offpolicy_prnn_eval:
                             analysisagent = (
@@ -421,11 +461,18 @@ class RL_Trainer(object):
                                 sleepstd=0.03,
                                 wandb_nameext="_offPolicy",
                             )
-                            print(f"offPolicy sRSA={spatial_metrics['sRSA']:.4f} "
-                                  f"SWdist={spatial_metrics['SWdist']:.4f}")
+                            print(
+                                f"offPolicy sRSA={spatial_metrics['sRSA']:.4f} "
+                                f"SWdist={spatial_metrics['SWdist']:.4f}"
+                            )
                             if self.wandb_log:
-                                wandb.log({"SWdist_direct_offPolicy": spatial_metrics["SWdist"]})
-
+                                wandb.log(
+                                    {
+                                        "SWdist_direct_offPolicy": spatial_metrics[
+                                            "SWdist"
+                                        ]
+                                    }
+                                )
 
                     if args.exp.analyze_agent_behav:
                         # Reuse the training rollout (free) unless the random-
@@ -437,12 +484,28 @@ class RL_Trainer(object):
                         )
                         if self.wandb_log:
                             wandb.log({"MI_policy_eval": opa.mi})
-                            wandb.log({"OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
-                            wandb.log({"OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
-                            wandb.log({"OPA_Occupancy_Map": wandb.Plotly(opa.plot_occupancy())})
+                            wandb.log(
+                                {"OPA_Advantages": wandb.Plotly(opa.plot_advantages())}
+                            )
+                            wandb.log(
+                                {
+                                    "OPA_Policy_Heatmaps": wandb.Plotly(
+                                        opa.plot_policy_heatmaps()
+                                    )
+                                }
+                            )
+                            wandb.log(
+                                {
+                                    "OPA_Occupancy_Map": wandb.Plotly(
+                                        opa.plot_occupancy()
+                                    )
+                                }
+                            )
 
                         else:
-                            RLutils.save_analysis_of_agent_behav(opa, self.model_dir, update)
+                            RLutils.save_analysis_of_agent_behav(
+                                opa, self.model_dir, update
+                            )
 
                 if args.logging.early_stop:
                     if (
@@ -464,8 +527,12 @@ class RL_Trainer(object):
                         StatusCkptKeys.UPDATE.value: update,
                     }
                     if not args.exp.random_action_agent:
-                        status_save[StatusCkptKeys.MODEL_STATE.value] = acmodel.state_dict()
-                        status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = algo.optimizer.state_dict()
+                        status_save[StatusCkptKeys.MODEL_STATE.value] = (
+                            acmodel.state_dict()
+                        )
+                        status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = (
+                            algo.optimizer.state_dict()
+                        )
 
                     # if hasattr(preprocess_obss, "vocab"):
                     #     status["vocab"] = preprocess_obss.vocab.vocab
@@ -474,7 +541,9 @@ class RL_Trainer(object):
 
                     # Save predictiveNet state if it exists and is being trained
                     if predictiveNet is not None and args.predNet.train:
-                        save_pN(predictiveNet, self.model_dir + "predictiveNet_state.pt")
+                        save_pN(
+                            predictiveNet, self.model_dir + "predictiveNet_state.pt"
+                        )
 
                     print(f"pN and ACmodel status saved at {self.model_dir}")
 

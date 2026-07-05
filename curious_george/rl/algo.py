@@ -1,59 +1,95 @@
 # Based on the PPO algo from torch-ac library (https://github.com/lcswillems/torch-ac)
 
+"""One algo class for B >= 1 environments.
 
-import torch
+`PredictivePPOAlgo` wires together:
+- rl.collect.collector  - the rollout loop (B=1 is bitwise-identical to the
+  historical serial path via SingleSRTracker; B>1 batches the forwards)
+- rl.update.updater / losses - loss-agnostic policy updates (rl.loss config)
+- rl.update.rewards / advantage - reward terms and GAE
+- rl.update.world_model - per-episode pRNN training
+- world_model.adapter   - the only rollout-time prnn seam
+
+Pass a single env or a list of envs as the first argument; num_frames is the
+TOTAL frames per update across all envs.
+"""
+
 import math
-import numpy as np
-from jaxtyping import Float
 
+import numpy as np
+import torch
+from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 from torch_ac.format import default_preprocess_obss
-from torch_ac.utils import DictList
-from scipy.spatial.distance import cosine
 
 from prnn.utils import PredictiveNet
-from curious_george.envs.access import get_subroom_id, subroom_size, grid_shape
-from curious_george.common import mean_by_action
-from curious_george.world_model.adapter import PRNNAdapter
-from curious_george.rl.buffer import compute_gae
-from curious_george.rl.rewards import compute_curious_rewards
-from curious_george.rl.ppo import ppo_update
+from curious_george.envs.access import get_subroom_id, grid_shape, subroom_size
+from curious_george.rl.collect.collector import (
+    CollectorState,
+    RolloutConfig,
+    collect_rollout,
+    get_dist_travelled,
+    init_collector_state,
+)
+from curious_george.rl.collect.diagnostics import LocationStats
+from curious_george.rl.update.losses import LOSSES
+from curious_george.rl.update.updater import update_policy
+from curious_george.rl.update.world_model import train_world_model_on_episodes
+from curious_george.world_model.adapter import PRNNAdapter, make_sr_tracker
 
-def check_large_jump(loc0: tuple, loc1: tuple):
-    x0, y0 = loc0
-    x1, y1 = loc1
-    if (x1 - x0)**2 > 1 or (y1 - y0)**2 > 1:
-        return True
-    else:
-        return False
 
 def compare_trajs(traj1, traj2):
     delta = (traj1 == traj2).cumprod()
     return delta.sum() / len(delta)
 
-def get_dist_travelled(
-    start_locs: Float[torch.Tensor, "B 2"],
-    end_locs: Float[torch.Tensor, "B 2"]
-) -> Float[torch.Tensor, "B"]:
-    """
-    Calculate L1 distance between start and end locations.
 
-    Since the agent can only move horizontally and vertically in the grid,
-    the distance is the sum of absolute differences in x and y coordinates.
+class IntrinsicReference:
+    """Reference-SR intrinsic reward (historical; B=1 only, off in mainline).
+
+    Preserved quirk: the first error is duplicated in `tail`, so
+    int_rewards[0] is always 0.
     """
-    dists = torch.abs(end_locs - start_locs).sum(dim=1)
-    return dists
+
+    def __init__(self, algo: "PredictivePPOAlgo", sr_dim: int):
+        self.algo = algo
+        self.ref = torch.zeros((1, sr_dim), device=algo.device)
+        self.nrefs = 0
+
+    def update_ref(self, activations):
+        self.nrefs += 1
+        self.ref = self.ref + (activations - self.ref) / self.nrefs
+
+    def update_on_done(self, state: CollectorState, det_np):
+        algo = self.algo
+        sr = state.sr
+        if algo.pastSR:
+            preprocessed = algo.preprocess_obss([state.obs_b[0]], device=algo.device)
+            with torch.no_grad():
+                dist, _ = algo.acmodel(preprocessed, SR=state.sr)
+            action = dist.sample()
+            sr = algo.adapter.next_sr(action.cpu().numpy(), state.obs_b[0])
+        self.update_ref(sr)
+
+    def tail(self, state: CollectorState, SRs: torch.Tensor, last_post_obs) -> torch.Tensor:
+        algo = self.algo
+        preprocessed = algo.preprocess_obss([state.obs_b[0]], device=algo.device)
+        with torch.no_grad():
+            dist, _ = algo.acmodel(preprocessed, SR=state.sr)
+        action = dist.sample()
+        det_np = action.cpu().numpy()
+        obs = state.obs_b[0] if algo.pastSR else last_post_obs
+        sr = algo.adapter.next_sr(det_np, obs)
+
+        all_SRs = torch.cat((SRs, sr), dim=0).cpu()
+        errors = torch.tensor(
+            [cosine(s, self.ref.squeeze().cpu()) for s in all_SRs[1:]],
+            device=algo.device,
+        )
+        errors = torch.cat((errors[0][None], errors), dim=0)
+        return errors[:-1] - errors[1:]
 
 
 class PredictivePPOAlgo:
-    """PPO with pRNN-derived spatial representations and curiosity reward.
-
-    Facade over: PRNNAdapter (all pRNN calls), rl.rewards (curiosity),
-    rl.buffer.compute_gae (advantages), rl.ppo.ppo_update (parameter updates).
-    Public attributes (obss, locs, actions, values, advantages, masks, ...)
-    are preserved for the analysis/task code that reads them.
-    """
-
     def __init__(
         self,
         env,
@@ -83,10 +119,13 @@ class PredictivePPOAlgo:
         curious_agent=False,
         k_curious=1,
         reward_alignment="legacy",
+        loss="ppo_clip",
     ):
-        # Store parameters
-        print("Store parameters")
-        self.env = env
+        # env may be a single shell or a list of shells (parallel collection)
+        self.envs = env if isinstance(env, (list, tuple)) else [env]
+        self.env = self.envs[0]
+        self.num_envs = len(self.envs)
+
         self.acmodel = acmodel
         self.pN = predictiveNet
         self.device = device
@@ -109,7 +148,15 @@ class PredictivePPOAlgo:
         self.curious_agent = curious_agent
         self.k_curious = k_curious
         self.reward_alignment = reward_alignment
-        assert pastSR ^ ("Next" in str(env.encodeAction))
+        self.loss_name = loss
+        assert loss in LOSSES, f"unknown loss {loss!r}; available: {list(LOSSES)}"
+        assert pastSR ^ ("Next" in str(self.env.encodeAction))
+        assert self.num_frames % self.num_envs == 0, "num_frames must divide by num_envs"
+        if self.num_envs > 1:
+            assert not intrinsic, "intrinsic rewards not supported with num_envs > 1"
+            T = self.num_frames // self.num_envs
+            if prnn_seqdur > 0:
+                assert T % prnn_seqdur == 0, "per-env T must divide by prnn_seqdur"
 
         self.adapter = PRNNAdapter(self.pN, self.device, pastSR) if self.pN else None
         self._subroom_size = subroom_size(self.env)
@@ -117,302 +164,105 @@ class PredictivePPOAlgo:
         if hasattr(self.env, "loc_mask"):
             self.loc_mask = self.env.loc_mask
         else:
-            self.loc_mask = [x == None or x.can_overlap() for x in env.grid.grid]
+            self.loc_mask = [x == None or x.can_overlap() for x in self.env.grid.grid]
 
-        # Control parameters
-        print("Control parameters")
         assert self.acmodel.recurrent or self.recurrence == 1
         assert self.num_frames % self.recurrence == 0
 
-        # Configure models
-        print("Configure acmodel")
         self.acmodel.to(self.device)
         self.acmodel.train()
         if self.adapter:
-            # TODO: should be elsewhere if saving the net
             self.adapter.to(self.device)
 
-        self.obs = self.env.reset()
-        self.loc = self.agent_pos()
-        self.mask = 1
-        print("Reset done")
+        # Rollout machinery (env resets + initial SR happen here, in the
+        # same order as the historical constructor: reset then init_SR)
+        self.tracker = None
+        self._first_obs = [e.reset() for e in self.envs]
+        self.tracker = make_sr_tracker(self.adapter, self.device, self._first_obs)
+        self.state = CollectorState(
+            obs_b=self._first_obs,
+            loc_b=[self._pos(e) for e in self.envs],
+            mask_b=np.ones(self.num_envs, dtype=np.float32),
+            sr=self.tracker.initial_sr(),
+            init_loc_b=[torch.tensor(self._pos(e)) for e in self.envs],
+            ep_return=[0.0] * self.num_envs,
+            ep_reshaped=[0.0] * self.num_envs,
+            ep_frames=[0] * self.num_envs,
+        )
+        self.loc_stats = LocationStats(self.loc_mask, tuple(grid_shape(self.env)))
 
-        # Initialize spatial representations (if used)
-        self.init_SR()
-
-        # Initialize experiences
-        self.init_exp()
-
-        # Initialize log values
-        self.init_log()
-
-        # Initialize intrinsic rewards
-        if self.intrinsic:
-            self.ref = torch.zeros((1, self.SR.shape[-1]), device=self.device)
-            self.nrefs = 0
-            self.int_rewards = torch.zeros(self.num_frames, device=self.device)
+        self.intrinsic_ref = (
+            IntrinsicReference(self, self.state.sr.shape[-1]) if intrinsic else None
+        )
 
         self.clip_eps = clip_eps
         self.epochs = epochs
         self.batch_size = batch_size
-
         assert self.batch_size % self.recurrence == 0
 
         self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
         self.batch_num = 0
-        print("All done")
+
+        # analysis code reads these off the algo after each collect
+        self.obss: list = []
+        self.locs: list = []
+        self.subroom_ids: list = []
+        self.last_joint_dist = None
+
+    @staticmethod
+    def _pos(env):
+        return env.get_agent_pos() if hasattr(env, "get_agent_pos") else env.agent_pos
+
+    def agent_pos(self):
+        return self._pos(self.env)
+
+    # ------------------------------------------------------------------ #
 
     def collect_experiences(self, return_joint_distribution=False):
-        """Collects rollouts and computes advantages.
-
-        Returns
-        -------
-        exps : DictList
-            Contains actions, rewards, advantages etc as attributes.
-            Each attribute, e.g. `exps.reward` has a shape
-            (self.num_frames, ...).
-        logs : dict
-            Useful stats about the training process, including the average
-            reward, policy loss, value loss, etc.
-        """
-
-        # Joint prob between states and actions. Used in on-policy analysis
-        # Count the number of times an specific is taken in that (x, y, HD)
-        # In my case, 3D instead of 4D
-        joint_probabilities = np.zeros(
-            (
-                getattr(self.env, "numHDs"),
-                self.env.width,
-                self.env.height,
-                getattr(self.acmodel, "act_dim"),
-            ),
-            dtype=np.float32,
-        )
-
-        # The lists below are only relevant if pRNN is being trained
-        logs = {}
-        self.done_indices = [0]
-        self.last_observations = []
-        self.locs = []
-        self.subroom_ids = []
-        self.obss = []
-        obs = None
-
-        dist_travelled = 0
-        init_loc = torch.tensor(self.loc)
-        for i in range(self.num_frames):
-            # Do one agent-environment interaction
-
-            action, dist, value, memory, det_action = self.next_experience()
-
-            if self.prnn_seqdur > 0 and i % self.prnn_seqdur == 0: # First loc of traj
-                init_loc = torch.tensor(self.agent_pos())
-
-            # CAREFUL: obs = observation after taking action whereas self.obs is before taking action
-            obs, reward, terminated, truncated, _ = self.env.step(det_action)
-            loc = self.agent_pos()
-
-            done = terminated or truncated
-            if self.prnn_seqdur > 0 and (i + 1) % self.prnn_seqdur == 0:
-                done = True
-
-            # DEBUG
-            if check_large_jump(self.loc, loc) and i % self.prnn_seqdur != 0:
-                print("====== DEBUG START ======")
-                print(f"Large jump detected at step {i}: from {self.loc} to {loc}")
-                torch.save(self.locs, f"debug_locs{i}.pt")
-                print("====== DEBUG END ======")
-
-            # Update spatial representation
-            if self.pastSR:
-                SR = self.next_SR(det_action, self.obs)
-            else:
-                SR = self.next_SR(det_action, obs)
-
-            # Update experiences values
-
-            self.obss.append(self.obs)
-            self.obs = obs
-            self.locs.append(self.loc)
-            if self._subroom_size is not None:
-                self.subroom_ids.append(get_subroom_id(torch.tensor(self.loc).unsqueeze(0), self._subroom_size).item())
-            self.loc = loc
-
-            # SR at step i is the one use to get act[i] (from step i-1 for pastSR)
-            self.SRs[i] = self.SR
-            self.SR = SR
-            self.masks[i] = self.mask
-            self.mask = 1 - done
-            self.actions[i] = action
-            self.values[i] = value
-            self.rewards[i] = reward
-            self.log_probs[i] = dist.log_prob(action)
-
-            # add counts to joint probs
-            hd = self.obss[i]["direction"]
-            x, y = self.locs[i]
-            act_probs = dist.probs.detach().cpu().numpy().squeeze()
-            joint_probabilities[hd, x, y, :] += act_probs
-
-            # Update log values
-
-            self.log_episode_return += reward
-            self.log_episode_reshaped_return += self.rewards[i]
-            self.log_episode_num_frames += 1
-
-            if done: # This resets the agent's position to start next trajectory/trial
-                if self.intrinsic and reward > 1e-5:
-                    if self.pastSR:
-                        _, _, _, _, det_action = self.next_experience()
-                        SR = self.next_SR(det_action, self.obs)
-                    self.update_ref(SR)
-                self.log_done_counter += 1
-                self.log_return.append(self.log_episode_return)
-                self.log_reshaped_return.append(self.log_episode_reshaped_return)
-                self.log_num_frames.append(self.log_episode_num_frames)
-                if self.adapter:
-                    self.adapter.reset_state()
-                self.init_SR()
-                self.last_observations.append(self.obs)
-
-                dist_travelled = get_dist_travelled(init_loc.unsqueeze(0), torch.tensor(self.loc).unsqueeze(0)).item()
-                self.obs = self.env.reset() # Now the agent is in completely new position
-                self.loc = self.agent_pos()
-                self.log_episode_return = 0
-                self.log_episode_reshaped_return = 0
-                self.log_episode_num_frames = 0
-                self.done_indices.append(i + 1)
-
-        # make sure last obs is included in done indices.
-        # these is when each trial ends, for prnn training
-        if self.done_indices[-1] != self.num_frames: # i + 1:
-            self.done_indices.append(self.num_frames) # (i + 1)
-            self.last_observations.append(self.obs)
-
-        # Calculate curious rewards
-        actions_preformatted = self.actions.cpu().numpy()
-        if self.curious_agent:
-            self.curious_rewards = compute_curious_rewards(
-                self.adapter,
-                obss=self.obss,
-                actions_np=actions_preformatted,
-                done_indices=self.done_indices,
-                last_observations=self.last_observations,
+        """Collects rollouts and computes advantages; returns (exps, logs)."""
+        result = collect_rollout(
+            envs=self.envs,
+            acmodel=self.acmodel,
+            tracker=self.tracker,
+            adapter=self.adapter,
+            preprocess_obss=self.preprocess_obss,
+            state=self.state,
+            cfg=RolloutConfig(
                 num_frames=self.num_frames,
-                alignment=self.reward_alignment,
-            )
-            # Separate curious rewards by action type
-            curious_by_action = mean_by_action(self.curious_rewards.cpu().numpy(), actions_preformatted)
-            logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
-
-        # Calculate intrinsic rewards
-        if self.intrinsic:
-            _, _, _, _, det_action = self.next_experience()
-            if self.pastSR:
-                SR = self.next_SR(det_action, self.obs)
-            else:
-                SR = self.next_SR(det_action, obs)
-            # Add SR from the last state
-            SRs = torch.cat((self.SRs, SR), dim=0).cpu()
-            # Calculate cosine similarity between SRs and reference SR
-            # NOTE (preserved quirk): the first error is duplicated below, so
-            # int_rewards[0] is always 0.
-            errors = torch.tensor(
-                [cosine(SR, self.ref.squeeze().cpu()) for SR in SRs[1:]],
                 device=self.device,
-            )
-            errors = torch.cat((errors[0][None], errors), dim=0)
-            # Calculate intrinsic rewards
-            self.int_rewards = errors[:-1] - errors[1:]
-
-        # Add advantage and return to experiences
-
-        preprocessed_obs = self.preprocess_obss([self.obs], device=self.device)
-        with torch.no_grad():
-            _, next_value = self.acmodel(preprocessed_obs, SR=self.SR)
-
-        compute_gae(
-            advantages=self.advantages,
-            rewards=self.rewards,
-            int_rewards=self.int_rewards,
-            curious_rewards=self.curious_rewards,
-            values=self.values,
-            masks=self.masks,
-            final_next_value=next_value,
-            final_mask=self.mask,
-            num_frames=self.num_frames,
-            discount=self.discount,
-            gae_lambda=self.gae_lambda,
-            k_int=self.k_int,
-            k_curious=self.k_curious,
+                prnn_seqdur=self.prnn_seqdur,
+                pastSR=self.pastSR,
+                curious_agent=self.curious_agent,
+                reward_alignment=self.reward_alignment,
+                intrinsic=self.intrinsic,
+                discount=self.discount,
+                gae_lambda=self.gae_lambda,
+                k_int=self.k_int,
+                k_curious=self.k_curious,
+            ),
+            loc_stats=self.loc_stats,
+            subroom_size_=self._subroom_size,
+            intrinsic_ref=self.intrinsic_ref,
         )
 
-        exps = DictList()
-        exps.obs = self.obss
-        exps.SR = self.SRs
-        exps.action = self.actions
-        exps.value = self.values
-        exps.reward = self.rewards
-        exps.advantage = self.advantages
-        exps.returnn = (
-            exps.value + exps.advantage
-        )  # approximates current and discounted future returns
-        exps.log_prob = self.log_probs
-        exps.done_indices = self.done_indices
-        exps.last_observations = self.last_observations
+        # expose the rollout on the algo for analysis/tasks that read attributes
+        self.obss = result.obss
+        self.locs = result.locs
+        self.subroom_ids = result.subroom_ids
+        self.actions = result.actions
+        self.values = result.values
+        self.rewards = result.rewards
+        self.masks = result.masks
+        self.SRs = result.SRs
+        self.log_probs = result.log_probs
+        self.advantages = result.advantages
+        self.curious_rewards = result.curious_rewards
+        self.int_rewards = result.int_rewards
+        self.done_indices = result.done_indices
+        self.last_observations = result.last_observations
+        self.last_joint_dist = result.joint_dist
 
-        # Calculate locations entropy
-        for loc in self.locs: # HERE: This is the location sequence you want to plot trajectories
-            self.loc_visits[loc] += 1
-        self.loc_visits = self.loc_visits.flatten("F")[self.loc_mask]
-        loc_entropy = entropy(self.loc_visits, base=2)
-
-        self.loc_history.pop(0)
-        self.loc_history.append(self.loc_visits)
-        loc_entropy_5 = entropy(np.sum(self.loc_history, axis=0), base=2)
-        self.loc_visits = np.zeros(grid_shape(self.env))
-
-        # Preprocess experiences
-
-        exps.obs = self.preprocess_obss(exps.obs, device=self.device)
-
-        # Reset pN state
-        if self.adapter:
-            self.adapter.reset_state()
-
-        # Log some values
-
-        # Compute average advantages by action type
-        adv_by_action = mean_by_action(self.advantages.cpu().numpy(), actions_preformatted)
-
-        new_logs = {
-            "return_per_episode": self.log_return,
-            "reshaped_return_per_episode": self.log_reshaped_return,
-            "num_frames_per_episode": self.log_num_frames,
-            "num_frames": self.num_frames,
-            "num_episodes": self.log_done_counter,
-            "intrinsic_rewards": self.int_rewards.tolist(),
-            "curious_rewards": self.curious_rewards.tolist(),
-            "values": self.values.tolist(),
-            "advantages": self.advantages.tolist(),
-            "loc_entropy": loc_entropy,
-            "loc_entropy_5": loc_entropy_5,
-            "joint_dist": joint_probabilities,
-            "locs": self.locs,
-            "subroom_ids": self.subroom_ids,
-            "dist_travelled": dist_travelled,
-            **{f"avg_adv_{k}": v for k, v in adv_by_action.items()},
-        }
-        logs.update(new_logs)
-
-        # Stash for analysis that reuses this rollout (OnPolicyAnalysis)
-        self.last_joint_dist = joint_probabilities
-
-        self.log_return = []
-        self.log_reshaped_return = []
-        self.log_num_frames = []
-
-        return exps, logs # Everything in exps must be exact same length. Get self.locs out through logs
+        return result.exps, result.logs
 
     def update_parameters(self, exps, update_params=True):
         # below has to be done so that exps can be batched
@@ -421,53 +271,52 @@ class PredictivePPOAlgo:
         del exps["done_indices"]
         del exps["last_observations"]
 
-        logs, self.batch_num = ppo_update(
+        logs, self.batch_num = update_policy(
             self.acmodel,
             self.optimizer,
             exps,
+            loss_fn=self.loss_name,
+            loss_kwargs=dict(
+                clip_eps=self.clip_eps,
+                entropy_coef=self.entropy_coef,
+                value_loss_coef=self.value_loss_coef,
+            ),
             epochs=self.epochs,
             batch_size=self.batch_size,
             recurrence=self.recurrence,
             num_frames=self.num_frames,
-            clip_eps=self.clip_eps,
-            entropy_coef=self.entropy_coef,
-            value_loss_coef=self.value_loss_coef,
             max_grad_norm=self.max_grad_norm,
             batch_num=self.batch_num,
             update_params=update_params,
         )
 
-        # Update pN
-
         if self.train_pN:
             self.adapter.to(self.device)
-            for idx in range(1, len(done_indices)):
-                start_episode = done_indices[idx - 1]
-                end_episode = done_indices[idx]
-                last_obs = last_observations[idx - 1]
-                self.adapter.train_on_episode(
-                    exps.obs.image[start_episode:end_episode],
-                    exps.obs.direction[start_episode:end_episode],
-                    exps.action[start_episode:end_episode].cpu().numpy(),
-                    last_obs,
-                )
+            train_world_model_on_episodes(
+                self.adapter, exps, done_indices, last_observations
+            )
 
-        return logs
+        return logs.as_dict()
+
+    # ------------------------------------------------------------------ #
 
     def randomAgent_collect_exp_and_update(self, agent):
         assert self.train_pN, "The only reason to have random actions in algo is to train the pRNN geinus..."
+        assert self.num_envs == 1, "random-agent pRNN training is single-env"
         self.adapter.to(self.device)
         numtrials = math.ceil(self.num_frames / self.prnn_seqdur)
 
         log_curr_seqdurs = []
         subroom_ids = []
+        locs = [None] * self.num_frames
+        dist_travelled = 0
         for bb in range(numtrials):
             curr_seqdur = min(
                 self.prnn_seqdur, self.num_frames - (bb) * self.prnn_seqdur
             )
             log_curr_seqdurs.append(curr_seqdur)
-            # The above is needed if self.prnn_seqdur is not a perfect divisor of num trials.
-            # It implies that the last trial might have <seqdur steps
+            # Needed if prnn_seqdur is not a perfect divisor of num_frames:
+            # the last trial might have < seqdur steps
 
             obs, act, state, _ = self.pN.collectObservationSequence(
                 self.env, agent, curr_seqdur
@@ -490,17 +339,10 @@ class PredictivePPOAlgo:
 
             startidx = bb * self.prnn_seqdur
             endidx = min(self.num_frames, (bb + 1) * self.prnn_seqdur)
-            self.locs[startidx:endidx] = loc_list_current
+            locs[startidx:endidx] = loc_list_current
 
-        for loc in self.locs:
-            self.loc_visits[loc] += 1
-        self.loc_visits = self.loc_visits.flatten("F")[self.loc_mask]
-        loc_entropy = entropy(self.loc_visits, base=2)
-
-        self.loc_history.pop(0)
-        self.loc_history.append(self.loc_visits)
-        loc_entropy_5 = entropy(np.sum(self.loc_history, axis=0), base=2)
-        self.loc_visits = np.zeros([self.env.width, self.env.height])
+        self.locs = locs
+        loc_entropy, loc_entropy_5 = self.loc_stats.update(locs)
 
         policy_entropy = entropy(agent.default_action_probability, base=2)
 
@@ -511,70 +353,7 @@ class PredictivePPOAlgo:
             "entropy": policy_entropy,
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
-            "locs": self.locs,
+            "locs": locs,
             "subroom_ids": subroom_ids,
             "dist_travelled": dist_travelled,
         }
-
-    def next_experience(self):
-        preprocessed_obs = self.preprocess_obss([self.obs], device=self.device)
-        memory = None
-
-        with torch.no_grad():
-            dist, value = self.acmodel(preprocessed_obs, SR=self.SR)
-        action = dist.sample()  # choose action based on SR from step t-1
-        det_action = action.cpu().numpy()
-
-        return action, dist, value, memory, det_action
-
-    def next_SR(self, act, obs):
-        if self.adapter:
-            return self.adapter.next_sr(act, obs)
-        return torch.tensor([], device=self.device).unsqueeze(dim=0)
-
-    def init_SR(self):
-        if self.adapter:
-            self.SR = self.adapter.init_sr(self.obs)
-        else:
-            self.SR = torch.tensor([], device=self.device).unsqueeze(dim=0)
-
-    def init_exp(self):
-        self.obss = [None] * (self.num_frames)
-        self.locs = [None] * (self.num_frames)
-        self.mask = 1
-        self.masks = torch.zeros(self.num_frames, device=self.device)
-        print("Masks done")
-        self.actions = torch.zeros(self.num_frames, device=self.device, dtype=torch.int)
-        self.values = torch.zeros(self.num_frames, device=self.device)
-        self.SRs = torch.zeros((self.num_frames, self.SR.shape[1]), device=self.device)
-        print("Values done")
-        self.rewards = torch.zeros(self.num_frames, device=self.device)
-        self.advantages = torch.zeros(self.num_frames, device=self.device)
-        print("Advantages done")
-        self.log_probs = torch.zeros(self.num_frames, device=self.device)
-        self.int_rewards = torch.zeros(self.num_frames, device=self.device)
-        self.curious_rewards = torch.zeros(self.num_frames, device=self.device)
-        self.loc_visits = np.zeros([self.env.width, self.env.height])
-        self.loc_history = [np.zeros(np.sum(self.loc_mask))] * 5
-
-    def init_log(self):
-        print("Initialize log values")
-        self.log_episode_return = 0
-        self.log_episode_reshaped_return = 0
-        self.log_episode_num_frames = 0
-
-        self.log_done_counter = 0
-        self.log_return = []
-        self.log_reshaped_return = []
-        self.log_num_frames = []
-
-    def update_ref(self, activations):
-        self.nrefs += 1
-        self.ref = self.ref + (activations - self.ref) / self.nrefs
-
-    def agent_pos(self):
-        if hasattr(self.env, "get_agent_pos"):
-            loc = self.env.get_agent_pos()
-        else:
-            loc = self.env.agent_pos
-        return loc

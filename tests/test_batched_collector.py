@@ -1,4 +1,4 @@
-"""Smoke + invariant tests for BatchedPredictivePPOAlgo (num_envs > 1)."""
+"""Smoke + invariant tests for the unified PredictivePPOAlgo at num_envs > 1."""
 
 import numpy as np
 import pytest
@@ -7,7 +7,7 @@ import torch
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
 from utils import AgentInputType
 import curious_george as cg
-from curious_george.rl.collector import BatchedPredictivePPOAlgo
+from curious_george.rl.algo import PredictivePPOAlgo
 
 B, T, SEQDUR = 2, 32, 16  # num_frames = B*T = 64
 SEED = 7
@@ -33,7 +33,7 @@ def batched_algo():
     obs_space, preprocess_obss = cg.get_obss_preprocessor(envs[0].observation_space)
     acmodel = cg.ACModelSR(obs_space, envs[0].action_space, 64, False, True, True)
 
-    return BatchedPredictivePPOAlgo(
+    return PredictivePPOAlgo(
         envs, acmodel, pN, torch.device("cpu"),
         B * T, 0.98, 3e-4, 0.95, 0.0, 1, 0.5, 1, 1e-8, 0.2, 4, 16,
         preprocess_obss, True, 0, 0.05, SEQDUR, False, 1, True, True, 1,
