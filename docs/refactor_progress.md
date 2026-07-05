@@ -91,3 +91,32 @@ reward-alignment fix behind a flag, default `legacy`). Baselines in
 - `align_to_next_obs`: the last action of each episode keeps its own
   (legacy) error - the prediction targeting the episode's final obs is not
   produced by the per-episode predict pass.
+
+## Modularity pass (2026-07-05, commits 6f86794 / 60eb7bf / cf11953)
+
+- **rl/ = collect/ + update/ + algo.py.** ONE `PredictivePPOAlgo` for B>=1
+  (env or list of envs as first arg; `BatchedPredictivePPOAlgo` deleted).
+  B=1 goes through the unified collector with a `SingleSRTracker` that
+  delegates to the exact predict_single/reset_state calls - **golden fixture
+  bitwise match held**, including the RNG order
+  (sample -> env.step -> SR noise -> reset noise -> env.reset).
+  update/ holds the RL math: losses.py (`ppo_clip`, `a2c` behind one
+  signature + LOSSES registry, selected by `rl.loss`), updater.py
+  (loss-agnostic driver), advantage.py, rewards.py, world_model.py.
+  collect/ holds collector.py (RolloutConfig/CollectorState/CollectResult
+  dataclasses), diagnostics.py, agent.py, format.py.
+- **training/ + main_train.py.** setup.py (functions -> RunContext /
+  TrainingComponents dataclasses; one construction path), loop.py
+  (run_training + analysis/checkpoint functions), logging.py (explicit
+  dicts, historical wandb keys; per-action curious_reward_*/avg_adv_* now
+  actually forwarded). trainRL_Adel.py is a shim. **A/B gate**: old script
+  vs main_train, same seed, ckpt every update -> AC/optimizer/pRNN weights
+  bitwise-identical.
+- **Configs.** Hydra groups env/model/world_model/algo/rewards composing
+  into the historical key paths via @package - zero call-site changes
+  (tasks/ needed none as a result); components swap from the CLI.
+- **Bit-compat summary**: everything gated bitwise passed - no tolerance
+  threshold was needed. Known non-bit-comparable by design (unchanged from
+  Phase 5): B>1 vs B=1 RNG streams. Two intentional behavior deltas:
+  large-jump debug no longer dumps debug_locs*.pt (prints only), and B>1
+  logs now carry real per-episode returns / dist_travelled.
