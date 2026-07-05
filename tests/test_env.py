@@ -1,7 +1,7 @@
 from minigrid.envs import LEnv, LEnv_goal
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 
-from utils import AgentInputType
+from curious_george import AgentInputType
 from curious_george import make_env
 
 SIZE = 16

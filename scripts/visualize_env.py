@@ -27,7 +27,7 @@
 from matplotlib import pyplot as plt
 
 from curious_george import make_env
-from utils import AgentInputType
+from curious_george import AgentInputType
 
 from prnn.utils import (
     MinigridEnvNames,
@@ -101,7 +101,7 @@ import matplotlib.pyplot as plt
 
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from curious_george import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor, seed, DEVICE
-from utils import get_ckpt_env_vars, AgentInputType, AgentType
+from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
 from scripts.analysis_OMT import collect_eval_trajectories, EvalTrajectoryConfig, EvalTrajectories
 

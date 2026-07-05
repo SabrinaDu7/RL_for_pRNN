@@ -26,7 +26,9 @@ from curious_george.storage import (
     get_model_dir,
     get_video_dir,
 )
-from utils import AgentType, StatusCkptKeys, get_ckpt_env_vars, load_statedict_from_acmodel_status
+from curious_george.checkpoints import StatusCkptKeys, load_statedict_from_acmodel_status
+from curious_george.dev_env import get_ckpt_env_vars
+from curious_george.enums import AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 

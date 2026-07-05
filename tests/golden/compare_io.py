@@ -20,7 +20,10 @@ try:
 except ImportError:  # pre-refactor tree
     from RLutils import ACModelSR, PredictivePPOAlgo, ActorCriticAgent
 from prnn.utils import PredictiveNet, load_pN
-from utils import get_ckpt_env_vars, StatusCkptKeys
+try:
+    from curious_george import get_ckpt_env_vars, StatusCkptKeys
+except ImportError:  # pre-refactor tree
+    from utils import get_ckpt_env_vars, StatusCkptKeys
 
 OUT = sys.argv[1]
 DEVICE = torch.device("cpu")

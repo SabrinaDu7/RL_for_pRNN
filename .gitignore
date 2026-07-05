@@ -16,3 +16,4 @@ omt-*/
 wandb/*
 outputs/
 docs/*
+storage/*

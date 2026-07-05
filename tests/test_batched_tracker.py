@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
-from utils import AgentInputType
+from curious_george import AgentInputType
 from curious_george import make_env
 from curious_george.world_model.adapter import BatchedSRTracker
 

@@ -17,11 +17,11 @@ from curious_george.envs.access import get_new_obj_pos as access_get_goal_loc
 from curious_george.models import ACModel, ACModelSR
 from curious_george.rl.collect.agent import ActorCriticAgent
 from curious_george.rl.algo import PredictivePPOAlgo
-from utils import (
-    AgentType,
+from curious_george.checkpoints import (
     StatusCkptKeys,
     load_statedict_from_acmodel_status,
 )
+from curious_george.enums import AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 

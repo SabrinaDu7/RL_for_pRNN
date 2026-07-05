@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
-from utils import AgentInputType
+from curious_george import AgentInputType
 import curious_george as cg
 from curious_george.rl.algo import PredictivePPOAlgo
 

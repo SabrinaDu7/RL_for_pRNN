@@ -13,7 +13,7 @@ from prnn.utils import (
 from prnn.utils.Shell import FaramaMinigridShell
 
 from curious_george import get_obss_preprocessor, make_env, get_pN, get_SR_acmodel, seed, DEVICE, ACModelSR, ActorCriticAgent
-from utils import get_ckpt_env_vars, AgentInputType, AgentType
+from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
 seed(2)
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars(AgentType.AC)

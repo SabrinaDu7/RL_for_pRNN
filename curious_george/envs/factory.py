@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from prnn.utils import ActionEncodingsEnum, MinigridEnvNames
 from prnn.utils.Shell import FaramaMinigridShell
 
-from utils import AgentInputType
+from curious_george.enums import AgentInputType
 
 wrappers = {
     "ReseedWrapper": ReseedWrapper,

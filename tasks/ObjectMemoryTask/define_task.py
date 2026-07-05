@@ -27,11 +27,11 @@ from curious_george import (
 
 from curious_george.world_model.device import on_device, eval_mode
 from curious_george.envs.access import base_env
-from utils import StatusCkptKeys
+from curious_george import StatusCkptKeys
 from prnn.utils import save_pN
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.ObjectMemoryTask.figure import figure_object_learning, figure_goal_modulation_vs_trajectories
-from utils import AgentType
+from curious_george import AgentType
 
 class State(TypedDict):
     agent_pos: Float[np.ndarray, "T+1 2"]

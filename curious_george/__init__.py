@@ -17,6 +17,25 @@ from curious_george.common import (
     grid_to_pixel_coords,
 )
 
+from curious_george.enums import (
+    AgentInputType,
+    AgentType,
+)
+
+from curious_george.checkpoints import (
+    ACMODEL_STATUS,
+    StatusCkptKeys,
+    load_statedict_from_acmodel_status,
+)
+
+from curious_george.dev_env import (
+    get_env_var,
+    get_ckpt_env_vars,
+    get_wandb_env_vars,
+    get_logdir_env_var,
+    get_root_dir_env_var,
+)
+
 from curious_george.rl.collect.agent import (
     ActorCriticAgent,
 )
@@ -131,5 +150,18 @@ __all__ = [
     "save_analysis_of_agent_behav",
     "get_goal_loc",
     "get_agent",
+    # Enums
+    "AgentInputType",
+    "AgentType",
+    # Checkpoints
+    "ACMODEL_STATUS",
+    "StatusCkptKeys",
+    "load_statedict_from_acmodel_status",
+    # Env vars
+    "get_env_var",
+    "get_ckpt_env_vars",
+    "get_wandb_env_vars",
+    "get_logdir_env_var",
+    "get_root_dir_env_var",
     "save_pN_and_acmodel",
 ]

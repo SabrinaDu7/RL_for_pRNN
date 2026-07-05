@@ -10,7 +10,10 @@ from hydra import compose, initialize_config_dir
 from pathlib import Path
 
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
-from utils import get_ckpt_env_vars, AgentType, AgentInputType
+try:
+    from curious_george import get_ckpt_env_vars, AgentType, AgentInputType
+except ImportError:  # pre-refactor tree
+    from utils import get_ckpt_env_vars, AgentType, AgentInputType
 try:
     from curious_george import make_env
 except ImportError:  # pre-refactor tree

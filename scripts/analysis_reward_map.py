@@ -47,7 +47,7 @@ from curious_george import (
     seed,
     DEVICE,
 )
-from utils import get_ckpt_env_vars, AgentInputType, AgentType
+from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
 from scripts.analysis_OMT import (
     collect_eval_trajectories,
