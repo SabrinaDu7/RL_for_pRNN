@@ -1,0 +1,16 @@
+# @package predNet
+path: no_path/thcycRNN_5win_full-theta-s8
+foder: ''
+hiddensize: 500
+pRNNtype: thRNN_5win
+action_encoding: SpeedHD # pairs with pastSR nets (current HD)
+lr: 3e-3
+bptttrunc: 1e8
+weight_decay: 3e-3
+ntimescale: 2
+dropout: 0.15
+noisemean: 0
+noisestd: 0.05
+sparsity: 0.5
+train: True # Train pRNN simultaneously with RL?
+seqdur: 256 # Only relevant if train is on

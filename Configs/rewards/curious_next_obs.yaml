@@ -1,0 +1,4 @@
+# @package rl
+k_int: 1
+k_curious: 1
+reward_alignment: next_obs # corrected indexing: credit action i with the obs it produced

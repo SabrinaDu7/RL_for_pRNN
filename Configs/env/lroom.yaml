@@ -1,0 +1,7 @@
+# @package exp
+env_name: MiniGrid-LRoom-v0
+env_subroom_size: 8 # Size of subrooms for FourRooms env
+opt_return: 0.85 # Optimal return for the environment
+start_rand: True # Whether to randomize the agent start position
+door_poss: [1, 5, 3, 4,]
+start_room: 1

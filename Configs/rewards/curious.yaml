@@ -1,0 +1,5 @@
+# @package rl
+k_int: 1 # Intrinsic-reward coefficient (only if exp.intrinsic)
+k_curious: 1 # Curiosity coefficient (only if exp.curious_agent)
+reward_alignment: legacy # [legacy, next_obs] - which obs the curiosity reward credits an action with.
+                         # legacy: pre-action obs (historical); next_obs: the obs the action produced.

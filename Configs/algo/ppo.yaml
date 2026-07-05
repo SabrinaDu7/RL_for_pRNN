@@ -1,0 +1,17 @@
+# @package rl
+algo: ppo
+loss: ppo_clip # curious_george.rl.update.losses.LOSSES key
+steps: 2.048e7 # 80 pRNN epochs (each epoch = 256000 steps; seqdur 256 -> 1000 trajs/epoch)
+frames: 2048 # Frames collected per update (across all envs)
+trajs_per_batch: 8
+trajs_total: 80000
+discount: 0.98
+lr: 3e-4
+gae_lambda: 0.95 # Lambda in GAE (1 = no gae)
+entropy_coef: 0.0
+value_loss_coef: 1
+max_grad_norm: 0.5
+optim_eps: 1e-8
+ppo_epochs: 4
+ppo_batch_size: 256
+ppo_clip_eps: 0.2

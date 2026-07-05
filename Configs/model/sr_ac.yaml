@@ -1,0 +1,7 @@
+# @package exp
+# Actor-critic with pRNN spatial representation input (ACModelSR)
+input_type: 'pRNN' # ['Visual_FO', 'Visual_PO', 'pRNN', 'pRNN+PO']
+pRNN: True # Use pRNN SRs as spatial input
+with_obs: False # Include visual input
+with_HD: True
+rgb: True # Is visual input RGB?
