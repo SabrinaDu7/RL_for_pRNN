@@ -1,0 +1,257 @@
+"""Construction of everything a training run needs, from the hydra config.
+
+Plain functions returning dataclasses; `setup_training` is the one-call
+entry. Construction order matters for run-level reproducibility (torch RNG:
+world model before AC model) and is preserved from the historical script.
+"""
+
+from dataclasses import dataclass
+from typing import Callable
+
+import datetime
+import numpy as np
+import torch
+import torch.nn as nn
+
+from prnn.utils import PredictiveNet, load_pN
+
+from curious_george.common import DEVICE, seed as seed_everything
+from curious_george.envs.factory import make_env
+from curious_george.models import ACModel, ACModelSR
+from curious_george.rl.algo import PredictivePPOAlgo
+from curious_george.rl.collect.format import get_obss_preprocessor
+from curious_george.storage import (
+    create_folders_if_necessary,
+    get_agent,
+    get_model_dir,
+    get_video_dir,
+)
+from utils import AgentType, StatusCkptKeys, get_ckpt_env_vars, load_statedict_from_acmodel_status
+
+RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
+
+
+@dataclass
+class RunContext:
+    run_name: str
+    model_dir: str
+    video_dir: str
+    wandb_log: bool
+
+
+@dataclass
+class TrainingComponents:
+    envs: list
+    predictiveNet: PredictiveNet
+    acmodel: nn.Module
+    algo: PredictivePPOAlgo
+    preprocess_obss: Callable
+    obs_space: dict
+    status: dict
+    pastSR: bool
+    random_agent: object
+    ac_agent: object
+
+    @property
+    def env(self):
+        return self.envs[0]
+
+
+def setup_run(cfg) -> RunContext:
+    date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+    agent_type = "curious" if cfg.exp.curious_agent else "rand"
+    run_name = f"{cfg.exp.exp_name}_{agent_type}_{date}"
+
+    model_dir = get_model_dir(f"{run_name}/")
+    create_folders_if_necessary(model_dir)
+
+    if cfg.logging.video_log_freq != 0:
+        video_dir = get_video_dir(f"{run_name}/")
+        create_folders_if_necessary(video_dir)
+    else:
+        video_dir = ""
+
+    print("\n\n\nLOGGING TO: ", model_dir, "\n\n\n")
+    return RunContext(
+        run_name=run_name,
+        model_dir=model_dir,
+        video_dir=video_dir,
+        wandb_log=cfg.logging.wandb_log,
+    )
+
+
+def setup_env(cfg, seed_offset: int = 0):
+    start_room = None if cfg.exp.start_rand else cfg.exp.start_room
+    return make_env(
+        env_key=cfg.exp.env_name,
+        input_type=cfg.exp.input_type,
+        seed=cfg.exp.seed + 10000 + seed_offset,
+        act_enc=cfg.predNet.action_encoding,
+        open_all_paths=False,  # Only applicable for FourRooms env
+        subroom_size=cfg.exp.env_subroom_size,  # Only applicable for FourRooms env
+        door_poss=cfg.exp.door_poss,  # Only applicable for FourRooms env
+        agent_start_pos=None,
+        agent_start_dir=None,
+        agent_start_room=start_room,  # Only applicable for FourRooms env
+    )
+
+
+def setup_envs(cfg) -> list:
+    num_envs = cfg.exp.get("num_envs", 1)
+    return [setup_env(cfg, seed_offset=1000 * i) for i in range(num_envs)]
+
+
+def load_status(cfg) -> dict:
+    if cfg.logging.load_acmodel:
+        _, acmodel_status_ckpt = get_ckpt_env_vars()
+        return torch.load(acmodel_status_ckpt, map_location=DEVICE, weights_only=False)
+    return {StatusCkptKeys.NUM_FRAMES.value: 0, StatusCkptKeys.UPDATE.value: 0}
+
+
+def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
+    predictiveNet = PredictiveNet(
+        env,
+        hidden_size=cfg.predNet.hiddensize,
+        pRNNtype=cfg.predNet.pRNNtype,
+        learningRate=cfg.predNet.lr,
+        bptttrunc=cfg.predNet.bptttrunc,
+        weight_decay=cfg.predNet.weight_decay,
+        neuralTimescale=cfg.predNet.ntimescale,
+        dropp=cfg.predNet.dropout,
+        trainNoiseMeanStd=(cfg.predNet.noisemean, cfg.predNet.noisestd),
+        f=cfg.predNet.sparsity,
+        wandb_log=wandb_log,
+    )
+    cfg.predNet.hiddensize = predictiveNet.hidden_size
+    predictiveNet.env_shell.hd_trans = np.array([-1, 1, 0, 0])  # TODO: remove later
+    # (already the FaramaMinigridShell default; kept for parity)
+
+    if cfg.logging.load_worldmodel:
+        prnn_ckpt, _ = get_ckpt_env_vars()
+        load_pN(
+            model_ckpt_filepath=prnn_ckpt,
+            device=DEVICE,
+            pRNNtype=cfg.predNet.pRNNtype,
+            predictive_net=predictiveNet,
+        )
+        print(f"Existing pRNN model loaded from {prnn_ckpt}")
+
+    return predictiveNet
+
+
+def setup_acmodel(cfg, env, obs_space, status: dict) -> nn.Module:
+    acmodel: nn.Module
+    if cfg.exp.pRNN:
+        acmodel = ACModelSR(
+            obs_space,
+            env.action_space,
+            cfg.predNet.hiddensize,
+            cfg.exp.with_obs,
+            cfg.exp.rgb,
+            cfg.exp.with_HD,
+        )
+    else:
+        acmodel = ACModel(obs_space, env.action_space, cfg.exp.with_HD, cfg.exp.rgb)
+
+    if StatusCkptKeys.MODEL_STATE.value in status:
+        load_statedict_from_acmodel_status(
+            receiver=acmodel,
+            status=status,
+            status_key=StatusCkptKeys.MODEL_STATE,
+            device=DEVICE,
+        )
+        print("Existing AC model loaded from status checkpoint")
+
+    acmodel.to(DEVICE)
+    return acmodel
+
+
+def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict) -> PredictivePPOAlgo:
+    if cfg.predNet.train:
+        assert cfg.predNet.seqdur > 0, "Set an appropriate seqdur"
+    else:
+        cfg.predNet.seqdur = 0
+
+    pastSR = not ("prevAct" in str(predictiveNet.pRNN))
+    print("pastSR:", pastSR)
+
+    algo = PredictivePPOAlgo(
+        envs if len(envs) > 1 else envs[0],
+        acmodel,
+        predictiveNet,
+        DEVICE,
+        num_frames=cfg.rl.frames,
+        discount=cfg.rl.discount,
+        lr=cfg.rl.lr,
+        gae_lambda=cfg.rl.gae_lambda,
+        entropy_coef=cfg.rl.entropy_coef,
+        value_loss_coef=cfg.rl.value_loss_coef,
+        max_grad_norm=cfg.rl.max_grad_norm,
+        recurrence=1,
+        adam_eps=cfg.rl.optim_eps,
+        clip_eps=cfg.rl.ppo_clip_eps,
+        epochs=cfg.rl.ppo_epochs,
+        batch_size=cfg.rl.ppo_batch_size,
+        preprocess_obss=preprocess_obss,
+        train_pN=cfg.predNet.train,
+        noise_mu=cfg.predNet.noisemean,
+        noise_std=cfg.predNet.noisestd,
+        prnn_seqdur=cfg.predNet.seqdur,
+        intrinsic=cfg.exp.intrinsic,
+        k_int=cfg.rl.k_int,
+        pastSR=pastSR,
+        curious_agent=cfg.exp.curious_agent,
+        k_curious=cfg.rl.k_curious,
+        reward_alignment=cfg.rl.get("reward_alignment", "legacy"),
+        loss=cfg.rl.get("loss", "ppo_clip"),
+    )
+
+    if StatusCkptKeys.OPTIMIZER_STATE.value in status:
+        load_statedict_from_acmodel_status(
+            receiver=algo.optimizer,
+            status=status,
+            status_key=StatusCkptKeys.OPTIMIZER_STATE,
+            device=DEVICE,
+        )
+        print("Optimizer loaded")
+
+    return algo
+
+
+def setup_training(cfg) -> TrainingComponents:
+    """Build the full stack in the historical order (seed -> env -> status ->
+    preprocessor -> world model -> AC model -> algo -> analysis agents)."""
+    seed_everything(cfg.exp.seed)
+    print(f"Device: {DEVICE}\n")
+
+    envs = setup_envs(cfg)
+    env = envs[0]
+    status = load_status(cfg)
+    obs_space, preprocess_obss = get_obss_preprocessor(env.observation_space)
+    predictiveNet = setup_world_model(cfg, env, cfg.logging.wandb_log)
+    acmodel = setup_acmodel(cfg, env, obs_space, status)
+    algo = setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status)
+
+    pastSR = algo.pastSR
+    random_agent = get_agent(env=env, rand_act_prob=RAND_ACT_PROBA, agent_Type=AgentType.RANDOM)
+    ac_agent = get_agent(
+        env=env,
+        agent_Type=AgentType.AC,
+        prnn=predictiveNet,
+        device=DEVICE,
+        ac_model=acmodel,
+        pastSR=pastSR,
+    )
+
+    return TrainingComponents(
+        envs=envs,
+        predictiveNet=predictiveNet,
+        acmodel=acmodel,
+        algo=algo,
+        preprocess_obss=preprocess_obss,
+        obs_space=obs_space,
+        status=status,
+        pastSR=pastSR,
+        random_agent=random_agent,
+        ac_agent=ac_agent,
+    )

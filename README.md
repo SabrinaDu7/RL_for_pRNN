@@ -27,7 +27,7 @@ Then, you should change the environment variables in ```.env```.
 
 ## Running pRNN training
 
-Default values for the training pipeline can be found in ```trainRL_Adel.py```. Configs utilize [Hydra](https://hydra.cc/docs/intro/) .and .yaml files. Here is an example run that alters a config value:
+Default values for the training pipeline can be found in ```main_train.py``` (setup/loop/logging live in ```curious_george/training/```). Configs utilize [Hydra](https://hydra.cc/docs/intro/) .and .yaml files. Here is an example run that alters a config value:
 
 ```bash
 uv run trainRL_Adel.py rl.steps=10000
