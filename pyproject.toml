@@ -11,9 +11,7 @@ authors = [
     { name = "Sabrina Du", email = "sabrina.du@mila.quebec"},
 ]
 
-dependencies = [
-    "minigrid", # Custom Minigrid package in local folder
-    "prnn", # Custom prnn package in local folder
+dependencies = [ # Custom prnn package in local folder
     "gymnasium==0.29.1",
     "ratinabox==1.7.1",
     "pynapple==0.6.1",
@@ -42,6 +40,8 @@ dependencies = [
     "nbformat>=5.10.4",
     "pypatree>=0.4.0",
     "wandb==0.28.0",
+    "minigrid",
+    "prnn",
 ]
 
 [dependency-groups]
@@ -84,21 +84,17 @@ include = [
     "trainRL_Adel.py",
 ]
 
-[tool.uv.sources]
-minigrid = { path = "../minigrid", editable=true }
-prnn = { path = "../pRNN", editable=true }
-
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
 include = ["curious_george", "tests", "tasks", "*.py"]
-extraPaths = [
-    "../minigrid",
-    "../pRNN",
-]
 
 # OVerride specific rules
 reportPossiblyUnboundVariable = "none"
+
+[tool.uv.sources]
+minigrid = { git = "https://github.com/SabrinaDu7/minigrid.git" }
+prnn = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git" }
 
 [project.urls]
 Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"

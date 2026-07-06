@@ -742,22 +742,12 @@ wheels = [
 [[package]]
 name = "minigrid"
 version = "1.2.6"
-source = { editable = "../minigrid" }
+source = { git = "https://github.com/SabrinaDu7/minigrid.git#fce833d82318d86ae1c87d27816fc2fb6b2f1dc7" }
 dependencies = [
     { name = "gymnasium" },
     { name = "matplotlib" },
     { name = "numpy" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "gymnasium", specifier = ">=0.26" },
-    { name = "matplotlib", specifier = ">=3.0" },
-    { name = "numpy", specifier = ">=1.18.0" },
-    { name = "pytest", marker = "extra == 'testing'", specifier = ">=7.0.1" },
-    { name = "pytest-mock", marker = "extra == 'testing'", specifier = ">=3.10.0" },
-]
-provides-extras = ["testing"]
 
 [[package]]
 name = "moviepy"
@@ -1138,7 +1128,7 @@ wheels = [
 [[package]]
 name = "prnn"
 version = "0.1.0"
-source = { editable = "../pRNN" }
+source = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git#2663d9f5e1b7c734c4b69af40f02169f7b4c09d6" }
 dependencies = [
     { name = "gym" },
     { name = "gymnasium" },
@@ -1163,41 +1153,6 @@ dependencies = [
     { name = "torchvision" },
     { name = "wandb" },
     { name = "zipp" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "gym", specifier = ">=0.26.2" },
-    { name = "gymnasium", specifier = "==0.29.1" },
-    { name = "hydra-core", specifier = ">=1.3.2" },
-    { name = "importlib-metadata", specifier = ">=7.0.1" },
-    { name = "jaxtyping", specifier = ">=0.2.36" },
-    { name = "kaleido", specifier = ">=1.1.0" },
-    { name = "matplotlib", specifier = ">=3.5.3" },
-    { name = "minigrid", editable = "../minigrid" },
-    { name = "moviepy", specifier = ">=2.2.1" },
-    { name = "numpy", specifier = ">=1.22.4" },
-    { name = "pandas", specifier = ">=1.5.3" },
-    { name = "plotly", specifier = ">=6.3.0" },
-    { name = "pynapple", specifier = "==0.6.1" },
-    { name = "pyparsing", specifier = ">=3.1.1" },
-    { name = "ratinabox", specifier = "==1.7.1" },
-    { name = "ruamel-yaml", specifier = ">=0.18.6" },
-    { name = "scikit-learn", specifier = ">=1.4.0" },
-    { name = "scipy", specifier = ">=1.12.0" },
-    { name = "torch", specifier = ">=2.7.1" },
-    { name = "torch-ac", specifier = ">=1.4.0" },
-    { name = "torchvision", specifier = ">=0.20.1" },
-    { name = "wandb", specifier = ">=0.21.3" },
-    { name = "zipp", specifier = ">=3.17.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pypatree", specifier = ">=0.3.0" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "ruff", specifier = ">=0.13.2" },
-    { name = "rust-just", specifier = ">=1.42.4" },
 ]
 
 [[package]]
@@ -1632,13 +1587,13 @@ requires-dist = [
     { name = "jaxtyping", specifier = ">=0.2.36" },
     { name = "kaleido", specifier = ">=1.1.0" },
     { name = "matplotlib", specifier = ">=3.5.3" },
-    { name = "minigrid", editable = "../minigrid" },
+    { name = "minigrid", git = "https://github.com/SabrinaDu7/minigrid.git" },
     { name = "moviepy", specifier = ">=2.2.1" },
     { name = "nbformat", specifier = ">=5.10.4" },
     { name = "numpy", specifier = ">=1.22.4" },
     { name = "pandas", specifier = ">=1.5.3" },
     { name = "plotly", specifier = ">=6.3.0" },
-    { name = "prnn", editable = "../pRNN" },
+    { name = "prnn", git = "ssh://git@github.com/SabrinaDu7/pRNN.git" },
     { name = "pyarrow", specifier = ">=21.0.0" },
     { name = "pynapple", specifier = "==0.6.1" },
     { name = "pyparsing", specifier = ">=3.1.1" },
