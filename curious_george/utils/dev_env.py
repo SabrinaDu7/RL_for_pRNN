@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-from curious_george.enums import AgentType
+from curious_george.utils.enums import AgentType
 from prnn.utils import MinigridEnvNames
 
 def get_env_var(var_name: str) -> str:
