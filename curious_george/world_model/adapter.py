@@ -130,25 +130,58 @@ class PRNNAdapter:
             for idx in range(1, len(done_indices)):
                 start_episode, end_episode = done_indices[idx - 1], done_indices[idx]
                 last_obs = last_observations[idx - 1]
-                if target_offset == 0:
-                    acts_now = actions_np[start_episode:end_episode]
-                    obs_now = obss[start_episode:end_episode] + [last_obs]
-                else:
-                    # extra step so last_obs is also a prediction target
-                    acts_now = np.append(actions_np[start_episode:end_episode], 0)
-                    obs_now = obss[start_episode:end_episode] + [last_obs, last_obs]
-
-                obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
-                obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
-                if target_offset == 1:
-                    act_formatted[:, -1, :] = 0  # zero-action step (init_sr convention)
-
-                obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
-                obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
-                errors = ((obs_pred - obs_next) ** 2).mean(dim=1)
-                MSEs[start_episode:end_episode] = errors[target_offset:]
+                _, _, _, errors = self.episode_prediction_rows(
+                    obss[start_episode:end_episode],
+                    actions_np[start_episode:end_episode],
+                    last_obs,
+                    target_offset=target_offset,
+                )
+                MSEs[start_episode:end_episode] = errors
 
         return MSEs
+
+    def episode_prediction_rows(
+        self,
+        obss_ep: list,
+        acts_ep: np.ndarray,
+        last_obs,
+        target_offset: int = 0,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """One episode's reward-pass predictions, row i aligned to action i.
+
+        Returns (pred_rows, target_rows, hidden_rows, mses), each with
+        len(acts_ep) rows: under target_offset=0 (legacy) row i targets
+        obss_ep[i]; under target_offset=1 (next_obs) row i targets the obs
+        action i produced (last row's target is last_obs, predicted via the
+        appended zero-action step). hidden_rows are the pRNN states at each
+        prediction row (theta-window dim 0 for thcyc nets is squeezed away
+        for the masked mainline nets).
+        """
+        assert target_offset in (0, 1)
+        with torch.no_grad():
+            if target_offset == 0:
+                acts_now = acts_ep
+                obs_now = list(obss_ep) + [last_obs]
+            else:
+                # extra step so last_obs is also a prediction target
+                acts_now = np.append(acts_ep, 0)
+                obs_now = list(obss_ep) + [last_obs, last_obs]
+
+            obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
+            obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
+            if target_offset == 1:
+                act_formatted[:, -1, :] = 0  # zero-action step (init_sr convention)
+
+            obs_pred, obs_next, h = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
+            obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
+            errors = ((obs_pred - obs_next) ** 2).mean(dim=1)
+
+        return (
+            obs_pred[target_offset:],
+            obs_next[target_offset:],
+            h.squeeze(0)[target_offset:],
+            errors[target_offset:],
+        )
 
     def make_batched_tracker(self, num_envs: int) -> "BatchedSRTracker":
         return BatchedSRTracker(self.pN, self.device, num_envs)

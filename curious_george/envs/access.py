@@ -47,3 +47,47 @@ def get_subroom_id(
     row = (agent_pos[:, 1] > subroom_size).long()
 
     return row * 2 + col + 1
+
+
+# ---------------------------------------------------------------------------
+# Visualization helpers (state / observation / prediction / hidden-state images)
+# ---------------------------------------------------------------------------
+
+ACTION_NAMES = ("left", "right", "forward", "stay")
+
+
+def render_env(shell) -> "np.ndarray":
+    """Current RGB frame of the full environment (agent pos/dir included)."""
+    return shell.render(mode=None)
+
+
+def obs_image(obs: dict, upscale: int = 24):
+    """Raw observation dict -> upscaled RGB array in [0, 1] for imshow."""
+    import numpy as np
+
+    img = np.asarray(obs["image"], dtype=float)
+    if img.max() > 1.0:
+        img = img / 255.0
+    return np.kron(img, np.ones((upscale, upscale, 1)))
+
+
+def pred_image(shell, row: torch.Tensor, upscale: int = 24):
+    """One prediction/target row (X,) -> upscaled RGB array in [0, 1].
+
+    Uses the shell's own pred2np decoding (expects a (phase, T, X) tensor).
+    """
+    import numpy as np
+
+    img = shell.pred2np(row.detach().cpu()[None, None, :])[0]
+    img = np.clip(np.asarray(img, dtype=float), 0.0, 1.0)
+    return np.kron(img, np.ones((upscale, upscale, 1)))
+
+
+def hidden_image(h: torch.Tensor, width: int = 25):
+    """Hidden-state / SR vector -> 2D heatmap array (pad to a width-column grid)."""
+    import numpy as np
+
+    v = h.detach().cpu().flatten().numpy()
+    pad = (-len(v)) % width
+    v = np.pad(v, (0, pad), constant_values=np.nan)
+    return v.reshape(-1, width)
