@@ -1,7 +1,7 @@
 # Curious George: curiosity-driven RL with pRNN spatial representations.
 #
 # Package layout (see docs/refactor_baseline.md and the refactor plan):
-#   common       - DEVICE, seeding, small stat helpers
+#   utils        - DEVICE, seeding, small stat helpers, checkpoints, enums, dev_env
 #   envs         - env construction (factory) and wrapper accessors (access)
 #   models       - actor-critic models (ACModel, ACModelSR)
 #   rl           - PPO algo, rollout agent, obs preprocessing
@@ -9,7 +9,7 @@
 #   world_model  - the pRNN seam (adapter; the only place importing prnn)
 #   storage      - paths, checkpoints, factories
 
-from curious_george.common import (
+from curious_george.utils.common import (
     DEVICE,
     seed,
     synthesize,
@@ -17,18 +17,18 @@ from curious_george.common import (
     grid_to_pixel_coords,
 )
 
-from curious_george.enums import (
+from curious_george.utils.enums import (
     AgentInputType,
     AgentType,
 )
 
-from curious_george.checkpoints import (
+from curious_george.utils.checkpoints import (
     ACMODEL_STATUS,
     StatusCkptKeys,
     load_statedict_from_acmodel_status,
 )
 
-from curious_george.dev_env import (
+from curious_george.utils.dev_env import (
     get_env_var,
     get_ckpt_env_vars,
     get_wandb_env_vars,

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Callable, Type
 
 import numpy as np
@@ -7,26 +8,24 @@ from prnn.utils import (
     PredictiveNet,
     RandomActionAgent,
     load_pN,
-    pRNNtypes,
     save_pN,
 )
 from prnn.utils.Shell import FaramaMinigridShell
 
-from curious_george.common import DEVICE
 from curious_george.envs.access import get_new_obj_pos as access_get_goal_loc
 from curious_george.models import ACModel, ACModelSR
-from curious_george.rl.collect.agent import ActorCriticAgent
 from curious_george.rl.algo import PredictivePPOAlgo
-from curious_george.checkpoints import (
+from curious_george.rl.collect.agent import ActorCriticAgent
+from curious_george.utils.checkpoints import (
     StatusCkptKeys,
-    load_statedict_from_acmodel_status,
 )
-from curious_george.enums import AgentType
+from curious_george.utils.common import DEVICE
+from curious_george.utils.enums import AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 
 
-def create_folders_if_necessary(path):
+def create_folders_if_necessary(path: str):
     if path == "":
         return
     dirname = os.path.dirname(path)
@@ -42,11 +41,11 @@ def get_storage_dir():
     return "storage"
 
 
-def get_model_dir(model_name):
+def get_model_dir(model_name: str | Path):
     return os.path.join(get_storage_dir(), model_name)
 
 
-def get_video_dir(model_name):
+def get_video_dir(model_name: str):
     return os.path.join(os.environ["HOME"], "pRNN-RL/RLvideos", model_name)
 
 
@@ -56,15 +55,15 @@ def get_tmp_dir():
     return "tmp"
 
 
-def get_tmp_model_dir(model_name):
+def get_tmp_model_dir(model_name: str | Path):
     return os.path.join(get_tmp_dir(), model_name)
 
 
-def get_status_path(model_dir):
+def get_status_path(model_dir: str | Path):
     return os.path.join(model_dir, "status.pt")
 
 
-def get_status(model_dir):
+def get_status(model_dir: str | Path):
     path = get_status_path(model_dir)
     return torch.load(path, map_location=DEVICE, weights_only=False)
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from omegaconf import OmegaConf
 
 import wandb
-from curious_george.common import synthesize
+from curious_george.utils.common import synthesize
 
 
 @dataclass

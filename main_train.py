@@ -7,15 +7,15 @@ logging in training/logging.py.
 
 import warnings
 
-warnings.filterwarnings("ignore", category=UserWarning)
-
 import hydra
+import wandb
 from omegaconf import DictConfig, OmegaConf
 
-import wandb
 from curious_george.training.logging import init_wandb
 from curious_george.training.loop import run_training
 from curious_george.training.setup import setup_run, setup_training
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 @hydra.main(config_path="Configs", config_name="Conf1_Adel")

@@ -8,14 +8,14 @@ from tqdm import tqdm
 from prnn.utils import save_pN
 
 import wandb
-from curious_george.common import DEVICE, synthesize
+from curious_george.utils.common import DEVICE, synthesize
 from curious_george.evaluation.on_policy import OnPolicyAnalysis, mutual_info_policy
 from curious_george.evaluation.spatial import evaluate_spatial_representation
 from curious_george.storage import save_analysis_of_agent_behav, save_status
 from curious_george.training import logging as train_log
 from curious_george.training.setup import RunContext, TrainingComponents
 from curious_george.world_model.device import on_device
-from curious_george.checkpoints import StatusCkptKeys
+from curious_george.utils.checkpoints import StatusCkptKeys
 
 
 def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> None:

@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from prnn.utils import PredictiveNet, load_pN
 
-from curious_george.common import DEVICE, seed as seed_everything
+from curious_george.utils.common import DEVICE, seed as seed_everything
 from curious_george.envs.factory import make_env
 from curious_george.models import ACModel, ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
@@ -26,9 +26,9 @@ from curious_george.storage import (
     get_model_dir,
     get_video_dir,
 )
-from curious_george.checkpoints import StatusCkptKeys, load_statedict_from_acmodel_status
-from curious_george.dev_env import get_ckpt_env_vars
-from curious_george.enums import AgentType
+from curious_george.utils.checkpoints import StatusCkptKeys, load_statedict_from_acmodel_status
+from curious_george.utils.dev_env import get_ckpt_env_vars
+from curious_george.utils.enums import AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
 

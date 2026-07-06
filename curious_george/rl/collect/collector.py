@@ -323,7 +323,7 @@ def collect_rollout(
 
     tracker.end_rollout()
 
-    from curious_george.common import mean_by_action  # local import: avoids cycle
+    from curious_george.utils.common import mean_by_action  # local import: avoids cycle
 
     if cfg.curious_agent:
         curious_by_action = mean_by_action(curious_rewards.cpu().numpy(), actions_np)
