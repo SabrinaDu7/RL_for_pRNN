@@ -71,10 +71,12 @@ rewards=curious|curious_next_obs          (sets rl.reward_alignment)
 - **Curiosity reward (`rl.reward_alignment` / `rewards=` group)**: `legacy`
   (default) credits action i with the error on `obss[i]` - the PRE-action
   observation. This is the historical behavior and is pinned by the golden
-  fixture. `next_obs` credits action i with the error on `obss[i+1]`; the
-  last action of each episode keeps its own error (its successor's
-  prediction row is not produced by the per-episode predict pass). First
-  wandb probe run: docs/exp_reward_alignment_next_obs.md.
+  fixture. `next_obs` credits every action i - including the last of each
+  episode - with the error on the observation it produced: the per-episode
+  predict pass is extended by one zero-action step (the init_sr convention)
+  so the final observation is a real prediction target. No boundary special
+  case. First wandb probe run: docs/exp_reward_alignment_next_obs.md
+  (predates this; its runs used the old duplicate-last-error shift).
 - **pastSR convention**: `pastSR = not ("prevAct" in str(pN.pRNN))`.
   pastSR=True pairs with `SpeedHD` (HD from current step, actOffset=0, SR
   aligns to current position); pastSR=False pairs with `SpeedNextHD`.

@@ -107,31 +107,46 @@ class PRNNAdapter:
         done_indices: list[int],
         last_observations: list,
         num_frames: int,
+        target_offset: int = 0,
     ) -> torch.Tensor:
         """Per-step observation-prediction MSE over the collected rollout,
         computed per episode segment. Used as the curiosity reward.
 
-        ALIGNMENT CONTRACT (legacy, preserved on purpose - see
-        docs/refactor_baseline.md flaw #1): with predOffset=0, MSEs[i] is the
-        error reconstructing obss[i], the observation BEFORE action i. The
-        planned `reward_alignment=next_obs` mode will credit action i with
-        MSEs[i+1] instead.
+        ALIGNMENT CONTRACT (see docs/refactor_baseline.md flaw #1): with
+        predOffset=0, prediction row t targets obss[t].
+        - target_offset=0 (legacy): MSEs[i] is the error reconstructing
+          obss[i], the observation BEFORE action i.
+        - target_offset=1 (next_obs): MSEs[i] is the error on the observation
+          action i PRODUCED. The episode's final observation gets a real
+          prediction row too: the pass is extended by one step that feeds
+          last_obs with a zeroed action row (the same zero-action convention
+          init_sr uses), so every action's reward is computed the same way -
+          no boundary special case.
         """
+        assert target_offset in (0, 1)
         with torch.no_grad():
             MSEs = torch.zeros(num_frames, device=self.device)
 
             for idx in range(1, len(done_indices)):
                 start_episode, end_episode = done_indices[idx - 1], done_indices[idx]
                 last_obs = last_observations[idx - 1]
-                acts_now = actions_np[start_episode:end_episode]
-                obs_now = obss[start_episode:end_episode] + [last_obs]
+                if target_offset == 0:
+                    acts_now = actions_np[start_episode:end_episode]
+                    obs_now = obss[start_episode:end_episode] + [last_obs]
+                else:
+                    # extra step so last_obs is also a prediction target
+                    acts_now = np.append(actions_np[start_episode:end_episode], 0)
+                    obs_now = obss[start_episode:end_episode] + [last_obs, last_obs]
 
                 obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
                 obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
+                if target_offset == 1:
+                    act_formatted[:, -1, :] = 0  # zero-action step (init_sr convention)
 
                 obs_pred, obs_next, _ = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
                 obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
-                MSEs[start_episode:end_episode] = ((obs_pred - obs_next) ** 2).mean(dim=1)
+                errors = ((obs_pred - obs_next) ** 2).mean(dim=1)
+                MSEs[start_episode:end_episode] = errors[target_offset:]
 
         return MSEs
 

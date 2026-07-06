@@ -103,3 +103,19 @@ Checklist:
 them to wandb; `trainRL_Adel.py` logs only the aggregate `cur_reward_*`
 stats. If per-action curiosity is wanted in training runs, trainRL's header/
 data block needs a one-line addition.
+
+## Update 2026-07-06: boundary special case removed
+
+The original `next_obs` implementation shifted the legacy MSE vector within
+each episode and let the LAST action keep its own (legacy) error, because the
+per-episode predict pass produced no prediction row for the episode's final
+observation. This is now fixed at the source: the adapter extends each
+episode's predict pass by one step that feeds `last_obs` with a zeroed action
+row (the same zero-action convention `init_sr` uses), so the final
+observation is a real prediction target and EVERY action's reward is computed
+identically - no boundary case. Verified with a real-net test:
+`next_obs[:-1] == legacy[1:]` within episodes (causality: the extra step
+cannot affect earlier rows) and the final reward is a genuine, distinct
+error. The probe run above predates this change (its last-step-per-episode
+rewards used the duplicate); rerun before drawing conclusions from
+per-episode-boundary steps (1 in 256 frames at seqdur=256).

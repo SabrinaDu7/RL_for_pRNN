@@ -8,27 +8,29 @@ import numpy as np
 import pytest
 import torch
 
-from curious_george.rl.update.rewards import (
-    align_to_next_obs,
-    compute_curious_rewards,
+from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
+from curious_george import AgentInputType, make_env
+from curious_george.rl.update.rewards import compute_curious_rewards
+from curious_george.world_model.adapter import (
+    PRNNAdapter,
+    infer_past_sr,
+    validate_action_encoding,
 )
-from curious_george.world_model.adapter import infer_past_sr, validate_action_encoding
 from curious_george.world_model.device import on_device, eval_mode
 
 
 class StubAdapter:
-    """prediction_mses returns [0, 1, 2, ...] so indices are legible."""
+    """prediction_mses returns [0, 1, ...] (+100 when target_offset=1) so the
+    selected alignment is legible from the values."""
 
-    def __init__(self, num_frames):
-        self.num_frames = num_frames
-
-    def prediction_mses(self, *, obss, actions_np, done_indices, last_observations, num_frames):
-        return torch.arange(num_frames, dtype=torch.float32)
+    def prediction_mses(self, *, obss, actions_np, done_indices,
+                        last_observations, num_frames, target_offset=0):
+        return torch.arange(num_frames, dtype=torch.float32) + 100 * target_offset
 
 
 def _rewards(alignment, done_indices, num_frames=8):
     return compute_curious_rewards(
-        StubAdapter(num_frames),
+        StubAdapter(),
         obss=[None] * num_frames,
         actions_np=np.zeros(num_frames),
         done_indices=done_indices,
@@ -38,34 +40,89 @@ def _rewards(alignment, done_indices, num_frames=8):
     )
 
 
-def test_legacy_is_passthrough():
+def test_legacy_selects_offset_0():
     out = _rewards("legacy", done_indices=[0, 4, 8])
     assert torch.equal(out, torch.arange(8, dtype=torch.float32))
 
 
-def test_next_obs_shifts_within_episode():
+def test_next_obs_selects_offset_1():
     out = _rewards("next_obs", done_indices=[0, 8])
-    # action i credited with error on obs[i+1]; last action keeps its own
-    expected = torch.tensor([1, 2, 3, 4, 5, 6, 7, 7], dtype=torch.float32)
-    assert torch.equal(out, expected)
-
-
-def test_next_obs_does_not_cross_episode_boundary():
-    out = _rewards("next_obs", done_indices=[0, 4, 8])
-    # episodes [0..3] and [4..7]; the shift must not leak error 4 into episode 1
-    expected = torch.tensor([1, 2, 3, 3, 5, 6, 7, 7], dtype=torch.float32)
-    assert torch.equal(out, expected)
-
-
-def test_next_obs_single_step_episode():
-    out = align_to_next_obs(torch.arange(3, dtype=torch.float32), [0, 1, 3])
-    expected = torch.tensor([0, 2, 2], dtype=torch.float32)
-    assert torch.equal(out, expected)
+    assert torch.equal(out, torch.arange(8, dtype=torch.float32) + 100)
 
 
 def test_unknown_alignment_raises():
     with pytest.raises(AssertionError):
         _rewards("bogus", done_indices=[0, 8])
+
+
+# ---------------------------------------------------------------------------
+# real-net alignment semantics (zero noise -> deterministic passes)
+# ---------------------------------------------------------------------------
+
+L = 10
+
+
+@pytest.fixture(scope="module")
+def episode_stream():
+    torch.manual_seed(3)
+    np.random.seed(3)
+    env = make_env(
+        env_key=MinigridEnvNames.LRoom,
+        input_type=AgentInputType.H_PO.value,
+        act_enc=ActionEncodingsEnum.SpeedHD.value,
+        seed=3,
+    )
+    pN = PredictiveNet(
+        env, hidden_size=32, pRNNtype="thRNN_5win",
+        trainNoiseMeanStd=(0, 0), wandb_log=False,
+    )
+    pN.pRNN.eval()
+    adapter = PRNNAdapter(pN, torch.device("cpu"), pastSR=True)
+
+    rng = np.random.default_rng(3)
+    obs = env.reset()
+    obss, acts = [], []
+    for _ in range(L):
+        a = int(rng.integers(0, 4))
+        obss.append(obs)
+        acts.append(a)
+        obs = env.step(np.array([a]))[0]
+    return adapter, obss, np.array(acts), obs  # obs = final (last) observation
+
+
+def _mses(adapter, obss, acts, done_indices, last_observations, offset):
+    torch.manual_seed(11)  # identical draws per pass (zero noise anyway)
+    return adapter.prediction_mses(
+        obss=obss, actions_np=acts, done_indices=done_indices,
+        last_observations=last_observations, num_frames=len(obss),
+        target_offset=offset,
+    )
+
+
+def test_next_obs_is_shift_of_legacy_plus_real_final_target(episode_stream):
+    adapter, obss, acts, last_obs = episode_stream
+    legacy = _mses(adapter, obss, acts, [0, L], [last_obs], 0)
+    nxt = _mses(adapter, obss, acts, [0, L], [last_obs], 1)
+
+    # causality: rows 0..L-1 of the extended pass equal the legacy rows,
+    # so next_obs[i] == legacy[i+1] for all but the final action
+    assert torch.allclose(nxt[:-1], legacy[1:], atol=1e-6)
+    # the final action gets a REAL prediction error on last_obs (no duplicate)
+    assert torch.isfinite(nxt[-1])
+    assert nxt.shape == legacy.shape
+
+
+def test_next_obs_respects_episode_boundaries(episode_stream):
+    adapter, obss, acts, last_obs = episode_stream
+    split = 5
+    dones = [0, split, L]
+    lasts = [obss[split], last_obs]  # first episode's last obs = next pre-action obs
+    legacy = _mses(adapter, obss, acts, dones, lasts, 0)
+    nxt = _mses(adapter, obss, acts, dones, lasts, 1)
+
+    assert torch.allclose(nxt[0:split - 1], legacy[1:split], atol=1e-6)
+    assert torch.allclose(nxt[split:L - 1], legacy[split + 1:L], atol=1e-6)
+    assert torch.isfinite(nxt).all()
 
 
 # ---------------------------------------------------------------------------
