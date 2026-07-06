@@ -20,6 +20,7 @@ from curious_george.utils.checkpoints import (
     StatusCkptKeys,
 )
 from curious_george.utils.common import DEVICE
+from curious_george.utils.dev_env import get_env_var
 from curious_george.utils.enums import AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
@@ -34,9 +35,14 @@ def create_folders_if_necessary(path: str):
 
 
 def get_storage_dir():
-    if "RL_STORAGE" in os.environ:
-        return os.environ["RL_STORAGE"]
-    elif "SCRATCH" in os.environ:
+    """Run-output root. Single source of truth: RL_STORAGE in .env
+    (get_env_var loads .env lazily, so this works regardless of import order).
+    Fallbacks: $SCRATCH/RLstorage, then ./storage."""
+    try:
+        return get_env_var("RL_STORAGE")
+    except EnvironmentError:
+        pass
+    if "SCRATCH" in os.environ:
         return os.path.join(os.environ["SCRATCH"], "RLstorage")
     return "storage"
 
