@@ -4,6 +4,20 @@ Captured 2026-07-03 before any refactor changes. Plan: `curious_george/` refacto
 (see approved plan; behavior-preserving, legacy paths deleted, reward-alignment
 fix deferred behind a future `reward_alignment` flag).
 
+> **Status vs this baseline (2026-07-05, end of modularity pass):**
+> suite is at **187 passed / 16 failed / 7 deselected** (baseline 169/18;
+> +10 new alignment/device tests, +3 batched-tracker, +3 batched-collector,
+> 2 pre-existing ckpt-test failures fixed; the 16 remaining failures are the
+> untouched pre-existing test_wandb_data (12) and test_analysis_omt (4)).
+> The golden fixture below has held BITWISE through every stage: package
+> extraction, algo split into adapter/rewards/buffer/ppo, collector
+> unification (B=1 through the batched code path), training/ split
+> (old script vs main_train A/B: identical checkpoints), hydra config
+> groups, and the utils move. Flaw #1 below is now implemented behind
+> `rl.reward_alignment` (`rewards=curious_next_obs`); #2-#6 are fixed or
+> quarantined as documented in docs/refactor_notes.md and
+> docs/refactor_progress.md.
+
 ## Ground
 
 - Base commit: `807dab9748331af97aac5edfc86099d5eed570cc` on branch
@@ -33,7 +47,9 @@ Refactor gate: passed count must stay ≥ 169 and no NEW failures beyond these 1
 ## Golden fixture (behavior-preservation oracle)
 
 - Generator: `tests/golden/capture_golden.py` → `tests/golden/golden_v0.pt`.
-- Mirrors `trainRL_Adel.py` mainline construction (MiniGrid-LRoom-v0, `pRNN`
+  (The generator's imports track the current package layout; the .pt file is
+  frozen pre-refactor truth and is never regenerated as the oracle.)
+- Mirrors the historical mainline construction (MiniGrid-LRoom-v0, `pRNN`
   input, `SpeedHD`, fresh `thRNN_5win` hidden=500, ACModelSR, PredictivePPOAlgo,
   `curious_agent=True`, `intrinsic=False`, `train_pN=True`), CPU, seed=2,
   frames=64, seqdur=32, 2 collect+update rounds.
