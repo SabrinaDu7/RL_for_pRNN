@@ -120,3 +120,28 @@ reward-alignment fix behind a flag, default `legacy`). Baselines in
   Phase 5): B>1 vs B=1 RNG streams. Two intentional behavior deltas:
   large-jump debug no longer dumps debug_locs*.pt (prints only), and B>1
   logs now carry real per-episode returns / dist_travelled.
+
+## OMT refactor (2026-07-06, commits 5f6564f..48ab596)
+
+- **tasks/ObjectMemoryTask -> tasks/omt** with main_task.py entry (was broken:
+  still composed the deleted Conf1_Adel config), task.py + metrics.py split
+  (quantify_object_learning is a pure function), figure.py unchanged.
+- **Task template** `curious_george/evaluation/task.py`: FreezeSpec,
+  TaskComponents (explicit env_train vs env_eval - the OMT memory probe
+  trains WITH the object and evaluates WITHOUT it), setup_task (reuses
+  get_pN/get_SR_acmodel/get_agent/setup_algo; historical construction
+  order), train_phase (callback hooks), collect_eval_rollouts (serial,
+  bitwise-faithful incl. the pN.state carry-over quirk) and
+  collect_eval_rollouts_batched (lockstep env copies + BatchedSRTrackerShim;
+  same traj_stats_fn as serial). storage.get_algo deleted (setup_algo is
+  the single constructor; gained a device param - the golden gate caught it
+  defaulting to global cuda). tasks/template_task.py is the documented
+  skeleton for new tasks.
+- **Batching**: tasks.testing.batched (eval) + exp.num_envs (train phase,
+  via the env-list algo). Not bit-comparable to serial by design; zero-noise
+  equivalence pinned in tests/test_omt_batched.py.
+- **Gates**: tests/golden_omt/ bitwise fixture (real .env ckpts: construction,
+  2 train batches incl. lr scaling, eval trial, metrics, pN_control-frozen
+  and env-wiring guards) held through every step; training golden_v0 held;
+  suite 194 passed / 16 pre-existing failed; serial/batched/num_envs=2
+  smoke runs clean.
