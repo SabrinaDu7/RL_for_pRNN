@@ -11,6 +11,7 @@ RLutils/__pycache__/*
 results/*
 omt-*/
 *.png
+.zed
 
 # Claude and outputs
 wandb/*
