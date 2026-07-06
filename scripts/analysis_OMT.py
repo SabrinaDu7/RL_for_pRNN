@@ -26,7 +26,7 @@ from prnn.utils import PredictiveNet, RandomActionAgent
 from prnn.utils.Shell import FaramaMinigridShell
 from curious_george import ActorCriticAgent
 
-from tasks.ObjectMemoryTask.define_task import State
+from tasks.omt.metrics import State
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="gymnasium")

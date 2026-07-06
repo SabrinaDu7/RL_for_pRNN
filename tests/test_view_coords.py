@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from tasks.ObjectMemoryTask.define_task import (
+from tasks.omt.metrics import (
     get_view_coords,
     get_view_coords_batch,
     get_obs_at_loc,

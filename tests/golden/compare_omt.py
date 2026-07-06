@@ -18,13 +18,23 @@ try:
     from curious_george import make_env
 except ImportError:  # pre-refactor tree
     from RLutils import make_env
-from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
+try:
+    from tasks.omt.task import ObjectMemoryTask
+except ImportError:  # pre-refactor tree
+    from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
 
 OUT = sys.argv[1]
 DEVICE = torch.device("cpu")
 
 with initialize_config_dir(config_dir=str(Path.cwd() / "Configs"), version_base=None):
-    args = compose(config_name="Conf1_Adel", overrides=[
+    try:
+        args = compose(config_name="main", overrides=[
+            "logging.wandb_log=false",
+            "predNet.seqdur=32",
+            "tasks.testing.trajs=2",
+        ])
+    except Exception:  # pre-refactor tree
+        args = compose(config_name="Conf1_Adel", overrides=[
         "logging.wandb_log=false",
         "predNet.seqdur=32",
         "tasks.testing.trajs=2",

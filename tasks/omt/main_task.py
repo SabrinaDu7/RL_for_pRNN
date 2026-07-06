@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from prnn.utils.Shell import FaramaMinigridShell
-from tasks.ObjectMemoryTask.define_task import ObjectMemoryTask
+from tasks.omt.task import ObjectMemoryTask
 from curious_george import get_ckpt_env_vars, get_env_var, AgentType, AgentInputType
 from curious_george import make_env
  
@@ -50,7 +50,7 @@ def get_novel_env(room_type: str, obj_pos: list[int] = [7, 2]) -> FaramaMinigrid
 
 
 # ===== Main =====
-@hydra.main(config_path="../../Configs", config_name="Conf1_Adel")
+@hydra.main(config_path="../../Configs", config_name="main")
 def main(args: DictConfig):
 
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
