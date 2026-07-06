@@ -1,7 +1,7 @@
 defaults:
     - _self_
 
-room_type_green: "dot" # Options: "line", "plus", "dot", "extrinsic_goal"
+room_type_green: "dot" # Options: "line", "plus", "dot", "goal"
 new_obj_loc: [7, 2]
 control: False # If True, train curious agent in env without novel object to see visitation.
 
@@ -19,6 +19,7 @@ testing:
     ctrl_locs: [[2, 5], [4, 7], [11, 3], [13, 5]]
     whichPhase: 0 # which phase to analyze in quantifyObjectLearning
     start_random: False
+    batched: False # Batched eval collection (one env copy per test trajectory; not bit-comparable to serial)
     start_up_bound: [12, 6] # [8, 14] for away
     start_low_bound: [1, 1] # [1, 7] for away
 

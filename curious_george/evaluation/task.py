@@ -49,8 +49,12 @@ class FreezeSpec:
 
 @dataclass
 class TaskComponents:
-    env_train: object   # env the agent explores/trains in
+    envs_train: list    # env(s) the agent explores/trains in (B >= 1)
     env_eval: object    # env eval rollouts run in (may differ on purpose!)
+
+    @property
+    def env_train(self):
+        return self.envs_train[0]
     pN: PredictiveNet           # the (possibly trained-further) world model
     pN_control: Optional[PredictiveNet]  # frozen pre-task copy, or None
     acmodel: object
@@ -76,7 +80,12 @@ def setup_task(
 ) -> TaskComponents:
     """Build the task stack in the historical order (RNG parity):
     seed -> pN from ckpt (on env_eval) -> deep copy for control ->
-    preprocessor -> AC model from ckpt -> algo on env_train -> agent."""
+    preprocessor -> AC model from ckpt -> algo on env_train -> agent.
+
+    env_train may be a single shell or a list (parallel train-phase
+    collection via the unified algo)."""
+    envs_train = env_train if isinstance(env_train, (list, tuple)) else [env_train]
+    env_train = envs_train[0]
     seed_everything(cfg.exp.seed)
 
     pN = get_pN(args=cfg, env=env_eval, device=device, pRNN_ckpt=prnn_ckpt)
@@ -101,7 +110,7 @@ def setup_task(
     )
 
     status = torch.load(acmodel_ckpt, map_location=device, weights_only=False)
-    algo = setup_algo(cfg, [env_train], acmodel, pN, preprocess_obss, status, device=device)
+    algo = setup_algo(cfg, list(envs_train), acmodel, pN, preprocess_obss, status, device=device)
     # NOTE: freezing the world model must NOT zero prnn_seqdur (episode cuts
     # still apply), so it is applied post-construction rather than via
     # cfg.predNet.train.
@@ -118,7 +127,7 @@ def setup_task(
     )
 
     return TaskComponents(
-        env_train=env_train,
+        envs_train=list(envs_train),
         env_eval=env_eval,
         pN=pN,
         pN_control=pN_control,
@@ -254,6 +263,117 @@ def collect_eval_rollouts(
             all_agent_dir[n, :] = state["agent_dir"]
             if include_render:
                 all_renders[n, :, :, :, :] = np.stack(render, axis=0)
+
+    extras = {k: torch.stack([v.squeeze(0) for v in vals], dim=0)
+              for k, vals in extras_lists.items()}
+    return EvalRollouts(
+        obs=all_obs,
+        actions=all_act,
+        agent_pos=all_agent_pos,
+        agent_dir=all_agent_dir,
+        renders=all_renders,
+        extras=extras,
+    )
+
+
+def collect_eval_rollouts_batched(
+    *,
+    envs_eval: list,
+    agent,
+    pN: PredictiveNet,
+    T: int,
+    eval_modules: list,
+    include_render: bool = False,
+    before_each: Optional[Callable[[object], None]] = None,
+    traj_stats_fn: Optional[Callable] = None,
+) -> EvalRollouts:
+    """Batched eval collection: one trajectory per env copy, stepped in
+    lockstep with ONE batched AC forward and ONE batched pRNN step per
+    timestep (BatchedSRTrackerShim - the direct pN.pRNN batched path, not
+    the buggy predict(batched=True)).
+
+    NOT bit-comparable to the serial collector: per-env pRNN states start
+    from zeros (no cross-trajectory pN.state carry-over) and RNG order
+    differs. Zero-noise equivalence is pinned by tests/test_omt_batched.py.
+
+    Per-trajectory stats still go through the SAME traj_stats_fn as the
+    serial path (called with per-env slices), so tasks are mode-agnostic.
+    before_each(env) is called per env copy before its reset (e.g. to set
+    the start position).
+    """
+    from curious_george.world_model.adapter import BatchedSRTrackerShim, PRNNAdapter
+
+    assert hasattr(agent, "acmodel"), "batched eval requires an ActorCriticAgent"
+    B = len(envs_eval)
+    render_size = envs_eval[0].render_size
+    _, view_size, C = envs_eval[0].obs_shape
+
+    with on_device(eval_modules, "cpu"):
+        device = torch.device("cpu")
+        adapter = PRNNAdapter(pN, device, agent.pastSR)
+        tracker = BatchedSRTrackerShim(adapter, B)
+        preprocess = get_obss_preprocessor(envs_eval[0].observation_space)[1]
+
+        raw_obs = [[] for _ in range(B)]     # per env: T+1 raw obs dicts
+        raw_act = [[] for _ in range(B)]     # per env: T action ids
+        all_agent_pos = np.zeros((B, T + 1, 2), dtype=np.float32)
+        all_agent_dir = np.zeros((B, T + 1), dtype=np.int32)
+        all_renders = (
+            np.zeros((B, T + 1, render_size, render_size, C), dtype=np.uint8)
+            if include_render else None
+        )
+
+        obs_b = []
+        for b, env in enumerate(envs_eval):
+            if before_each is not None:
+                before_each(env)
+            obs = env.reset()
+            obs_b.append(obs)
+            raw_obs[b].append(obs)
+            all_agent_pos[b, 0] = env.get_agent_pos()
+            all_agent_dir[b, 0] = env.get_agent_dir()
+            if include_render:
+                all_renders[b, 0] = env.render(mode=None)
+
+        sr = tracker.initial_sr()
+        for t in range(T):
+            preprocessed = preprocess(obs_b, device=device)
+            with torch.no_grad():
+                dist, _ = agent.acmodel(preprocessed, SR=sr)
+            det_np = dist.probs.argmax(dim=-1).cpu().numpy()  # frozen eval: argmax
+
+            pre_obs_b = list(obs_b)
+            for b, env in enumerate(envs_eval):
+                obs_next = env.step(det_np[b:b + 1])[0]
+                raw_act[b].append(det_np[b])
+                raw_obs[b].append(obs_next)
+                obs_b[b] = obs_next
+                all_agent_pos[b, t + 1] = env.get_agent_pos()
+                all_agent_dir[b, t + 1] = env.get_agent_dir()
+                if include_render:
+                    all_renders[b, t + 1] = env.render(mode=None)
+
+            sr = tracker.step(det_np, pre_obs_b, obs_b)
+
+        # format per env (obs -> pred format) and run per-trajectory stats
+        all_obs = torch.zeros((B, T + 1, view_size * view_size * C), dtype=torch.float32)
+        all_act = None
+        extras_lists: dict[str, list] = {}
+        for b in range(B):
+            obs_f, act_f = pN.env_shell.env2pred(raw_obs[b], np.array(raw_act[b]))
+            all_obs[b] = obs_f
+            if all_act is None:
+                all_act = torch.zeros((B, *act_f.shape[1:]), dtype=act_f.dtype)
+            all_act[b] = act_f
+
+            if traj_stats_fn is not None:
+                state = {
+                    "agent_pos": all_agent_pos[b],
+                    "agent_dir": all_agent_dir[b],
+                }
+                render = list(all_renders[b]) if include_render else False
+                for key, val in traj_stats_fn(obs_f, act_f, state, render).items():
+                    extras_lists.setdefault(key, []).append(val)
 
     extras = {k: torch.stack([v.squeeze(0) for v in vals], dim=0)
               for k, vals in extras_lists.items()}

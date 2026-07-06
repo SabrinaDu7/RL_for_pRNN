@@ -36,15 +36,15 @@ def create_wandb_run(entity: str, project:str, run_name: str, group_name:str, ar
 
     return run
 
-def get_novel_env(room_type: str, obj_pos: list[int] = [7, 2]) -> FaramaMinigridShell:
+def get_novel_env(room_type: str, obj_pos: list[int] = [7, 2], seed: int = 0) -> FaramaMinigridShell:
     if room_type == "line":
-        return make_env(env_key=MinigridEnvNames.LRoomLineGreen, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        return make_env(env_key=MinigridEnvNames.LRoomLineGreen, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed)
     elif room_type == "plus":
-        return make_env(env_key=MinigridEnvNames.LRoom, plus_color="green", input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        return make_env(env_key=MinigridEnvNames.LRoom, plus_color="green", input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed)
     elif room_type == "dot":
-        return make_env(env_key=MinigridEnvNames.LRoom, new_obj_pos=obj_pos, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        return make_env(env_key=MinigridEnvNames.LRoom, new_obj_pos=obj_pos, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed)
     elif room_type == "goal":
-        return make_env(env_key=MinigridEnvNames.LRoomGoal, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+        return make_env(env_key=MinigridEnvNames.LRoomGoal, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed)
     else:
         raise ValueError(f"Invalid room type: {room_type}")
 
@@ -72,13 +72,24 @@ def main(args: DictConfig):
 
     # Get environments
     env_orig_name = MinigridEnvNames.LRoom
-    env_orig = make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
 
-    if args.tasks.control:
-        env_novel = make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value, act_enc=ActionEncodingsEnum.SpeedHD.value)
+    def build_env_orig(seed: int = 0) -> FaramaMinigridShell:
+        return make_env(env_key=env_orig_name, input_type=AgentInputType.H_PO.value,
+                        act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed)
+
+    def build_env_novel(seed: int = 0) -> FaramaMinigridShell:
+        if args.tasks.control:
+            return build_env_orig(seed)
+        return get_novel_env(args.tasks.room_type_green, obj_pos=args.tasks.new_obj_loc, seed=seed)
+
+    env_orig = build_env_orig()
+    num_envs = args.exp.get("num_envs", 1)
+    if num_envs > 1:  # parallel train-phase collection (env-list algo path)
+        env_novel = [build_env_novel(seed=args.exp.seed + 10000 + 1000 * i) for i in range(num_envs)]
     else:
-        env_novel = get_novel_env(args.tasks.room_type_green, obj_pos=args.tasks.new_obj_loc)
-    
+        env_novel = build_env_novel()
+
+
     # Run task
     print(f"Running Object Memory Task with {agent_name} agent")
     print(f"Using device: {DEVICE}")
@@ -93,6 +104,7 @@ def main(args: DictConfig):
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,
+        env_eval_builder=build_env_orig,  # fresh object-ABSENT copies (batched eval)
     )
     
     omt.trainNovelObject(

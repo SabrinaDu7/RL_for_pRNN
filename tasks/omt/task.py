@@ -25,6 +25,7 @@ from curious_george.envs.access import base_env
 from curious_george.evaluation.task import (
     FreezeSpec,
     collect_eval_rollouts,
+    collect_eval_rollouts_batched,
     setup_task,
     train_phase,
 )
@@ -45,13 +46,15 @@ class ObjectMemoryTask:
         acmodel_status_ckpt: str,
         prnn_ckpt: str,
         new_obj_loc_ctrl: list[int] = [7, 11],
+        env_eval_builder=None,  # () -> fresh env_orig copy; required for batched eval
     ):
-        self.new_obj_pos = new_obj_loc_ctrl if env_novel.get_new_obj_pos() is None else env_novel.get_new_obj_pos()
+        env_novel_first = env_novel[0] if isinstance(env_novel, (list, tuple)) else env_novel
+        self.new_obj_pos = new_obj_loc_ctrl if env_novel_first.get_new_obj_pos() is None else env_novel_first.get_new_obj_pos()
         print(f"New object position in novel environment: {self.new_obj_pos}")
         with open_dict(args):
             args.tasks.new_obj_pos = self.new_obj_pos
         if not args.tasks.control:
-            assert env_novel.get_new_obj_pos() is not None, (
+            assert env_novel_first.get_new_obj_pos() is not None, (
                 "env_novel must contain the novel object (env_train); "
                 "env_orig is the eval env without it - do not swap them"
             )
@@ -82,6 +85,7 @@ class ObjectMemoryTask:
         self.trajs_per_batch = args.rl.trajs_per_batch
         self.trajs_test = args.tasks.testing.trajs
 
+        self.env_eval_builder = env_eval_builder
         self.testTrial = None  # Updated after getTestTrial() called
         self.objectLearning = None  # Updated after quantifyObjectLearning() called
 
@@ -127,9 +131,12 @@ class ObjectMemoryTask:
         return modules
 
     def set_start_pos(self):
+        self._set_start_pos_on(self.env_orig)
+
+    def _set_start_pos_on(self, env):
         if not self.args.tasks.testing.start_random:
-            base_env(self.env_orig).agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
-            base_env(self.env_orig).agent_start_dir = np.random.randint(0, 4)
+            base_env(env).agent_start_pos = np.random.randint(self.start_low_bound, self.start_up_bound)
+            base_env(env).agent_start_dir = np.random.randint(0, 4)
 
     # ------------------------------------------------------------------ #
 
@@ -250,17 +257,35 @@ class ObjectMemoryTask:
                 if self.args.tasks.analysis.occupancy:
                     wandb.log({"Eval/OPA_Occupancy": wandb.Plotly(opa.plot_occupancy())})
 
-            rollouts = collect_eval_rollouts(
-                env_eval=self.comps.env_eval,  # CRITICAL: the object-ABSENT env
-                agent=self.agent,
-                pN=self.pN_post,
-                n_trajs=n_trajs,
-                T=self.seqdur,
-                eval_modules=eval_modules,
-                include_render=self.oL_fig,
-                before_each=self.set_start_pos,
-                traj_stats_fn=self._dual_net_predictions,
-            )
+            if self.args.tasks.testing.get("batched", False):
+                assert self.env_eval_builder is not None, (
+                    "batched eval needs env_eval_builder (fresh env_orig copies)"
+                )
+                envs_eval = [self.env_eval_builder() for _ in range(n_trajs)]
+                for e in envs_eval:
+                    assert e.get_new_obj_pos() is None, "eval env copies must NOT contain the novel object"
+                rollouts = collect_eval_rollouts_batched(
+                    envs_eval=envs_eval,
+                    agent=self.agent,
+                    pN=self.pN_post,
+                    T=self.seqdur,
+                    eval_modules=eval_modules,
+                    include_render=self.oL_fig,
+                    before_each=self._set_start_pos_on,
+                    traj_stats_fn=self._dual_net_predictions,
+                )
+            else:
+                rollouts = collect_eval_rollouts(
+                    env_eval=self.comps.env_eval,  # CRITICAL: the object-ABSENT env
+                    agent=self.agent,
+                    pN=self.pN_post,
+                    n_trajs=n_trajs,
+                    T=self.seqdur,
+                    eval_modules=eval_modules,
+                    include_render=self.oL_fig,
+                    before_each=self.set_start_pos,
+                    traj_stats_fn=self._dual_net_predictions,
+                )
 
         objectTest = {
             "obs": rollouts.obs,
