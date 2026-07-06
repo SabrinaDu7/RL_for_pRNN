@@ -18,7 +18,7 @@ from curious_george.training.setup import setup_run, setup_training
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-@hydra.main(config_path="Configs", config_name="Conf1_Adel")
+@hydra.main(config_path="Configs", config_name="main")
 def my_main(cfg: DictConfig):
     my_app(cfg)
 
