@@ -168,7 +168,8 @@ def setup_acmodel(cfg, env, obs_space, status: dict) -> nn.Module:
     return acmodel
 
 
-def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict) -> PredictivePPOAlgo:
+def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
+               device: torch.device = DEVICE) -> PredictivePPOAlgo:
     if cfg.predNet.train:
         assert cfg.predNet.seqdur > 0, "Set an appropriate seqdur"
     else:
@@ -181,7 +182,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict)
         envs if len(envs) > 1 else envs[0],
         acmodel,
         predictiveNet,
-        DEVICE,
+        device,
         num_frames=cfg.rl.frames,
         discount=cfg.rl.discount,
         lr=cfg.rl.lr,
@@ -213,7 +214,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict)
             receiver=algo.optimizer,
             status=status,
             status_key=StatusCkptKeys.OPTIMIZER_STATE,
-            device=DEVICE,
+            device=device,
         )
         print("Optimizer loaded")
 

@@ -136,55 +136,6 @@ def get_SR_acmodel(
     return acmodel.to(device)
 
 
-def get_algo(
-    args,
-    env: FaramaMinigridShell,
-    predictiveNet: PredictiveNet,
-    acmodel: ACModelSR,
-    preprocess_obss: Callable,
-    AlgoClass: Type[PredictivePPOAlgo],
-    acmodel_status_ckpt: str,
-    device: torch.device,
-) -> PredictivePPOAlgo:
-    status = torch.load(acmodel_status_ckpt, map_location=device, weights_only=False)
-
-    pastSR = not ("prevAct" in str(predictiveNet.pRNN))
-    algo = AlgoClass(
-        env=env,
-        acmodel=acmodel,
-        predictiveNet=predictiveNet,
-        device=device,
-        num_frames=args.rl.frames,
-        discount=args.rl.discount,
-        lr=args.rl.lr,
-        gae_lambda=args.rl.gae_lambda,
-        entropy_coef=args.rl.entropy_coef,
-        value_loss_coef=args.rl.value_loss_coef,
-        max_grad_norm=args.rl.max_grad_norm,
-        recurrence=1,
-        adam_eps=args.rl.optim_eps,
-        clip_eps=args.rl.ppo_clip_eps,
-        epochs=args.rl.ppo_epochs,
-        batch_size=args.rl.ppo_batch_size,
-        preprocess_obss=preprocess_obss,
-        train_pN=args.predNet.train,
-        noise_mu=args.predNet.noisemean,
-        noise_std=args.predNet.noisestd,
-        prnn_seqdur=args.predNet.seqdur,
-        intrinsic=args.exp.intrinsic,
-        k_int=args.rl.k_int,
-        pastSR=pastSR,
-        curious_agent=args.exp.curious_agent,
-        k_curious=args.rl.k_curious,
-        reward_alignment=args.rl.get("reward_alignment", "legacy"),
-    )
-
-    if StatusCkptKeys.OPTIMIZER_STATE.value in status:
-        algo.optimizer.load_state_dict(status[StatusCkptKeys.OPTIMIZER_STATE.value])
-
-    return algo
-
-
 def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
     return access_get_goal_loc(env)
 
