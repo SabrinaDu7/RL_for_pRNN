@@ -9,9 +9,9 @@ but silently dropped before).
 
 from dataclasses import dataclass
 
+import wandb
 from omegaconf import OmegaConf
 
-import wandb
 from curious_george.utils.common import synthesize
 
 
@@ -57,9 +57,15 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
         "duration": stats.duration,
     }
     if not stats.random_agent:
-        out.update(_prefixed("return", synthesize(logs["return_per_episode"], signs=True)))
-        out.update(_prefixed("int_reward", synthesize(logs["intrinsic_rewards"], abs=True)))
-        out.update(_prefixed("cur_reward", synthesize(logs["curious_rewards"], abs=True)))
+        out.update(
+            _prefixed("return", synthesize(logs["return_per_episode"], signs=True))
+        )
+        out.update(
+            _prefixed("int_reward", synthesize(logs["intrinsic_rewards"], abs=True))
+        )
+        out.update(
+            _prefixed("cur_reward", synthesize(logs["curious_rewards"], abs=True))
+        )
         out.update(_prefixed("values", synthesize(logs["values"])))
         out.update(_prefixed("advantages", synthesize(logs["advantages"])))
         out["policy_loss"] = logs["policy_loss"]
@@ -68,8 +74,13 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
         if mi_policy is not None:
             out["MI_policy"] = mi_policy
         # previously computed but never forwarded to wandb:
-        out.update({k: v for k, v in logs.items()
-                    if k.startswith("curious_reward_") or k.startswith("avg_adv_")})
+        out.update(
+            {
+                k: v
+                for k, v in logs.items()
+                if k.startswith("curious_reward_") or k.startswith("avg_adv_")
+            }
+        )
     return out
 
 
