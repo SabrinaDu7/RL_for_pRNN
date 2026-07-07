@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 from curious_george.rl.update.losses import LOSSES, ppo_clip_loss
+from curious_george.utils.timing import timer
 
 
 @dataclass
@@ -75,6 +76,17 @@ def update_policy(
     if isinstance(loss_fn, str):
         loss_fn = LOSSES[loss_fn]
 
+    with timer("update/policy"):
+        return _update_policy_epochs(
+            acmodel, optimizer, exps, loss_fn, loss_kwargs, epochs, batch_size,
+            recurrence, num_frames, max_grad_norm, batch_num, update_params,
+        )
+
+
+def _update_policy_epochs(
+    acmodel, optimizer, exps, loss_fn, loss_kwargs, epochs, batch_size,
+    recurrence, num_frames, max_grad_norm, batch_num, update_params,
+) -> tuple[UpdateLogs, int]:
     for _ in range(epochs):
         # Initialize log values
 

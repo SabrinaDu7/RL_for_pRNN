@@ -25,6 +25,7 @@ from curious_george.rl.collect.diagnostics import (
 )
 from curious_george.rl.update.advantage import compute_gae
 from curious_george.rl.update.rewards import compute_curious_rewards
+from curious_george.utils.timing import timer
 
 
 def _agent_pos(env):
@@ -145,12 +146,13 @@ def collect_rollout(
 
     for t in range(T):
         # --- action selection (one batched forward) ----------------------
-        preprocessed = preprocess_obss(state.obs_b, device=device)
-        with torch.no_grad():
-            dist, value = acmodel(preprocessed, SR=state.sr)
-        action = dist.sample()  # choose action based on SR from step t-1
-        det_np = action.cpu().numpy()
-        probs_np = dist.probs.detach().cpu().numpy()
+        with timer("collect/policy_fwd"):
+            preprocessed = preprocess_obss(state.obs_b, device=device)
+            with torch.no_grad():
+                dist, value = acmodel(preprocessed, SR=state.sr)
+            action = dist.sample()  # choose action based on SR from step t-1
+            det_np = action.cpu().numpy()
+            probs_np = dist.probs.detach().cpu().numpy()
 
         if cfg.prnn_seqdur > 0 and t % cfg.prnn_seqdur == 0:  # First loc of traj
             state.init_loc_b = [torch.tensor(_agent_pos(env)) for env in envs]
@@ -165,45 +167,47 @@ def collect_rollout(
         # --- environment stepping ----------------------------------------
         pre_obs_b = list(state.obs_b)
         done_b = [False] * B
-        for b, env in enumerate(envs):
-            # CAREFUL: obs_next is post-action; pre_obs_b[b] is pre-action
-            obs_next, reward, terminated, truncated, _ = env.step(det_np[b:b + 1])
-            loc = _agent_pos(env)
+        with timer("collect/env_step"):
+            for b, env in enumerate(envs):
+                # CAREFUL: obs_next is post-action; pre_obs_b[b] is pre-action
+                obs_next, reward, terminated, truncated, _ = env.step(det_np[b:b + 1])
+                loc = _agent_pos(env)
 
-            done = terminated or truncated
-            if cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0:
-                done = True
-            done_b[b] = done
+                done = terminated or truncated
+                if cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0:
+                    done = True
+                done_b[b] = done
 
-            # DEBUG (historical: modulo only evaluated when a jump is seen)
-            if check_large_jump(state.loc_b[b], loc) and t % cfg.prnn_seqdur != 0:
-                print("====== DEBUG START ======")
-                print(f"Large jump detected at step {t} (env {b}): from {state.loc_b[b]} to {loc}")
-                print("====== DEBUG END ======")
+                # DEBUG (historical: modulo only evaluated when a jump is seen)
+                if check_large_jump(state.loc_b[b], loc) and t % cfg.prnn_seqdur != 0:
+                    print("====== DEBUG START ======")
+                    print(f"Large jump detected at step {t} (env {b}): from {state.loc_b[b]} to {loc}")
+                    print("====== DEBUG END ======")
 
-            obss[b][t] = pre_obs_b[b]
-            locs[b][t] = state.loc_b[b]
-            if subroom_size_ is not None:
-                subroom_ids.append(
-                    get_subroom_id(torch.tensor(state.loc_b[b]).unsqueeze(0), subroom_size_).item()
-                )
-            rewards[t, b] = reward
+                obss[b][t] = pre_obs_b[b]
+                locs[b][t] = state.loc_b[b]
+                if subroom_size_ is not None:
+                    subroom_ids.append(
+                        get_subroom_id(torch.tensor(state.loc_b[b]).unsqueeze(0), subroom_size_).item()
+                    )
+                rewards[t, b] = reward
 
-            hd = pre_obs_b[b]["direction"]
-            x, y = locs[b][t]
-            joint[hd, x, y, :] += probs_np[b]
+                hd = pre_obs_b[b]["direction"]
+                x, y = locs[b][t]
+                joint[hd, x, y, :] += probs_np[b]
 
-            state.ep_return[b] += reward
-            state.ep_reshaped[b] += rewards[t, b].item()
-            state.ep_frames[b] += 1
+                state.ep_return[b] += reward
+                state.ep_reshaped[b] += rewards[t, b].item()
+                state.ep_frames[b] += 1
 
-            state.obs_b[b] = obs_next
-            state.loc_b[b] = loc
-            state.mask_b[b] = 1 - done
-            last_post_obs = obs_next
+                state.obs_b[b] = obs_next
+                state.loc_b[b] = loc
+                state.mask_b[b] = 1 - done
+                last_post_obs = obs_next
 
         # --- SR step (batched; before any reset, matching serial order) ---
-        state.sr = tracker.step(det_np, pre_obs_b, state.obs_b)
+        with timer("collect/sr_step"):
+            state.sr = tracker.step(det_np, pre_obs_b, state.obs_b)
 
         # --- per-env episode termination -----------------------------------
         for b in range(B):
@@ -267,15 +271,16 @@ def collect_rollout(
     actions_np = f_actions.cpu().numpy()
     logs: dict = {}
     if cfg.curious_agent:
-        curious_rewards = compute_curious_rewards(
-            adapter,
-            obss=flat_obss,
-            actions_np=actions_np,
-            done_indices=done_indices,
-            last_observations=last_observations,
-            num_frames=B * T,
-            alignment=cfg.reward_alignment,
-        )
+        with timer("collect/curious_rewards"):
+            curious_rewards = compute_curious_rewards(
+                adapter,
+                obss=flat_obss,
+                actions_np=actions_np,
+                done_indices=done_indices,
+                last_observations=last_observations,
+                num_frames=B * T,
+                alignment=cfg.reward_alignment,
+            )
 
     # --- intrinsic tail (B=1 only, historical code path) --------------------
     if intrinsic_ref is not None:
@@ -285,23 +290,24 @@ def collect_rollout(
     preprocessed = preprocess_obss(state.obs_b, device=device)
     with torch.no_grad():
         _, next_values = acmodel(preprocessed, SR=state.sr)
-    for b in range(B):
-        sl = slice(b * T, (b + 1) * T)
-        compute_gae(
-            advantages=advantages[sl],
-            rewards=f_rewards[sl],
-            int_rewards=int_rewards[sl],
-            curious_rewards=curious_rewards[sl],
-            values=f_values[sl],
-            masks=f_masks[sl],
-            final_next_value=next_values[b],
-            final_mask=float(state.mask_b[b]),
-            num_frames=T,
-            discount=cfg.discount,
-            gae_lambda=cfg.gae_lambda,
-            k_int=cfg.k_int,
-            k_curious=cfg.k_curious,
-        )
+    with timer("collect/gae"):
+        for b in range(B):
+            sl = slice(b * T, (b + 1) * T)
+            compute_gae(
+                advantages=advantages[sl],
+                rewards=f_rewards[sl],
+                int_rewards=int_rewards[sl],
+                curious_rewards=curious_rewards[sl],
+                values=f_values[sl],
+                masks=f_masks[sl],
+                final_next_value=next_values[b],
+                final_mask=float(state.mask_b[b]),
+                num_frames=T,
+                discount=cfg.discount,
+                gae_lambda=cfg.gae_lambda,
+                k_int=cfg.k_int,
+                k_curious=cfg.k_curious,
+            )
 
     exps = DictList()
     exps.obs = flat_obss
@@ -325,29 +331,30 @@ def collect_rollout(
 
     from curious_george.utils.common import mean_by_action  # local import: avoids cycle
 
-    if cfg.curious_agent:
-        curious_by_action = mean_by_action(curious_rewards.cpu().numpy(), actions_np)
-        logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
-    adv_by_action = mean_by_action(advantages.cpu().numpy(), actions_np)
+    with timer("collect/log_prep"):
+        if cfg.curious_agent:
+            curious_by_action = mean_by_action(curious_rewards.cpu().numpy(), actions_np)
+            logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
+        adv_by_action = mean_by_action(advantages.cpu().numpy(), actions_np)
 
-    logs.update({
-        "return_per_episode": list(state.finished_returns),
-        "reshaped_return_per_episode": list(state.finished_reshaped),
-        "num_frames_per_episode": list(state.finished_frames),
-        "num_frames": B * T,
-        "num_episodes": state.done_counter,
-        "intrinsic_rewards": int_rewards.tolist(),
-        "curious_rewards": curious_rewards.tolist(),
-        "values": f_values.tolist(),
-        "advantages": advantages.tolist(),
-        "loc_entropy": loc_entropy,
-        "loc_entropy_5": loc_entropy_5,
-        "joint_dist": joint,
-        "locs": flat_locs,
-        "subroom_ids": subroom_ids,
-        "dist_travelled": dist_travelled,
-        **{f"avg_adv_{k}": v for k, v in adv_by_action.items()},
-    })
+        logs.update({
+            "return_per_episode": list(state.finished_returns),
+            "reshaped_return_per_episode": list(state.finished_reshaped),
+            "num_frames_per_episode": list(state.finished_frames),
+            "num_frames": B * T,
+            "num_episodes": state.done_counter,
+            "intrinsic_rewards": int_rewards.tolist(),
+            "curious_rewards": curious_rewards.tolist(),
+            "values": f_values.tolist(),
+            "advantages": advantages.tolist(),
+            "loc_entropy": loc_entropy,
+            "loc_entropy_5": loc_entropy_5,
+            "joint_dist": joint,
+            "locs": flat_locs,
+            "subroom_ids": subroom_ids,
+            "dist_travelled": dist_travelled,
+            **{f"avg_adv_{k}": v for k, v in adv_by_action.items()},
+        })
 
     state.finished_returns = []
     state.finished_reshaped = []

@@ -16,6 +16,7 @@ from curious_george.training import logging as train_log
 from curious_george.training.setup import RunContext, TrainingComponents
 from curious_george.world_model.device import on_device
 from curious_george.utils.checkpoints import StatusCkptKeys
+from curious_george.utils.timing import timer
 
 
 def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> None:
@@ -97,8 +98,9 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             if update % cfg.logging.log_interval == 0:
                 # plotSampleTrajectory runs predict on CPU tensors; pin the
                 # models to CPU for the call (placement restored on exit).
-                with on_device([comps.predictiveNet, comps.acmodel], "cpu"):
-                    comps.predictiveNet.plotSampleTrajectory(env=comps.env, agent=comps.ac_agent)
+                with timer("log/sample_trajectory"):
+                    with on_device([comps.predictiveNet, comps.acmodel], "cpu"):
+                        comps.predictiveNet.plotSampleTrajectory(env=comps.env, agent=comps.ac_agent)
 
                 if run_ctx.wandb_log:
                     stats = train_log.UpdateStats(
@@ -118,9 +120,11 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             # --- periodic analysis ----------------------------------------
             if cfg.logging.analysis_interval > 0 and update % cfg.logging.analysis_interval == 0:
                 if prnn_eval:
-                    run_spatial_analysis(cfg, comps, run_ctx.wandb_log)
+                    with timer("analysis/spatial"):
+                        run_spatial_analysis(cfg, comps, run_ctx.wandb_log)
                 if cfg.exp.analyze_agent_behav:
-                    run_behavior_analysis(cfg, comps, run_ctx, update)
+                    with timer("analysis/behavior"):
+                        run_behavior_analysis(cfg, comps, run_ctx, update)
 
             # --- early stop -----------------------------------------------
             if cfg.logging.early_stop and not cfg.exp.random_action_agent:

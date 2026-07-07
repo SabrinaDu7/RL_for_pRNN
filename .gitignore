@@ -18,3 +18,4 @@ wandb/*
 outputs/
 docs/*
 storage/*
+tests/perf/results/*.prof
