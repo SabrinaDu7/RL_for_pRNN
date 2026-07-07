@@ -9,6 +9,7 @@ slice with .action, .log_prob, .advantage, .returnn, .value). Pick a loss by
 name via LOSSES / cfg key `rl.loss`.
 """
 
+import math
 from dataclasses import dataclass
 
 import torch
@@ -16,15 +17,20 @@ import torch
 
 @dataclass
 class LossTerms:
-    """Per-minibatch scalar diagnostics returned next to the loss."""
+    """Per-minibatch scalar diagnostics returned next to the loss.
 
-    policy_entropy_bits: float
-    value_mean: float
-    policy_loss: float
-    value_loss: float
+    Fields are detached 0-dim tensors, NOT floats: converting per minibatch
+    (.item()) forced a device sync each time; the updater aggregates them and
+    syncs once per update.
+    """
+
+    policy_entropy_bits: torch.Tensor
+    value_mean: torch.Tensor
+    policy_loss: torch.Tensor
+    value_loss: torch.Tensor
 
 
-_LOG2 = torch.log(torch.tensor(2.0))
+_LOG2 = math.log(2.0)
 
 
 def ppo_clip_loss(
@@ -61,10 +67,10 @@ def ppo_clip_loss(
     )
 
     terms = LossTerms(
-        policy_entropy_bits=policy_entropy.item() / _LOG2.item(),  # nats -> bits
-        value_mean=value.mean().item(),
-        policy_loss=policy_loss.item(),
-        value_loss=value_loss.item(),
+        policy_entropy_bits=policy_entropy.detach() / _LOG2,  # nats -> bits
+        value_mean=value.detach().mean(),
+        policy_loss=policy_loss.detach(),
+        value_loss=value_loss.detach(),
     )
     return loss, terms
 
@@ -89,10 +95,10 @@ def a2c_loss(
         + value_loss_coef * value_loss
     )
     terms = LossTerms(
-        policy_entropy_bits=policy_entropy.item() / _LOG2.item(),
-        value_mean=value.mean().item(),
-        policy_loss=policy_loss.item(),
-        value_loss=value_loss.item(),
+        policy_entropy_bits=policy_entropy.detach() / _LOG2,
+        value_mean=value.detach().mean(),
+        policy_loss=policy_loss.detach(),
+        value_loss=value_loss.detach(),
     )
     return loss, terms
 

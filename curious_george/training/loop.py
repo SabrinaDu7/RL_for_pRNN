@@ -94,14 +94,17 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             update += 1
             pbar.update(logs["num_frames"])
 
-            # --- periodic logging -----------------------------------------
-            if update % cfg.logging.log_interval == 0:
+            # --- periodic plotting (expensive: figure + GPU<->CPU model swap)
+            plot_interval = cfg.logging.get("plot_interval", 200)
+            if plot_interval > 0 and update % plot_interval == 0:
                 # plotSampleTrajectory runs predict on CPU tensors; pin the
                 # models to CPU for the call (placement restored on exit).
                 with timer("log/sample_trajectory"):
                     with on_device([comps.predictiveNet, comps.acmodel], "cpu"):
                         comps.predictiveNet.plotSampleTrajectory(env=comps.env, agent=comps.ac_agent)
 
+            # --- periodic logging -----------------------------------------
+            if update % cfg.logging.log_interval == 0:
                 if run_ctx.wandb_log:
                     stats = train_log.UpdateStats(
                         update=update,

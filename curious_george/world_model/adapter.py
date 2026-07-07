@@ -188,9 +188,12 @@ class PRNNAdapter:
 
     def train_on_episode(self, images_tensor, hd_tensor, act_np: np.ndarray, last_obs) -> None:
         """One pRNN gradient step on a single episode segment."""
+        # one host transfer per segment, not one per frame
+        images_np = images_tensor.detach().cpu().numpy()
+        hd_np = hd_tensor.detach().cpu().numpy()
         obs_for_pN = [
-            {"image": images_tensor[i].cpu().numpy(), "direction": hd_tensor[i].item()}
-            for i in range(len(images_tensor))
+            {"image": images_np[i], "direction": hd_np[i].item()}
+            for i in range(len(images_np))
         ]
 
         obs, act = self.pN.env_shell.env2pred(obs_for_pN + [last_obs], act_np)

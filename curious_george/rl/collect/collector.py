@@ -186,10 +186,6 @@ def collect_rollout(
 
                 obss[b][t] = pre_obs_b[b]
                 locs[b][t] = state.loc_b[b]
-                if subroom_size_ is not None:
-                    subroom_ids.append(
-                        get_subroom_id(torch.tensor(state.loc_b[b]).unsqueeze(0), subroom_size_).item()
-                    )
                 rewards[t, b] = reward
 
                 hd = pre_obs_b[b]["direction"]
@@ -197,7 +193,7 @@ def collect_rollout(
                 joint[hd, x, y, :] += probs_np[b]
 
                 state.ep_return[b] += reward
-                state.ep_reshaped[b] += rewards[t, b].item()
+                state.ep_reshaped[b] += float(reward)
                 state.ep_frames[b] += 1
 
                 state.obs_b[b] = obs_next
@@ -247,6 +243,11 @@ def collect_rollout(
     # --- flatten env-major: index = b*T + t --------------------------------
     flat_obss = [obss[b][t] for b in range(B) for t in range(T)]
     flat_locs = [locs[b][t] for b in range(B) for t in range(T)]
+
+    if subroom_size_ is not None:
+        # one batched call; (t, b) order matches the historical per-step appends
+        step_locs = np.asarray([locs[b][t] for t in range(T) for b in range(B)])
+        subroom_ids = get_subroom_id(torch.from_numpy(step_locs), subroom_size_).tolist()
 
     def flat(x):  # (T, B, ...) -> (B*T, ...)
         return x.permute(1, 0, *range(2, x.dim())).reshape(B * T, *x.shape[2:])
@@ -332,10 +333,12 @@ def collect_rollout(
     from curious_george.utils.common import mean_by_action  # local import: avoids cycle
 
     with timer("collect/log_prep"):
+        curious_np = curious_rewards.cpu().numpy()
+        adv_np = advantages.cpu().numpy()
         if cfg.curious_agent:
-            curious_by_action = mean_by_action(curious_rewards.cpu().numpy(), actions_np)
+            curious_by_action = mean_by_action(curious_np, actions_np)
             logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
-        adv_by_action = mean_by_action(advantages.cpu().numpy(), actions_np)
+        adv_by_action = mean_by_action(adv_np, actions_np)
 
         logs.update({
             "return_per_episode": list(state.finished_returns),
@@ -343,10 +346,13 @@ def collect_rollout(
             "num_frames_per_episode": list(state.finished_frames),
             "num_frames": B * T,
             "num_episodes": state.done_counter,
-            "intrinsic_rewards": int_rewards.tolist(),
-            "curious_rewards": curious_rewards.tolist(),
-            "values": f_values.tolist(),
-            "advantages": advantages.tolist(),
+            # numpy arrays, not Python lists: consumers only run synthesize()
+            # (mean/std) on these, and .tolist() on 2048-long GPU tensors was
+            # a measurable per-update sync cost.
+            "intrinsic_rewards": int_rewards.cpu().numpy(),
+            "curious_rewards": curious_np,
+            "values": f_values.cpu().numpy(),
+            "advantages": adv_np,
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
             "joint_dist": joint,

@@ -44,6 +44,7 @@ logging:
     wandb_project: curious-george # curious-george-omt, curious-george-ctrl
     video_log_freq: 0 # Episodes between video logs (0: no videos)
     log_interval: 1 # Updates between two logs
+    plot_interval: 200 # Updates between plotSampleTrajectory figures (was implicitly log_interval=1: a figure + GPU<->CPU model swap EVERY update)
     analysis_interval: 200 # Updates between analysis events (0: no analysis)
     save_interval: 120 # Updates between two saves (0: don't save)
     early_stop: False # Stop when the environment is solved?

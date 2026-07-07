@@ -139,16 +139,11 @@ def _update_policy_epochs(
             if update_params:
                 optimizer.zero_grad()
                 batch_loss.backward()
-                grad_norm = (
-                    sum(
-                        p.grad.data.norm(2).item() ** 2
-                        for p in acmodel.parameters()
-                    )
-                    ** 0.5
-                )
-                torch.nn.utils.clip_grad_norm_(
+                # clip_grad_norm_ returns the pre-clip total L2 norm - the
+                # same quantity the old per-parameter .item() sum computed.
+                grad_norm = torch.nn.utils.clip_grad_norm_(
                     acmodel.parameters(), max_grad_norm
-                )
+                ).detach()
                 optimizer.step()
             else:
                 grad_norm = 0.0
@@ -161,12 +156,16 @@ def _update_policy_epochs(
             log_value_losses.append(batch_value_loss)
             log_grad_norms.append(grad_norm)
 
+    # log entries are 0-dim tensors; sum on-device, one host sync per metric
+    def _mean(xs) -> float:
+        return float(sum(xs) / len(xs))
+
     logs = UpdateLogs(
-        entropy=float(np.mean(log_entropies)),
-        value=float(np.mean(log_values)),
-        policy_loss=float(np.mean(log_policy_losses)),
-        value_loss=float(np.mean(log_value_losses)),
-        grad_norm=float(np.mean(log_grad_norms)),
+        entropy=_mean(log_entropies),
+        value=_mean(log_values),
+        policy_loss=_mean(log_policy_losses),
+        value_loss=_mean(log_value_losses),
+        grad_norm=_mean(log_grad_norms),
     )
 
     return logs, batch_num
