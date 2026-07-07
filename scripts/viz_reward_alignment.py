@@ -55,17 +55,20 @@
 # predictions are untrained — the indexing/flow is what to look at there.
 
 # %%
-import numpy as np
-import torch
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
+import torch
 from matplotlib import pyplot as plt
-import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum, load_pN
-from curious_george import AgentInputType, get_env_var, make_env, seed as seed_everything
+from prnn.utils import ActionEncodingsEnum, MinigridEnvNames, PredictiveNet, load_pN
+
+from curious_george import AgentInputType, get_env_var, make_env
+from curious_george import seed as seed_everything
 from curious_george.envs.access import (
     ACTION_NAMES,
     hidden_image,
@@ -97,13 +100,20 @@ def build(past_sr: bool, use_ckpt: bool = True, hidden_size: int = 500, seed: in
         seed=seed + 10000,
     )
     pN = PredictiveNet(
-        env, hidden_size=hidden_size, pRNNtype=prnn_type,
-        trainNoiseMeanStd=(0, 0.05), wandb_log=False,
+        env,
+        hidden_size=hidden_size,
+        pRNNtype=prnn_type,
+        trainNoiseMeanStd=(0, 0.05),
+        wandb_log=False,
     )
     pN.env_shell.hd_trans = np.array([-1, 1, 0, 0])
     if use_ckpt and past_sr:
-        load_pN(model_ckpt_filepath=get_env_var("PRNN_CUR_CKPT"), device=DEVICE,
-                pRNNtype=prnn_type, predictive_net=pN)
+        load_pN(
+            model_ckpt_filepath=get_env_var("PRNN_CUR_CKPT"),
+            device=DEVICE,
+            pRNNtype=prnn_type,
+            predictive_net=pN,
+        )
     pN.pRNN.eval()
 
     assert infer_past_sr(pN) is past_sr
@@ -115,11 +125,11 @@ def build(past_sr: bool, use_ckpt: bool = True, hidden_size: int = 500, seed: in
 class Stream:
     """One collected episode: everything needed to visualize any timestep."""
 
-    obss: list        # obss[t] = obs BEFORE action t
+    obss: list  # obss[t] = obs BEFORE action t
     acts: np.ndarray  # acts[t]
-    last_obs: dict    # obs after the final action
-    renders: list     # renders[t] = env frame where action t was taken (+ final frame)
-    srs: list         # srs[t] = SR the policy would use to pick action t
+    last_obs: dict  # obs after the final action
+    renders: list  # renders[t] = env frame where action t was taken (+ final frame)
+    srs: list  # srs[t] = SR the policy would use to pick action t
 
 
 def collect_stream(env, adapter: PRNNAdapter, ep_len: int, seed: int = 0) -> Stream:
@@ -145,8 +155,14 @@ def collect_stream(env, adapter: PRNNAdapter, ep_len: int, seed: int = 0) -> Str
     return Stream(obss, np.array(acts), obs, renders, srs)
 
 
-def show_alignment(env, adapter: PRNNAdapter, stream: Stream, alignment: str,
-                   timesteps: list[int], save: bool = True):
+def show_alignment(
+    env,
+    adapter: PRNNAdapter,
+    stream: Stream,
+    alignment: str,
+    timesteps: list[int],
+    save: bool = True,
+):
     """5 rows x len(timesteps) cols:
     (1) env state where a_t was taken, (2) SR used to pick a_t,
     (3) reward-pass TARGET obs, (4) reward-pass PREDICTED obs (+ reward),
@@ -156,7 +172,10 @@ def show_alignment(env, adapter: PRNNAdapter, stream: Stream, alignment: str,
     assert all(0 <= t < L for t in timesteps), f"timesteps must be in [0, {L - 1}]"
 
     pred, target, hidden, mses = adapter.episode_prediction_rows(
-        stream.obss, stream.acts, stream.last_obs, target_offset=off,
+        stream.obss,
+        stream.acts,
+        stream.last_obs,
+        target_offset=off,
     )
 
     n = len(timesteps)
@@ -166,7 +185,9 @@ def show_alignment(env, adapter: PRNNAdapter, stream: Stream, alignment: str,
         tgt_label = f"obs[{tgt_idx}]" if tgt_idx < L else f"last_obs (obs[{L}])"
 
         axes[0, col].imshow(stream.renders[t])
-        axes[0, col].set_title(f"t={t}   a_t={ACTION_NAMES[stream.acts[t]]}", fontsize=10)
+        axes[0, col].set_title(
+            f"t={t}   a_t={ACTION_NAMES[stream.acts[t]]}", fontsize=10
+        )
 
         axes[1, col].imshow(hidden_image(stream.srs[t]), cmap="viridis")
         axes[1, col].set_title(f"SR used to pick a_{t}", fontsize=9)
@@ -183,8 +204,15 @@ def show_alignment(env, adapter: PRNNAdapter, stream: Stream, alignment: str,
     for ax in axes.flat:
         ax.set_xticks([])
         ax.set_yticks([])
-    for row, lbl in enumerate(["env state", "policy SR", "reward target",
-                               "reward prediction", "reward-pass h"]):
+    for row, lbl in enumerate(
+        [
+            "env state",
+            "policy SR",
+            "reward target",
+            "reward prediction",
+            "reward-pass h",
+        ]
+    ):
         axes[row, 0].set_ylabel(lbl, fontsize=10)
 
     fig.suptitle(
@@ -193,18 +221,19 @@ def show_alignment(env, adapter: PRNNAdapter, stream: Stream, alignment: str,
     )
     fig.tight_layout()
     if save:
-        fig.savefig(SAVE_DIR / f"pastSR{adapter.pastSR}_{alignment}.png",
-                    bbox_inches="tight")
+        fig.savefig(
+            SAVE_DIR / f"pastSR{adapter.pastSR}_{alignment}.png", bbox_inches="tight"
+        )
     return fig
 
 
 # %% [markdown]
 # ## Configuration — play with these
 # %%
-EP_LEN = 8            # episode length (rewards computed over this one episode)
-TIMESTEPS = [0, 1, EP_LEN - 2, EP_LEN - 1]  # any indices in [0, EP_LEN-1]
+EP_LEN = 15  # episode length (rewards computed over this one episode)
+TIMESTEPS = [10, 11, 12, 13]
 STREAM_SEED = 0
-USE_CKPT = True       # trained thRNN_5win ckpt for the pastSR=True flow
+USE_CKPT = True  # trained thRNN_5win ckpt for the pastSR=True flow
 
 # %% [markdown]
 # ## pastSR = True (mainline, trained ckpt): legacy vs next_obs
@@ -236,7 +265,7 @@ if __name__ == "__main__":
 # input is a_{i-1}.
 # %%
 if __name__ == "__main__":
-    env_n, adapter_n = build(past_sr=False, use_ckpt=False)
+    env_n, adapter_n = build(past_sr=False, use_ckpt=True)
     stream_n = collect_stream(env_n, adapter_n, EP_LEN, seed=STREAM_SEED)
 
 # %%
