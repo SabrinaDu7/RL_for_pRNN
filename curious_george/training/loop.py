@@ -31,13 +31,17 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
         agent = comps.ac_agent if use_ac else comps.random_agent
         metrics = evaluate_spatial_representation(
             comps.predictiveNet, comps.env, agent, sleepstd=0.03, wandb_nameext=nameext,
+            timesteps=cfg.exp.get("eval_timesteps", 15000),
+            trainDecoder=cfg.exp.get("eval_decoder", True),
         )
         print(f"{nameext[1:]} sRSA={metrics['sRSA']:.4f} SWdist={metrics['SWdist']:.4f}")
         if wandb_log:
             train_log.log_spatial(metrics, nameext)
 
 
-def run_behavior_analysis(cfg, comps: TrainingComponents, run_ctx: RunContext, update: int) -> None:
+def run_behavior_analysis(
+    cfg, comps: TrainingComponents, run_ctx: RunContext, update: int, with_figures: bool = True
+) -> None:
     # Reuse the training rollout (free) unless the random-action path is
     # active, which never fills the algo's buffers.
     opa = OnPolicyAnalysis(
@@ -46,7 +50,7 @@ def run_behavior_analysis(cfg, comps: TrainingComponents, run_ctx: RunContext, u
         reuse_last_rollout=not cfg.exp.random_action_agent,
     )
     if run_ctx.wandb_log:
-        train_log.log_behavior(opa)
+        train_log.log_behavior(opa, with_figures=with_figures)
     else:
         save_analysis_of_agent_behav(opa, run_ctx.model_dir, update)
 
@@ -127,7 +131,12 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         run_spatial_analysis(cfg, comps, run_ctx.wandb_log)
                 if cfg.exp.analyze_agent_behav:
                     with timer("analysis/behavior"):
-                        run_behavior_analysis(cfg, comps, run_ctx, update)
+                        # figures (3 Plotly builds over the full rollout) only
+                        # at plot_interval; the MI scalar every analysis event
+                        run_behavior_analysis(
+                            cfg, comps, run_ctx, update,
+                            with_figures=(plot_interval > 0 and update % plot_interval == 0),
+                        )
 
             # --- early stop -----------------------------------------------
             if cfg.logging.early_stop and not cfg.exp.random_action_agent:

@@ -26,6 +26,33 @@ All FPS numbers: 3 updates x 2048 frames, seed 2, stock config, timers on
 - `CG_DEVICE=cpu` makes runs ~2x faster at B=1 (until B>1 lands). The
   `hardware.use_gpu` yaml knob was and remains dead (documented flaw).
 
+## Phase 3: evaluation skimming (per Sabrina's decisions 2026-07-07)
+
+Spatial analysis event: **293 s -> 15.5 s (19x)** per pass, measured with
+`benchmark.py --include-analysis` (1 update, CPU). Historical events also ran
+a second (off-policy) pass -> ~10 min total, now ~15 s.
+
+Changes (all config-revertable):
+- `exp.offpolicy_prnn_eval: False` (was True) - drops the duplicate pass.
+- `exp.eval_timesteps: 2000` (was hardcoded 15000 inside prnn) - bounds both
+  the calculateSpatialRepresentation rollout and compute_sleep_wake_dist's
+  second wake rollout.
+- `exp.eval_decoder: False` (was True) - skips the 5000-batch position-decoder
+  fit; only decode-error analyses need it.
+- Behavior figures (3 Plotly builds) only at `logging.plot_interval`;
+  MI_policy_eval scalar still every `analysis_interval`.
+
+Stability check (1-update net, seed 2): SWdist stable (0.0094 vs 0.0096);
+**sRSA is rollout-length sensitive** (0.0436 @ 15000 vs 0.0906 @ 2000 on a
+near-untrained net). Within-run comparisons stay valid (fixed length), but
+absolute sRSA is NOT comparable to historical dashboards - set
+`exp.eval_timesteps=15000` if you need that.
+
+Pre-existing flaw named, not fixed: evaluate_spatial_representation computes
+SWdist twice (prnn logs one internally, then compute_sleep_wake_dist reruns a
+wake rollout because prnn doesn't return it). Real fix needs a prnn-repo
+change; see curious_george/evaluation/spatial.py docstring.
+
 ## Remaining planned work
 
 - Phase 2: batch_env2pred (vectorized obs/action conversion in adapter),

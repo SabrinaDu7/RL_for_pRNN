@@ -1,0 +1,105 @@
+{
+ "meta": {
+  "timestamp": "2026-07-07T19:48:19",
+  "git": "221f1cf",
+  "device": "cpu",
+  "n_updates": 1,
+  "frames_per_update": 2048,
+  "num_envs": 1,
+  "seed": 2
+ },
+ "fps": 424.0,
+ "total_train_s": 4.83,
+ "update_times_s": [
+  4.83
+ ],
+ "timings": {
+  "analysis/spatial": {
+   "total_s": 15.4627,
+   "calls": 1,
+   "mean_ms": 15462.7227
+  },
+  "collect/env_step": {
+   "total_s": 1.4985,
+   "calls": 2048,
+   "mean_ms": 0.7317
+  },
+  "collect/sr_step": {
+   "total_s": 0.9712,
+   "calls": 2048,
+   "mean_ms": 0.4742
+  },
+  "update/wm_train": {
+   "total_s": 0.8925,
+   "calls": 1,
+   "mean_ms": 892.4802
+  },
+  "collect/policy_fwd": {
+   "total_s": 0.783,
+   "calls": 2048,
+   "mean_ms": 0.3823
+  },
+  "collect/curious_rewards": {
+   "total_s": 0.3086,
+   "calls": 1,
+   "mean_ms": 308.575
+  },
+  "update/policy": {
+   "total_s": 0.0919,
+   "calls": 1,
+   "mean_ms": 91.9363
+  },
+  "collect/gae": {
+   "total_s": 0.0006,
+   "calls": 1,
+   "mean_ms": 0.6433
+  },
+  "collect/log_prep": {
+   "total_s": 0.0002,
+   "calls": 1,
+   "mean_ms": 0.2423
+  }
+ },
+ "metrics": {
+  "policy_loss": [
+   -0.6124827861785889
+  ],
+  "value_loss": [
+   0.24994869530200958
+  ],
+  "grad_norm": [
+   0.543552577495575
+  ],
+  "entropy": [
+   1.8075934648513794
+  ],
+  "curious_mean": [
+   0.03643375635147095
+  ],
+  "curious_std": [
+   0.007438018452376127
+  ],
+  "values_mean": [
+   -0.3139263987541199
+  ],
+  "advantages_mean": [
+   0.596095621585846
+  ],
+  "advantages_std": [
+   0.311886727809906
+  ],
+  "num_episodes": [
+   8
+  ],
+  "prnn_loss": [
+   0.03896338865160942,
+   0.031363505870103836,
+   0.028912903741002083,
+   0.027187326923012733,
+   0.02422185242176056,
+   0.027386406436562538,
+   0.02676151506602764,
+   0.024229178205132484
+  ]
+ }
+}

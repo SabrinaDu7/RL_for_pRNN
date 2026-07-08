@@ -94,8 +94,10 @@ def log_spatial(metrics: dict, nameext: str) -> None:
     wandb.log({f"SWdist_direct{nameext}": metrics["SWdist"]})
 
 
-def log_behavior(opa) -> None:
+def log_behavior(opa, with_figures: bool = True) -> None:
     wandb.log({"MI_policy_eval": opa.mi})
+    if not with_figures:
+        return
     wandb.log({"OPA_Advantages": wandb.Plotly(opa.plot_advantages())})
     wandb.log({"OPA_Policy_Heatmaps": wandb.Plotly(opa.plot_policy_heatmaps())})
     wandb.log({"OPA_Occupancy_Map": wandb.Plotly(opa.plot_occupancy())})

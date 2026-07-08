@@ -59,6 +59,7 @@ def evaluate_spatial_representation(
     env,
     agent,
     *,
+    timesteps: int = 15000,
     trainDecoder: bool = True,
     sleepstd: float = 0.03,
     wandb_nameext: str = "",
@@ -69,6 +70,13 @@ def evaluate_spatial_representation(
     logging, including its internal SWdist, when pN.wandb_log is set) and adds
     a directly-returned SWdist scalar. Moves pN (and the agent's AC model, if
     any) to CPU for the duration and restores placement after.
+
+    NOTE (pre-existing redundancy): calculateSpatialRepresentation already
+    computes an SWdist internally when calculatesRSA=True, but only logs it
+    to wandb - it isn't returned. compute_sleep_wake_dist therefore runs a
+    SECOND wake rollout to produce the returned scalar. Fixing that needs a
+    prnn-repo change (return SWdist); until then `timesteps` bounds both
+    rollouts.
     """
     modules = [pN]
     if hasattr(agent, "acmodel"):
@@ -78,6 +86,7 @@ def evaluate_spatial_representation(
         _, SI, _, sRSA = pN.calculateSpatialRepresentation(
             env,
             agent,
+            timesteps=timesteps,
             trainDecoder=trainDecoder,
             trainHDDecoder=False,
             saveTrainingData=False,
@@ -86,6 +95,8 @@ def evaluate_spatial_representation(
             sleepstd=sleepstd,
             wandb_nameext=wandb_nameext,
         )
-        swdist = compute_sleep_wake_dist(pN, env, agent, sleepstd=sleepstd)
+        swdist = compute_sleep_wake_dist(
+            pN, env, agent, sleepstd=sleepstd, wake_timesteps=timesteps
+        )
 
     return {"sRSA": sRSA, "SWdist": swdist, "SI": SI}

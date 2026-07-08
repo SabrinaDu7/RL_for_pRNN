@@ -30,8 +30,10 @@ exp:
     random_action_agent: False # If True, overrides PPO and chooses actions randomly. Used as control
     curious_agent: True # Use pRNN loss as reward?
     random_init_control: False # If True, never update parameters (random-init control)
-    offpolicy_prnn_eval: True # prnn eval with off-policy actions (random if PPO, vice versa)
+    offpolicy_prnn_eval: False # prnn eval with off-policy actions (random if PPO, vice versa). Off by default since 2026-07: each pass costs 2 CPU rollouts of eval_timesteps
     onpolicy_prnn_eval: True # prnn eval with on-policy actions
+    eval_timesteps: 2000 # rollout length for spatial eval (historical: 15000; check SI/sRSA stability if you shorten further)
+    eval_decoder: False # fit the position decoder during spatial eval (historical: True, 5000 batches; only needed for decode-error analyses)
     analyze_agent_behav: True # Policy/state analysis + mutual information logging
 
 hardware:
