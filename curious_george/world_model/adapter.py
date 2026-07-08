@@ -23,6 +23,46 @@ import torch
 
 from prnn.utils import PredictiveNet
 
+FORWARD_IDX = 2  # ActionEncodings.forwardIDX - the action bit SpeedHD keeps
+
+
+def flat_obs_rows(obs_dicts) -> torch.Tensor:
+    """Raw obs dicts -> (N, H*W*C) float32 rows in [0,1].
+
+    Bitwise-equal to env2pred's per-dict get_visual loop + /255, with one
+    numpy stack instead of N Python-level reshapes/copies.
+    """
+    imgs = np.stack([o["image"] for o in obs_dicts])
+    return torch.from_numpy(imgs.reshape(len(obs_dicts), -1)).to(torch.float32) / 255
+
+
+def encode_speed_hd_rows(act_np, hd_np, num_acts: int, num_hd: int) -> torch.Tensor:
+    """Vectorized SpeedHD rows: [action one-hot, forward bit only | HD one-hot].
+
+    int64 (N, num_acts + num_hd), matching ActionEncodings.SpeedHD per row.
+    A negative action leaves its action block zero (OneHot's no-action flag,
+    applied per row - the per-env length-1 sequences this replaces had one
+    flag per row anyway).
+    """
+    a = torch.as_tensor(np.asarray(act_np), dtype=torch.int64).reshape(-1)
+    hd = torch.as_tensor(np.asarray(hd_np), dtype=torch.int64).reshape(-1)
+    out = torch.zeros((len(a), num_acts + num_hd), dtype=torch.int64)
+    out[a == FORWARD_IDX, FORWARD_IDX] = 1
+    out[torch.arange(len(a)), num_acts + hd] = 1
+    return out
+
+
+def encode_speed_hd_seq(act_np, hd_np, num_acts: int, num_hd: int) -> torch.Tensor:
+    """Sequence variant of encode_speed_hd_rows, shape (1, L, num_acts+num_hd).
+
+    Keeps ActionEncodings.OneHot's SEQUENCE-level no-action flag: act[0] < 0
+    zeroes the action block for the whole sequence.
+    """
+    rows = encode_speed_hd_rows(act_np, hd_np, num_acts, num_hd)
+    if len(rows) and np.asarray(act_np).reshape(-1)[0] < 0:
+        rows[:, :num_acts] = 0
+    return rows.unsqueeze(0)
+
 
 def infer_past_sr(predictive_net: PredictiveNet) -> bool:
     """pastSR is determined by the architecture family (see module docstring)."""
@@ -50,6 +90,23 @@ class PRNNAdapter:
         self.theta = "thcyc" in str(self.pN.pRNN)
         if self.theta:
             self.k = self.pN.pRNN.k + 1
+
+        # Vectorized obs/action formatting replicates the SpeedHD encoding
+        # only; anything else falls back to env_shell.env2pred per call.
+        shell = self.pN.env_shell
+        self.fast_speedhd = getattr(shell.encodeAction, "__name__", "") == "SpeedHD"
+        self.num_acts = shell.action_space.n
+        self.num_hd = shell.numHDs
+
+    def seq2pred(self, obs_dicts, act_np):
+        """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item
+        Python loops. obs_dicts has len(act_np)+1 entries, as env2pred expects."""
+        if not self.fast_speedhd:
+            return self.pN.env_shell.env2pred(obs_dicts, act_np)
+        obs = flat_obs_rows(obs_dicts).unsqueeze(0)
+        hd = [o["direction"] for o in obs_dicts[:-1]]
+        act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)
+        return obs, act
 
     @property
     def hidden_size(self) -> int:
@@ -91,6 +148,17 @@ class PRNNAdapter:
             obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
             with torch.no_grad():
                 SR = self.pN.predict(obs_pN, act_pN)[2][0]
+        elif self.fast_speedhd:
+            # single-row conversion; bitwise-equal to env2pred([obs, obs], act)
+            # followed by the [:, :-1, :] slice the historical path took
+            obs_pN = flat_obs_rows([obs]).unsqueeze(0).to(self.device)
+            act_pN = (
+                encode_speed_hd_rows(act, [obs["direction"]], self.num_acts, self.num_hd)
+                .unsqueeze(0)
+                .to(self.device)
+            )
+            with torch.no_grad():
+                SR = self.pN.predict_single(obs_pN, act_pN).squeeze(dim=0)
         else:
             obs = [obs, obs]
 
@@ -167,7 +235,7 @@ class PRNNAdapter:
                 acts_now = np.append(acts_ep, 0)
                 obs_now = list(obss_ep) + [last_obs, last_obs]
 
-            obs_formatted, act_formatted = self.pN.env_shell.env2pred(obs_now, acts_now)
+            obs_formatted, act_formatted = self.seq2pred(obs_now, acts_now)
             obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
             if target_offset == 1:
                 act_formatted[:, -1, :] = 0  # zero-action step (init_sr convention)
@@ -188,15 +256,24 @@ class PRNNAdapter:
 
     def train_on_episode(self, images_tensor, hd_tensor, act_np: np.ndarray, last_obs) -> None:
         """One pRNN gradient step on a single episode segment."""
-        # one host transfer per segment, not one per frame
-        images_np = images_tensor.detach().cpu().numpy()
-        hd_np = hd_tensor.detach().cpu().numpy()
-        obs_for_pN = [
-            {"image": images_np[i], "direction": hd_np[i].item()}
-            for i in range(len(images_np))
-        ]
-
-        obs, act = self.pN.env_shell.env2pred(obs_for_pN + [last_obs], act_np)
+        if self.fast_speedhd:
+            # tensor-native formatting: images stay on-device (already float
+            # 0..255 from the preprocessor), one row appended for last_obs
+            L = len(images_tensor)
+            last_img = flat_obs_rows([last_obs]).to(images_tensor.device)
+            obs = torch.cat(
+                [images_tensor.detach().reshape(L, -1).to(torch.float32) / 255, last_img]
+            ).unsqueeze(0)
+            hd = hd_tensor.detach().cpu().numpy()
+            act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)
+        else:
+            images_np = images_tensor.detach().cpu().numpy()
+            hd_np = hd_tensor.detach().cpu().numpy()
+            obs_for_pN = [
+                {"image": images_np[i], "direction": hd_np[i].item()}
+                for i in range(len(images_np))
+            ]
+            obs, act = self.pN.env_shell.env2pred(obs_for_pN + [last_obs], act_np)
 
         obs = obs.to(self.device)
         act = act.to(self.device)
@@ -267,13 +344,21 @@ class BatchedSRTrackerShim:
 
     def step(self, det_np: np.ndarray, pre_obss: list, post_obss: list) -> torch.Tensor:
         obs_src = pre_obss if self.adapter.pastSR else post_obss
-        obs_rows, act_rows = [], []
-        for b, obs in enumerate(obs_src):
-            o_x, a_x = self.adapter.pN.env_shell.env2pred([obs, obs], det_np[b:b + 1])
-            obs_rows.append(o_x[:, 0, :])
-            act_rows.append(a_x[:, 0, :])
-        obs_x = torch.cat(obs_rows, dim=0).to(self.adapter.device)
-        act_x = torch.cat(act_rows, dim=0).to(self.adapter.device)
+        if self.adapter.fast_speedhd:
+            # one batched conversion (bitwise-equal to the per-env env2pred loop)
+            obs_x = flat_obs_rows(obs_src).to(self.adapter.device)
+            act_x = encode_speed_hd_rows(
+                det_np, [o["direction"] for o in obs_src],
+                self.adapter.num_acts, self.adapter.num_hd,
+            ).to(self.adapter.device)
+        else:
+            obs_rows, act_rows = [], []
+            for b, obs in enumerate(obs_src):
+                o_x, a_x = self.adapter.pN.env_shell.env2pred([obs, obs], det_np[b:b + 1])
+                obs_rows.append(o_x[:, 0, :])
+                act_rows.append(a_x[:, 0, :])
+            obs_x = torch.cat(obs_rows, dim=0).to(self.adapter.device)
+            act_x = torch.cat(act_rows, dim=0).to(self.adapter.device)
         return self.tracker.step(obs_x, act_x).clone()
 
     def reset_env(self, b: int, current_obs) -> torch.Tensor:
