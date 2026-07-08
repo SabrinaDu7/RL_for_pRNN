@@ -61,3 +61,26 @@ change; see curious_george/evaluation/spatial.py docstring.
 - Phase 3: eval skimming per Sabrina's decisions (scalar-only at
   analysis_interval, drop off-policy spatial pass, shorter eval rollouts).
 - Phase 4: torch.compile audit (needs prnn repo changes; last).
+
+## Phase 2: vectorized formatting + B>1 sweep (6247a5a)
+
+- `flat_obs_rows` / `encode_speed_hd_*` in adapter.py replace env2pred's
+  per-item Python loops; bitwise-equal (tests/test_batch_format.py), golden
+  tests stay green. Non-SpeedHD encodings fall back to env2pred.
+- CPU FPS: B=1 415, B=4 556, **B=8 642 (1.55x)**. Remaining floor is the
+  serial MiniGrid RGB render in env.step -> AsyncVectorEnv is the next lever,
+  only worth it if B>1 becomes the default (learning-curve check still TODO
+  before flipping exp.num_envs).
+
+## Spatial eval: single-rollout rewrite (3517b56)
+
+- Profile: ~85% of the eval was two serial agent rollouts (the second existed
+  only because prnn doesn't return SWdist/h). Now one rollout feeds SI, sRSA
+  and SWdist; legacy path behind trainDecoder=True.
+- Verified: sRSA 0.0906 == old 0.0906, SWdist 0.0092 vs 0.0096;
+  event 15.5s -> 10.2s. wandb keys 'mean SI'/'sRSA'/'SWdist' preserved via
+  log_spatial (prnn's internal logging no longer fires on this path).
+
+## Cumulative (stock config, CPU, B=1): ~9.3s/update CUDA-default baseline
+## -> 4.9s/update on CPU -> plus every-update plotting removed and analysis
+## events 293s -> 10.2s. B=8 opt-in: 3.2s/update (642 FPS).

@@ -9,6 +9,7 @@ but silently dropped before).
 
 from dataclasses import dataclass
 
+import numpy as np
 import wandb
 from omegaconf import OmegaConf
 
@@ -91,7 +92,15 @@ def log_update(logs: dict, stats: UpdateStats, mi_policy: float | None) -> None:
 
 
 def log_spatial(metrics: dict, nameext: str) -> None:
-    wandb.log({f"SWdist_direct{nameext}": metrics["SWdist"]})
+    # 'mean SI' / 'sRSA' / 'SWdist' were historically logged from INSIDE
+    # prnn's calculateSpatialRepresentation; the single-rollout eval path
+    # no longer calls it, so forward them here under the same key names.
+    wandb.log({
+        f"SWdist_direct{nameext}": metrics["SWdist"],
+        f"mean SI{nameext}": float(np.nanmean(np.asarray(metrics["SI"]["SI"], dtype=float))),
+        f"sRSA{nameext}": metrics["sRSA"],
+        f"SWdist{nameext}": metrics["SWdist"],
+    })
 
 
 def log_behavior(opa, with_figures: bool = True) -> None:
