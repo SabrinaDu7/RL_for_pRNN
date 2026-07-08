@@ -72,7 +72,7 @@ change; see curious_george/evaluation/spatial.py docstring.
   only worth it if B>1 becomes the default (learning-curve check still TODO
   before flipping exp.num_envs).
 
-## Spatial eval: single-rollout rewrite (3517b56)
+## Spatial eval: single-rollout rewrite (this commit; hash shifts with amends)
 
 - Profile: ~85% of the eval was two serial agent rollouts (the second existed
   only because prnn doesn't return SWdist/h). Now one rollout feeds SI, sRSA
