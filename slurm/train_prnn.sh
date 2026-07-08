@@ -23,9 +23,6 @@ cd $HOME/experiments
 cp -r RL_for_pRNN $SLURM_TMPDIR/
 cd $SLURM_TMPDIR/RL_for_pRNN
 
-git fetch origin
-git switch main
-
 rm -rf .venv
 uv venv .venv
 source .venv/bin/activate
