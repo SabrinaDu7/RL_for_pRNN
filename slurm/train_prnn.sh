@@ -12,11 +12,14 @@ echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 module --force purge
 module load python/3.10
 
+export PATH="$HOME/.local/bin:$PATH"
+
 export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}"
 export RL_STORAGE=$SLURM_TMPDIR/outputs/$JOB_ID
 export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
 mkdir -p $RL_STORAGE
 
+cd $HOME/experiments
 cp -r RL_for_pRNN $SLURM_TMPDIR/
 cd $SLURM_TMPDIR/RL_for_pRNN
 
