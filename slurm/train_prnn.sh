@@ -37,7 +37,7 @@ wandb login $WANDB_API_KEY
 export DEST_DIR="$SCRATCH/pRNN/$JOB_ID"
 mkdir -p $DEST_DIR
 ( while true; do
-    sleep 600
+    sleep 1800
     rsync -a $RL_STORAGE/ $DEST_DIR/
 done ) &
 SYNC_PID=$!
