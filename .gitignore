@@ -4,7 +4,6 @@ LabNotebook/*
 nets/*
 RLvideos/*
 RLutils/__pycache__/*
-*.sh
 *.pyc
 *.ipynb
 .python*

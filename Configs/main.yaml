@@ -1,10 +1,10 @@
 defaults:
     - _self_
-    - env: lroom            # -> exp.*      (Configs/env/)
-    - model: sr_ac          # -> exp.*      (Configs/model/)
+    - env: lroom # -> exp.*      (Configs/env/)
+    - model: sr_ac # -> exp.*      (Configs/model/)
     - world_model: thrnn5win # -> predNet.* (Configs/world_model/)
-    - algo: ppo             # -> rl.*       (Configs/algo/)
-    - rewards: curious      # -> rl.*       (Configs/rewards/)
+    - algo: ppo # -> rl.*       (Configs/algo/)
+    - rewards: curious_next_obs # -> rl.*       (Configs/rewards/)
     - tasks: omt
     - override hydra/hydra_logging: disabled
     - override hydra/job_logging: disabled
@@ -15,12 +15,12 @@ defaults:
 # world_model=thrnn5win_prevact env=fourrooms model=plain_ac`.
 
 hydra:
-  output_subdir: null
-  sweep:
-    dir: .
-    subdir: .
-  run:
-    dir: .
+    output_subdir: null
+    sweep:
+        dir: .
+        subdir: .
+    run:
+        dir: .
 
 exp:
     exp_name: omt
