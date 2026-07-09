@@ -88,7 +88,8 @@ def _get_env() -> FaramaMinigridShell:
 
 class TestEvalTrajectoryConfig:
     def test_defaults(self):
-        cfg = EvalTrajectoryConfig(timesteps=100)
+        # save_path became a required field (no default) in analysis_OMT.py
+        cfg = EvalTrajectoryConfig(save_path=None, timesteps=100)
         assert cfg.timesteps == 100
         assert cfg.include_render is False
         assert cfg.include_hidden_states is False
@@ -112,6 +113,7 @@ class TestEvalModeContextManager:
         mock_pN.pRNN.training = True
 
         mock_agent = MagicMock()
+        mock_agent.__class__ = ActorCriticAgent  # eval_mode isinstance-asserts
         mock_agent.acmodel.training = True
         mock_agent.argmax = False
 
@@ -146,6 +148,7 @@ class TestEvalModeContextManager:
         mock_pN.pRNN.training = True
 
         mock_agent = MagicMock()
+        mock_agent.__class__ = ActorCriticAgent  # eval_mode isinstance-asserts
         mock_agent.acmodel.training = True
         mock_agent.argmax = False
 
@@ -200,7 +203,8 @@ class TestSaveLoadRoundtrip:
         assert (tmp_path / "out" / "trajectories.pt").exists()
         assert (tmp_path / "out" / "summary.parquet").exists()
 
-        loaded = load_eval_trajectories(tmp_path / "out")
+        # save takes a directory, load takes the .pt file inside it (API asymmetry)
+        loaded = load_eval_trajectories(tmp_path / "out" / "trajectories.pt")
         assert torch.allclose(loaded["obs"], data["obs"])
         assert torch.allclose(loaded["obs_pred"], data["obs_pred"])
         assert torch.allclose(loaded["obs_next"], data["obs_next"])
@@ -289,7 +293,7 @@ class TestCollectEvalTrajectories:
         agent = RandomActionAgent(env.action_space, action_prob)
 
         T = 10
-        config = EvalTrajectoryConfig(timesteps=T)
+        config = EvalTrajectoryConfig(save_path=None, timesteps=T)
         result = collect_eval_trajectories(pN, agent, env, config)
 
         _, view_size, C = env.obs_shape
@@ -326,7 +330,7 @@ class TestCollectEvalTrajectories:
         B = num_walkable * 4
 
         config = EvalTrajectoryConfig(
-            timesteps=T, include_hidden_states=True
+            save_path=None, timesteps=T, include_hidden_states=True
         )
         result = collect_eval_trajectories(pN, agent, env, config)
 
