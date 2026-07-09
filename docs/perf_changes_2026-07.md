@@ -1,7 +1,6 @@
 # Perf overhaul, July 2026 — changes, rationale, and flags
 
-Branch `sdu/rl-rollout-arch`, commits `226e1a9..66e9526` (6 commits, local only,
-not pushed). Companion docs: `perf_baseline.md` (measurements + methodology),
+Branch `sdu/rl-rollout-arch`, commits `226e1a9..66e9526` (6 commits, pushed). Companion docs: `perf_baseline.md` (measurements + methodology),
 `perf_log.md` (per-commit running log). This file is the review guide: what
 changed, why, and what to watch out for.
 
