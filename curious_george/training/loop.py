@@ -31,8 +31,10 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
         agent = comps.ac_agent if use_ac else comps.random_agent
         metrics = evaluate_spatial_representation(
             comps.predictiveNet, comps.env, agent, sleepstd=0.03, wandb_nameext=nameext,
-            timesteps=cfg.exp.get("eval_timesteps", 15000),
-            trainDecoder=cfg.exp.get("eval_decoder", True),
+            n_trajs=cfg.exp.get("eval_trajs", 8),
+            traj_timesteps=cfg.predNet.seqdur,  # eval trajs match training trajs
+            trainDecoder=cfg.exp.get("eval_decoder", False),
+            legacy_timesteps=cfg.exp.get("eval_timesteps", 15000),
         )
         print(f"{nameext[1:]} sRSA={metrics['sRSA']:.4f} SWdist={metrics['SWdist']:.4f}")
         if wandb_log:

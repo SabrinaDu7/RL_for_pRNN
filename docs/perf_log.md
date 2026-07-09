@@ -84,3 +84,28 @@ change; see curious_george/evaluation/spatial.py docstring.
 ## Cumulative (stock config, CPU, B=1): ~9.3s/update CUDA-default baseline
 ## -> 4.9s/update on CPU -> plus every-update plotting removed and analysis
 ## events 293s -> 10.2s. B=8 opt-in: 3.2s/update (642 FPS).
+
+## Phase A (new plan): multi-trajectory pooled spatial eval
+
+Per Sabrina's redesign (2026-07-09): eval trajectories must match TRAINING
+trajectory statistics. evaluate_spatial_representation now collects
+`exp.eval_trajs` (8) trajectories of `predNet.seqdur` (256) steps, pools the
+theta-mean hidden states + positions (per-traj onset transient dropped), and
+computes SI/sRSA/SWdist once on the pooled data under one CPU device move.
+Legacy prnn path kept behind `exp.eval_decoder=True` (uses `eval_timesteps`).
+
+- Analysis event: 10.2s -> 8.6s (1-update net). Suite: 101 passed, 0 failed.
+- Logging per Sabrina's rule: pRNN metrics are logged BY prnn; the RL repo
+  logs only its own SWdist_direct. Until Phase B moves the pooled-metric
+  computation+logging into prnn, pooled-path runs do NOT emit
+  'mean SI'/'sRSA'/'SWdist' wandb keys (legacy path still does).
+- Reference values shift by design: pooled wake states include per-trajectory
+  init transients (training-like); e.g. SWdist 0.036 pooled vs 0.009
+  single-rollout on the same 1-update net. Trends within a run stay valid.
+
+## New phase order (Sabrina, 2026-07-09)
+
+A. eval restructure (this section) -> B. prnn-repo changes (metrics computed+
+logged inside prnn on precomputed activity; trainStep sync trims; compile
+groundwork; git-pinned flow, no editable installs) -> C. B>1 + AsyncVectorEnv
+last (only step that breaks bitwise; goldens regenerated then).
