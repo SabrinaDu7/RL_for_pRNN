@@ -36,10 +36,6 @@ exp:
     eval_decoder: False # fit the position decoder during spatial eval (historical: True, 5000 batches; only needed for decode-error analyses)
     analyze_agent_behav: True # Policy/state analysis + mutual information logging
 
-hardware:
-    use_gpu: True
-    which_gpu: 0 # GPU device code
-
 logging:
     wandb_log: True
     wandb_entity: blake-richards
