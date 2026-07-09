@@ -330,13 +330,19 @@ def save_eval_trajectories(data: EvalTrajectories, path: Path) -> Path:
 
 
 def load_eval_trajectories(path: Path) -> dict:
-    """Load evaluation trajectories from a ``.pt`` file.
+    """Load trajectories saved by save_eval_trajectories.
+
+    Accepts the directory save_eval_trajectories wrote into (harmonized with
+    its interface) or a direct path to the ``.pt`` file.
 
     Args:
-        path: Full path to .pt file.
+        path: Save directory, or full path to the .pt file inside it.
 
     Returns:
         Dict with the saved tensor data.
     """
-    return torch.load(Path(path), weights_only=False)
+    path = Path(path)
+    if path.is_dir():
+        path = path / "trajectories.pt"
+    return torch.load(path, weights_only=False)
 

@@ -203,8 +203,7 @@ class TestSaveLoadRoundtrip:
         assert (tmp_path / "out" / "trajectories.pt").exists()
         assert (tmp_path / "out" / "summary.parquet").exists()
 
-        # save takes a directory, load takes the .pt file inside it (API asymmetry)
-        loaded = load_eval_trajectories(tmp_path / "out" / "trajectories.pt")
+        loaded = load_eval_trajectories(tmp_path / "out")  # dir, like save
         assert torch.allclose(loaded["obs"], data["obs"])
         assert torch.allclose(loaded["obs_pred"], data["obs_pred"])
         assert torch.allclose(loaded["obs_next"], data["obs_next"])
