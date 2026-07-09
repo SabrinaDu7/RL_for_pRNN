@@ -34,6 +34,10 @@ REPO = Path(__file__).resolve().parents[2]
 OUT = str(REPO / "tests" / "golden_omt" / "golden_omt_v0.pt")
 
 OVERRIDES = [
+    # golden_omt_v0.pt was captured under legacy alignment; pin it so the
+    # bitwise gate is immune to changes of the main.yaml default rewards
+    # group (a default flip to curious_next_obs broke it on 2026-07-08)
+    "rewards=curious",
     "logging.wandb_log=false",
     "predNet.seqdur=32",
     "rl.frames=64",
