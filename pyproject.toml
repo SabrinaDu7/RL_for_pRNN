@@ -94,7 +94,7 @@ reportPossiblyUnboundVariable = "none"
 
 [tool.uv.sources]
 minigrid = { git = "https://github.com/SabrinaDu7/minigrid.git" }
-prnn = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git" }
+prnn = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git", branch = "sdu/prnn-perf-optim" }
 
 [project.urls]
 Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"

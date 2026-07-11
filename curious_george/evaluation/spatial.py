@@ -172,6 +172,23 @@ def evaluate_spatial_representation(
             np.float64, copy=False
         )
 
+        if hasattr(pN, "calculateSpatialMetrics"):
+            # prnn owns metric computation AND wandb logging (Sabrina's rule);
+            # requires the prnn pin at sdu/prnn-perf-optim or later
+            metrics = pN.calculateSpatialMetrics(
+                h_pool,
+                pos_pool,
+                env,
+                sleepstd=sleepstd,
+                sleep_timesteps=sleep_timesteps,
+                active_time_threshold=active_time_threshold,
+                wandb_nameext=wandb_nameext,
+            )
+            return {"sRSA": metrics["sRSA"], "SWdist": metrics["SWdist"], "SI": metrics["SI"]}
+
+        # FALLBACK for older prnn pins (no calculateSpatialMetrics): computed
+        # RL-side, NOT logged to wandb. Delete once Phase B is accepted
+        # (Sabrina will call it at the start of Phase C).
         SI = _pooled_spatial_info(
             env, h_pool, pos_pool, active_time_threshold=active_time_threshold
         )

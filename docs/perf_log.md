@@ -109,3 +109,22 @@ A. eval restructure (this section) -> B. prnn-repo changes (metrics computed+
 logged inside prnn on precomputed activity; trainStep sync trims; compile
 groundwork; git-pinned flow, no editable installs) -> C. B>1 + AsyncVectorEnv
 last (only step that breaks bitwise; goldens regenerated then).
+
+## Phase B (part 1): spatial metrics computed + logged inside prnn
+
+- prnn branch sdu/prnn-perf-optim (pushed), commit 3c022a7:
+  PredictiveNet.calculateSpatialMetrics(h, agent_pos, env, ...) - SI/sRSA/
+  SWdist from precomputed pooled activity, wandb-logged inside prnn with the
+  historical 'mean SI'/'sRSA'/'SWdist' keys. Tested in pRNN repo
+  (test/test_spatial_metrics.py, 2 passed; test_env.py is stale - minigrid
+  drift, per Sabrina).
+- RL repo pin moved to that BRANCH (pyproject [tool.uv.sources] prnn
+  branch=sdu/prnn-perf-optim; uv lock tracks its head, currently 3c022a7).
+- evaluation/spatial.py pooled path prefers the prnn method; the RL-side
+  computation remains as a fallback for older pins and gets deleted when
+  Phase B is accepted (start of Phase C).
+- Gates: RL suite 101 passed / 0 failed (goldens green -> prnn change is
+  additive); analysis event through the prnn method reproduces Phase A values
+  exactly (sRSA 0.1094, SWdist 0.0362, seed 2, 1-update net).
+- Remaining Phase B items: trainStep .item()/TrainingSaver pd.concat trims,
+  torch.compile groundwork.
