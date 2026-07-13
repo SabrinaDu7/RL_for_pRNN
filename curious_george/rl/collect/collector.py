@@ -18,6 +18,7 @@ import torch
 from torch_ac.utils import DictList
 
 from curious_george.envs.access import get_subroom_id
+from curious_george.envs.vector import AsyncShellPool
 from curious_george.rl.collect.diagnostics import (
     LocationStats,
     check_large_jump,
@@ -122,11 +123,12 @@ def collect_rollout(
     subroom_size_: int | None,
     intrinsic_ref=None,  # IntrinsicReference (B=1 only) or None
 ) -> CollectResult:
+    pool = envs if isinstance(envs, AsyncShellPool) else None
     B = len(envs)
     T = cfg.num_frames // B
     device = cfg.device
 
-    joint = new_joint_probabilities(envs[0], getattr(acmodel, "act_dim"))
+    joint = new_joint_probabilities(pool if pool is not None else envs[0], getattr(acmodel, "act_dim"))
 
     obss = [[None] * T for _ in range(B)]
     locs = [[None] * T for _ in range(B)]
@@ -155,7 +157,10 @@ def collect_rollout(
             probs_np = dist.probs.detach().cpu().numpy()
 
         if cfg.prnn_seqdur > 0 and t % cfg.prnn_seqdur == 0:  # First loc of traj
-            state.init_loc_b = [torch.tensor(_agent_pos(env)) for env in envs]
+            if pool is not None:
+                state.init_loc_b = [torch.tensor(loc) for loc in state.loc_b]
+            else:
+                state.init_loc_b = [torch.tensor(_agent_pos(env)) for env in envs]
 
         # record buffers indexed by pre-step state
         masks[t] = torch.as_tensor(state.mask_b, device=device)
@@ -167,7 +172,35 @@ def collect_rollout(
         # --- environment stepping ----------------------------------------
         pre_obs_b = list(state.obs_b)
         done_b = [False] * B
-        with timer("collect/env_step"):
+        if pool is not None:
+            with timer("collect/env_step"):
+                # one parallel step for all B envs (positions ride the infos)
+                obs_next_b, step_rewards, _, loc_next_b = pool.step(det_np)
+                seq_done = cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0
+                for b in range(B):
+                    done_b[b] = seq_done
+                    if check_large_jump(state.loc_b[b], loc_next_b[b]) and t % cfg.prnn_seqdur != 0:
+                        print("====== DEBUG START ======")
+                        print(f"Large jump detected at step {t} (env {b}): from {state.loc_b[b]} to {loc_next_b[b]}")
+                        print("====== DEBUG END ======")
+                    obss[b][t] = pre_obs_b[b]
+                    locs[b][t] = state.loc_b[b]
+                    rewards[t, b] = step_rewards[b]
+
+                    hd = pre_obs_b[b]["direction"]
+                    x, y = locs[b][t]
+                    joint[hd, x, y, :] += probs_np[b]
+
+                    state.ep_return[b] += float(step_rewards[b])
+                    state.ep_reshaped[b] += float(step_rewards[b])
+                    state.ep_frames[b] += 1
+
+                    state.obs_b[b] = obs_next_b[b]
+                    state.loc_b[b] = loc_next_b[b]
+                    state.mask_b[b] = 1 - seq_done
+                    last_post_obs = obs_next_b[b]
+        else:
+          with timer("collect/env_step"):
             for b, env in enumerate(envs):
                 # CAREFUL: obs_next is post-action; pre_obs_b[b] is pre-action
                 obs_next, reward, terminated, truncated, _ = env.step(det_np[b:b + 1])
@@ -227,12 +260,22 @@ def collect_rollout(
                 state.init_loc_b[b].unsqueeze(0),
                 torch.tensor(state.loc_b[b]).unsqueeze(0),
             ).item()
-            state.obs_b[b] = envs[b].reset()  # completely new position
-            state.loc_b[b] = _agent_pos(envs[b])
+            if pool is None:
+                state.obs_b[b] = envs[b].reset()  # completely new position
+                state.loc_b[b] = _agent_pos(envs[b])
             state.ep_return[b] = 0.0
             state.ep_reshaped[b] = 0.0
             state.ep_frames[b] = 0
             done_indices_b[b].append(t + 1)
+
+        # pool resets are synchronized (seqdur cuts fire for every env at the
+        # same t); one round-trip after the per-env bookkeeping above
+        if pool is not None and any(done_b):
+            assert all(done_b), "pool episode cuts must be synchronized"
+            obs_reset_b, loc_reset_b = pool.reset_all()
+            for b in range(B):
+                state.obs_b[b] = obs_reset_b[b]
+                state.loc_b[b] = loc_reset_b[b]
 
     # make sure last obs is included in done indices (per env stream)
     for b in range(B):

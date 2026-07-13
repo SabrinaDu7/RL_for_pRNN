@@ -173,3 +173,28 @@ scripts/analysis_bsweep.py verdict vs the B=1 across-seed band:
 No systematic separation on any metric -> per the agreed decision rule,
 flipping exp.num_envs default to 8 is justified, and AsyncVectorEnv is the
 next lever (serial render is ~half the B=8 update).
+
+## Phase C1: AsyncVectorEnv rollout collection (honest result: +6-9% locally)
+
+- curious_george/envs/vector.py: AsyncShellPool - workers run the raw wrapped
+  minigrid envs (factory.make_env minus the Shell), positions ride step infos
+  (PosInfo), mission stripped for lean IPC (DropMission, re-attached on
+  unstack). Collector pool branch: one parallel step per t; synchronized
+  seqdur resets (env-signaled dones assert). Eval/analysis use a separate
+  eval shell (own seed stream - eval no longer perturbs training envs, a
+  deliberate semantic improvement over the sync list mode).
+- Gates: transition equivalence EXACT (tests/test_async_envs.py); collector
+  metrics bitwise-equal to sync B=8 (compare_metrics PASS, prnn_loss
+  0.00e+00); suite 103 passed / 0 failed.
+- Speed (CPU, 8 cores, B=8, 3 updates): sync 569 FPS -> async ~604-618 FPS.
+  env_step 6.4 -> ~4.6 ms/step only: the per-step lockstep IPC round-trip
+  (~0.5ms) + 8 workers contending with torch threads on 8 cores eat most of
+  the render parallelism. shared_memory measured slightly WORSE than pickling
+  (598); payload size is not the bottleneck, latency is.
+- New bottleneck ranking at B=8 async: wm_train (BPTT, ~1.1s/update) >=
+  env_step (~1.2s) > curious_rewards (~0.38s). Further env-side gains need
+  either more cores (cluster nodes - async may fare better there) or
+  decoupled (non-lockstep) collection; further overall gains point back at
+  the thetaRNN loop (optional compile work).
+- exp.async_envs=True default at B>1; false restores in-process list (same
+  transitions, bitwise-equal metrics).

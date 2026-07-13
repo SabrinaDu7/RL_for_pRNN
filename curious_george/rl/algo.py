@@ -121,9 +121,17 @@ class PredictivePPOAlgo:
         reward_alignment="legacy",
         loss="ppo_clip",
     ):
-        # env may be a single shell or a list of shells (parallel collection)
-        self.envs = env if isinstance(env, (list, tuple)) else [env]
-        self.env = self.envs[0]
+        # env may be a single shell, a list of shells (parallel collection),
+        # or an AsyncShellPool (process-parallel collection)
+        from curious_george.envs.vector import AsyncShellPool
+
+        self.is_async = isinstance(env, AsyncShellPool)
+        if self.is_async:
+            self.envs = env
+            self.env = env.eval_shell  # shell services (encodeAction, grid, ...)
+        else:
+            self.envs = env if isinstance(env, (list, tuple)) else [env]
+            self.env = self.envs[0]
         self.num_envs = len(self.envs)
 
         self.acmodel = acmodel
@@ -177,14 +185,19 @@ class PredictivePPOAlgo:
         # Rollout machinery (env resets + initial SR happen here, in the
         # same order as the historical constructor: reset then init_SR)
         self.tracker = None
-        self._first_obs = [e.reset() for e in self.envs]
+        if self.is_async:
+            self._first_obs, first_locs = self.envs.reset_all()
+            loc_b = [loc for loc in first_locs]
+        else:
+            self._first_obs = [e.reset() for e in self.envs]
+            loc_b = [self._pos(e) for e in self.envs]
         self.tracker = make_sr_tracker(self.adapter, self.device, self._first_obs)
         self.state = CollectorState(
             obs_b=self._first_obs,
-            loc_b=[self._pos(e) for e in self.envs],
+            loc_b=loc_b,
             mask_b=np.ones(self.num_envs, dtype=np.float32),
             sr=self.tracker.initial_sr(),
-            init_loc_b=[torch.tensor(self._pos(e)) for e in self.envs],
+            init_loc_b=[torch.tensor(loc) for loc in loc_b],
             ep_return=[0.0] * self.num_envs,
             ep_reshaped=[0.0] * self.num_envs,
             ep_frames=[0] * self.num_envs,

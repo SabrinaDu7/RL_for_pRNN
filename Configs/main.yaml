@@ -26,6 +26,7 @@ exp:
     exp_name: omt
     seed: 2 # Random seed
     num_envs: 8 # Parallel envs for rollout collection (1 = exact historical serial path; learning-equivalence gated by the 2026-07 bsweep, docs/perf_log.md). NOTE: exp.random_action_agent=true requires num_envs=1
+    async_envs: True # num_envs>1 only: step envs in worker processes (AsyncVectorEnv). False = in-process list of envs (same transitions, slower)
     intrinsic: False # Use intrinsic rewards?
     random_action_agent: False # If True, overrides PPO and chooses actions randomly. Used as control
     curious_agent: True # Use pRNN loss as reward?

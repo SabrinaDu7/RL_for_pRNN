@@ -100,6 +100,14 @@ def setup_env(cfg, seed_offset: int = 0):
 
 def setup_envs(cfg) -> list:
     num_envs = cfg.exp.get("num_envs", 1)
+    if num_envs > 1 and cfg.exp.get("async_envs", True):
+        from curious_george.envs.vector import AsyncShellPool
+
+        # workers use the same per-index seeds as the serial list; the eval
+        # shell (analysis/plotting/pRNN services) gets its own stream so eval
+        # rollouts no longer perturb training env streams
+        eval_shell = setup_env(cfg, seed_offset=1000 * num_envs)
+        return AsyncShellPool(cfg, eval_shell)
     return [setup_env(cfg, seed_offset=1000 * i) for i in range(num_envs)]
 
 
