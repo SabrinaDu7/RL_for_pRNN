@@ -128,3 +128,34 @@ last (only step that breaks bitwise; goldens regenerated then).
   exactly (sRSA 0.1094, SWdist 0.0362, seed 2, 1-update net).
 - Remaining Phase B items: trainStep .item()/TrainingSaver pd.concat trims,
   torch.compile groundwork.
+
+## Mismatch investigation: CLOSED (2026-07-12)
+
+Sabrina's Mila run of the perf tree with old-cadence overrides
+(plot_interval=1, offpolicy on, eval_timesteps=15000, eval_decoder=true)
+reproduces the pre-optimization curves (92f37d2). Verdict: the (a)/(c)
+divergences (advantage extremes, cur_reward_max) between the Jul-5 and Jul-8
+runs were eval/plot RNG-cadence + machine/realization effects, NOT a semantic
+change from the perf refactor. (b) mean SI was the documented eval_timesteps
+change, superseded by the Phase A pooled eval.
+
+## Phase B: CLOSED (part 1 only, by measurement)
+
+The planned trainStep/.item() and TrainingSaver pd.concat trims were measured
+and rejected: concat costs ~20s cumulative over a FULL 10k-update run
+(~2ms/update); trainStep syncs are 8/update. Not worth churn in a pinned dep.
+The remaining single-stream lever is the thetaRNN Python timestep loop
+(wm_train 0.92s/update) -> optional torch.compile "Phase D", deferred.
+
+## Phase C (started): num_envs learning-curve gate
+
+- slurm/bsweep.sh: 9 CPU array jobs, B in {1,4,8} x seeds {2,3,4},
+  1500 updates each (rl.steps=3072000), exp_name bsweep-B{B}-s{seed}.
+  Requires pushing sdu/rl-rollout-arch (cluster clones from $HOME).
+- scripts/analysis_bsweep.py: fetches the runs from wandb, bins curves over a
+  common frame horizon, reports per-B mean+/-std across seeds and a
+  within-2sd-of-B=1 overlap verdict; optional figure.
+- Local pilot first: bsweep-pilot-B{1,8}-s2, 300 updates each, validates the
+  pipeline + Phase B wandb keys at the update-200 analysis event.
+- Decision rule: flip exp.num_envs default only if B>1 curves sit inside the
+  B=1 across-seed band; then evaluate AsyncVectorEnv for the serial render.
