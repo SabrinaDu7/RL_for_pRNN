@@ -21,7 +21,6 @@ internally as always.
 """
 
 import numpy as np
-import pynapple as nap
 import torch
 from jaxtyping import Float
 
@@ -73,33 +72,6 @@ def _sleep_wake_dist(
         wake_h, sleep_h.detach().numpy(), metric="cosine"
     )
     return float(swdist)
-
-
-def _pooled_spatial_info(
-    env,
-    h_pool: Float[np.ndarray, "N H"],
-    pos_pool: Float[np.ndarray, "N 2"],
-    *,
-    active_time_threshold: int,
-):
-    """Per-unit spatial information on pooled trajectories (prnn's pynapple
-    recipe: 2D tuning curves + mutual info, low-activity units zeroed).
-    The time axis is fabricated (row index) - pynapple only uses it to align
-    rates to positions, and tuning curves are occupancy-binned averages."""
-    t = np.arange(len(h_pool))
-    position = nap.TsdFrame(t=t, d=pos_pool, columns=("x", "y"), time_units="s")
-    rates = nap.TsdFrame(t=t, d=h_pool, time_units="s")
-    nb_bins_x, nb_bins_y, minmax = env.get_map_bins()
-    place_fields, _ = nap.compute_2d_tuning_curves_continuous(
-        rates, position, ep=rates.time_support,
-        nb_bins=(nb_bins_x, nb_bins_y), minmax=minmax,
-    )
-    SI = nap.compute_2d_mutual_info(
-        place_fields, position, position.time_support, bitssec=False
-    )
-    num_active = (h_pool > 0).sum(axis=0)
-    SI.iloc[num_active < active_time_threshold] = 0
-    return SI
 
 
 def evaluate_spatial_representation(
@@ -172,38 +144,15 @@ def evaluate_spatial_representation(
             np.float64, copy=False
         )
 
-        if hasattr(pN, "calculateSpatialMetrics"):
-            # prnn owns metric computation AND wandb logging (Sabrina's rule);
-            # requires the prnn pin at sdu/prnn-perf-optim or later
-            metrics = pN.calculateSpatialMetrics(
-                h_pool,
-                pos_pool,
-                env,
-                sleepstd=sleepstd,
-                sleep_timesteps=sleep_timesteps,
-                active_time_threshold=active_time_threshold,
-                wandb_nameext=wandb_nameext,
-            )
-            return {"sRSA": metrics["sRSA"], "SWdist": metrics["SWdist"], "SI": metrics["SI"]}
-
-        # FALLBACK for older prnn pins (no calculateSpatialMetrics): computed
-        # RL-side, NOT logged to wandb. Delete once Phase B is accepted
-        # (Sabrina will call it at the start of Phase C).
-        SI = _pooled_spatial_info(
-            env, h_pool, pos_pool, active_time_threshold=active_time_threshold
+        # prnn owns metric computation AND wandb logging (Sabrina's rule);
+        # requires the prnn pin at sdu/prnn-perf-optim or later (pyproject)
+        metrics = pN.calculateSpatialMetrics(
+            h_pool,
+            pos_pool,
+            env,
+            sleepstd=sleepstd,
+            sleep_timesteps=sleep_timesteps,
+            active_time_threshold=active_time_threshold,
+            wandb_nameext=wandb_nameext,
         )
-
-        # calculateSpatialDist drops the last position row ([:-1]); append a
-        # dummy row so the pooled positions line up 1:1 with h_pool
-        wake = {
-            "state": {"agent_pos": np.vstack([pos_pool, pos_pool[-1:]])},
-            "h": h_pool,
-        }
-        (sRSA, _), _, _, _ = RGA.calculateRSA_space(
-            RGA, wake, cont=env.continuous, max_dist=env.max_dist
-        )
-        swdist = _sleep_wake_dist(
-            pN, h_pool, sleepstd=sleepstd, sleep_timesteps=sleep_timesteps
-        )
-
-    return {"sRSA": float(sRSA), "SWdist": swdist, "SI": SI}
+    return {"sRSA": metrics["sRSA"], "SWdist": metrics["SWdist"], "SI": metrics["SI"]}
