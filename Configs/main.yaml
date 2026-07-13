@@ -25,7 +25,7 @@ hydra:
 exp:
     exp_name: omt
     seed: 2 # Random seed
-    num_envs: 1 # Parallel envs for rollout collection (1 = exact historical serial path)
+    num_envs: 8 # Parallel envs for rollout collection (1 = exact historical serial path; learning-equivalence gated by the 2026-07 bsweep, docs/perf_log.md). NOTE: exp.random_action_agent=true requires num_envs=1
     intrinsic: False # Use intrinsic rewards?
     random_action_agent: False # If True, overrides PPO and chooses actions randomly. Used as control
     curious_agent: True # Use pRNN loss as reward?
