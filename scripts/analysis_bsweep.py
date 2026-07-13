@@ -84,13 +84,18 @@ def main() -> None:
             print(f"  B={B}: " + " ".join(f"{m:+.3g}" for m in mean))
         if 1 in Bs:
             m1, s1 = curves[(1, metric)]
+            n_seeds = len([1 for (b, _) in hs if b == 1])
             for B in Bs:
                 if B == 1:
                     continue
                 mB, _ = curves[(B, metric)]
-                inside = np.abs(mB - m1) <= 2 * np.maximum(s1, 1e-12)
-                frac = np.nanmean(inside.astype(float))
-                print(f"  B={B} within 2sd of B=1 band: {frac:.0%} of bins")
+                rel = np.nanmean(np.abs(mB - m1) / np.maximum(np.abs(m1), 1e-12))
+                if n_seeds >= 2:
+                    inside = np.abs(mB - m1) <= 2 * np.maximum(s1, 1e-12)
+                    frac = np.nanmean(inside.astype(float))
+                    print(f"  B={B}: {frac:.0%} of bins within 2sd of B=1 band; mean-rel diff {rel:.1%}")
+                else:
+                    print(f"  B={B}: mean-rel diff {rel:.1%} (single seed - no band verdict)")
 
     if args.fig:
         import matplotlib
