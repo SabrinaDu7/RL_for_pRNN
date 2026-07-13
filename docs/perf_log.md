@@ -235,3 +235,21 @@ lookup into a precomputed (W, H, 4) bank.
 - slurm/async_bench.sh extended: gres=gpu:1 + a CG_DEVICE=cuda B=8 pass with
   nvidia-smi utilization sampling (mean/max %) - decides whether GPU becomes
   worthwhile at batched collection sizes.
+
+## Cluster verdicts (async_bench_10111153, 16 cpus + RTX 8000, 2026-07-13)
+
+- OMP/MKL thread caps fixed the thrashing: updates 2.9-3.4s (was 4-51s).
+  **B=8 sync = 674 FPS** - best measured anywhere; obs bank confirmed
+  working from the SLURM_TMPDIR repo copy (2.4 ms/step env stepping).
+- Async: 596 vs 674 (B=8), 534 vs 614 (B=4) - slower everywhere even with
+  spare cores. Default stays off; pool remains tested opt-in.
+- GPU: 558 FPS at single-digit utilization (164-264 MiB) - the model never
+  fills it. **Training allocations should be CPU-only** (drop gres,
+  CG_DEVICE=cpu), cheaper queueing at equal-or-better speed.
+- (awk max-utilization stat in the bench log was string-compared - fixed;
+  trust the nvidia-smi accounting numbers in that log.)
+
+Perf effort end state: 218 FPS (pre-refactor CUDA default) -> 674 FPS
+(cluster CPU, B=8 sync, obs bank) = 3.1x, analysis events ~34x cheaper,
+cluster wall-times stabilized. Remaining lever if ever needed: thetaRNN
+Python loop (torch.compile), deferred by measurement.

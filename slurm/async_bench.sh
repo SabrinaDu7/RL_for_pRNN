@@ -72,7 +72,7 @@ CG_DEVICE=cuda uv run python tests/perf/benchmark.py --updates 5 \
     --out $OUT/b8_gpu.json 2>&1 | grep -E "^FPS|collect/env_step" -A2
 kill $GPU_MON 2>/dev/null
 echo "GPU utilization (mean/max % over the run):"
-awk -F', ' '{gsub(/ %/,"",$2); s+=$2; n++; if ($2>m) m=$2} END {if (n) printf "  mean %.1f%%  max %d%%  (%d samples)\n", s/n, m, n}' $OUT/gpu_util.csv
+awk -F', ' '{gsub(/ %/,"",$2); s+=$2; n++; if ($2+0>m+0) m=$2} END {if (n) printf "  mean %.1f%%  max %d%%  (%d samples)\n", s/n, m, n}' $OUT/gpu_util.csv
 
 DEST_DIR="$SCRATCH/pRNN/$JOB_ID"
 mkdir -p $DEST_DIR
