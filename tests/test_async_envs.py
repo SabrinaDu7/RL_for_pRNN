@@ -20,7 +20,11 @@ def cfg():
     with initialize_config_dir(config_dir=str(REPO / "Configs"), version_base=None):
         return compose(
             config_name="main",
-            overrides=[f"exp.num_envs={B}", "logging.wandb_log=false"],
+            overrides=[
+                f"exp.num_envs={B}",
+                "exp.async_envs=true",  # the pool is opt-in; this tests it
+                "logging.wandb_log=false",
+            ],
         )
 
 

@@ -14,6 +14,12 @@ module load python/3.10
 
 export PATH="$HOME/.local/bin:$PATH"
 
+# cap torch/BLAS threads to the allocation - without this torch spawns one
+# thread per PHYSICAL core of the node while the cgroup grants fewer,
+# causing thrashing (async_bench_10110503: 4-51s update times on 16 cpus)
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
 export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}"
 export RL_STORAGE=$SLURM_TMPDIR/outputs/$JOB_ID
 export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache

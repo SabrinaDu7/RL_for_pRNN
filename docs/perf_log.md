@@ -198,3 +198,19 @@ next lever (serial render is ~half the B=8 update).
   the thetaRNN loop (optional compile work).
 - exp.async_envs=True default at B>1; false restores in-process list (same
   transitions, bitwise-equal metrics).
+
+## Phase C1 verdict: async collection OFF by default (2026-07-13)
+
+Cluster benchmark (async_bench_10110503, 16-cpu allocation on cn-h001):
+async env_step 6.0 vs sync 4.9 ms/step at B=8 (and worse at B=4); combined
+with the dev box's +6-9%, async never earns its complexity ->
+exp.async_envs now defaults to False. The pool stays as tested opt-in
+infrastructure (transitions exactly equal, metric gate PASSed on cluster).
+
+Bigger finding from the same log: cluster updates were 4-51s (vs 3.2s
+local), wm_train 5-12s/update - torch/BLAS thread oversubscription (no
+OMP_NUM_THREADS cap, torch spawns per-physical-core threads inside a
+16-cpu cgroup). All slurm scripts now export OMP/MKL_NUM_THREADS=
+$SLURM_CPUS_PER_TASK. The bsweep runs likely paid this tax too (their
+learning-curve CONCLUSIONS are unaffected - equivalence is about values,
+not speed - but cluster wall-times should drop a lot).
