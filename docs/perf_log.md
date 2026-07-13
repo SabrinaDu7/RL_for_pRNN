@@ -159,3 +159,17 @@ The remaining single-stream lever is the thetaRNN Python timestep loop
   pipeline + Phase B wandb keys at the update-200 analysis event.
 - Decision rule: flip exp.num_envs default only if B>1 curves sit inside the
   B=1 across-seed band; then evaluate AsyncVectorEnv for the serial render.
+
+## Phase C gate result: B>1 is learning-equivalent (2026-07-13)
+
+9/9 bsweep runs completed (B in {1,4,8} x seeds {2,3,4}, 1500 updates).
+scripts/analysis_bsweep.py verdict vs the B=1 across-seed band:
+- cur_reward_mean 92% in-band (rel diff 0.6-1.0%); value_loss 83-100%
+  (1.4-2.4%); advantages_max 100% (2.2%); advantages_min 83-92% (0.4-1.1%);
+  loc_entropy 83-92%; cur_reward_max 75-83%.
+- policy_loss "22% rel" is the near-zero-metric artifact (bands overlap);
+  policy_entropy 67-75% in-band, curves interleave with no consistent
+  direction. Figure: bsweep.png.
+No systematic separation on any metric -> per the agreed decision rule,
+flipping exp.num_envs default to 8 is justified, and AsyncVectorEnv is the
+next lever (serial render is ~half the B=8 update).
