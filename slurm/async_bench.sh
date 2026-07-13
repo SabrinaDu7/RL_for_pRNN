@@ -10,6 +10,7 @@
 #SBATCH --error=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.err
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:1
 #SBATCH --mem=16G
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -62,6 +63,16 @@ done
 
 echo "=== metric gate: async vs sync must PASS (bitwise-equivalent) ==="
 uv run python tests/perf/compare_metrics.py $OUT/b8_sync.json $OUT/b8_async.json | tail -3
+
+echo "=== B=8 GPU (CG_DEVICE=cuda) with utilization sampling ==="
+nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used \
+    --format=csv,noheader -l 1 > $OUT/gpu_util.csv &
+GPU_MON=$!
+CG_DEVICE=cuda uv run python tests/perf/benchmark.py --updates 5 \
+    --out $OUT/b8_gpu.json 2>&1 | grep -E "^FPS|collect/env_step" -A2
+kill $GPU_MON 2>/dev/null
+echo "GPU utilization (mean/max % over the run):"
+awk -F', ' '{gsub(/ %/,"",$2); s+=$2; n++; if ($2>m) m=$2} END {if (n) printf "  mean %.1f%%  max %d%%  (%d samples)\n", s/n, m, n}' $OUT/gpu_util.csv
 
 DEST_DIR="$SCRATCH/pRNN/$JOB_ID"
 mkdir -p $DEST_DIR

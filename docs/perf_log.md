@@ -214,3 +214,24 @@ OMP_NUM_THREADS cap, torch spawns per-physical-core threads inside a
 $SLURM_CPUS_PER_TASK. The bsweep runs likely paid this tax too (their
 learning-curve CONCLUSIONS are unaffected - equivalence is about values,
 not speed - but cluster wall-times should drop a lot).
+
+## Obs bank: precomputed (pos, HD) -> partial RGB obs (2026-07-13)
+
+Sabrina's idea: the partial obs is a pure function of (x, y, dir, grid), so
+the per-step get_frame render (the biggest single per-step cost) becomes a
+lookup into a precomputed (W, H, 4) bank.
+- curious_george/envs/obs_bank.py: BankedRGBPartialObsWrapper, drop-in for
+  RGBImgPartialObsWrapper_HD (factory + async thunk both use it). Bank keyed
+  by sha1(grid.encode()) - layout changes (OMT object env, randomized rooms)
+  transparently build/load separate banks; re-keyed at every reset before
+  the reset obs is formatted. Persisted in data/obs_bank/*.npz (committed;
+  LRoom bank is 8.5 KB); served read-only (mutation raises).
+- Gates: byte-equality vs live renders over a 300-step random walk + resets
+  (tests/test_obs_bank.py); full suite 105 passed / 0 failed INCLUDING the
+  bitwise goldens (end-to-end byte-equality through training).
+- Speed (dev box, B=8 sync): env_step 6.4 -> 3.2 ms/step (the remaining half
+  is minigrid step logic + wrapper overhead, not rendering); 569 -> 624 FPS.
+  wm_train (BPTT) is now clearly the dominant cost.
+- slurm/async_bench.sh extended: gres=gpu:1 + a CG_DEVICE=cuda B=8 pass with
+  nvidia-smi utilization sampling (mean/max %) - decides whether GPU becomes
+  worthwhile at batched collection sizes.

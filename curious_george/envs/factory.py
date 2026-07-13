@@ -81,8 +81,12 @@ def make_env(
         env = FullyObsWrapper(env)
 
     elif "pRNN" in input_type or "PO" in input_type:
-        # The same RGB wrapper is used for comparability whenever partial observation is needed
-        env = RGBImgPartialObsWrapper_HD(env, tile_size=1)
+        # Same RGB partial obs as RGBImgPartialObsWrapper_HD (byte-equal,
+        # tests/test_obs_bank.py) but served from the precomputed bank in
+        # data/obs_bank/ instead of a per-step get_frame render.
+        from curious_george.envs.obs_bank import BankedRGBPartialObsWrapper
+
+        env = BankedRGBPartialObsWrapper(env, tile_size=1)
 
     else:
         # For the cases without any visual input

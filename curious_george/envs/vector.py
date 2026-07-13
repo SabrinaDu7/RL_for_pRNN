@@ -83,7 +83,9 @@ def _make_worker_thunk(cfg, seed_offset: int):
         if input_type == "Visual_FO":
             env = FullyObsWrapper(env)
         elif "pRNN" in input_type or "PO" in input_type:
-            env = RGBImgPartialObsWrapper_HD(env, tile_size=1)
+            from curious_george.envs.obs_bank import BankedRGBPartialObsWrapper
+
+            env = BankedRGBPartialObsWrapper(env, tile_size=1)
         else:
             raise ValueError(f"async envs not supported for input_type={input_type}")
         env.reset(seed=seed)
