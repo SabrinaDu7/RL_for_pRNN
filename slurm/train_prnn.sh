@@ -2,10 +2,12 @@
 #SBATCH --job-name=RL_for_pRNN
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
 #SBATCH --error=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.err
-#SBATCH --time=30:00:00
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
+#SBATCH --time=15:00:00
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=16G
+# CPU-only on purpose: async_bench_10111153 measured CUDA at 558 FPS with the
+# GPU ~91% idle vs 674 FPS on 16 CPUs (docs/perf_log.md cluster verdicts).
+# Full run at ~674 FPS is ~8.5h; 15h leaves buffer.
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 
@@ -21,6 +23,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}"
+export CG_DEVICE=cpu
 export RL_STORAGE=$SLURM_TMPDIR/outputs/$JOB_ID
 export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
 mkdir -p $RL_STORAGE
