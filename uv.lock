@@ -1128,7 +1128,7 @@ wheels = [
 [[package]]
 name = "prnn"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git?branch=sdu%2Fprnn-perf-optim#3c022a703a54c7f5e5b933a0989b83d094d43aef" }
+source = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git?branch=sdu%2Fprnn-perf-optim#383ae2483d84732931845ad3c241c5e29c8fa15c" }
 dependencies = [
     { name = "gym" },
     { name = "gymnasium" },

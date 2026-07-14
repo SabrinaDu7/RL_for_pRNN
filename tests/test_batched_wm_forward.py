@@ -38,16 +38,14 @@ def test_forward_batched_4d_matches_serial():
         assert torch.equal(t[0], tb[0, ..., b])
 
 
-def test_predict_batched_input_prep_is_broken():
-    """Documents the actual bug: predict()'s 3-D permute crashes the forward.
-    If this ever starts passing, prnn fixed predict(batched=True) upstream -
-    revisit whether to route through it."""
-    from prnn.utils import PredictiveNet  # noqa: F401  (import parity)
-
+def test_forward_still_requires_4d_batched_layout():
+    """predict(batched=True)'s prep was FIXED upstream (prnn 383ae24) to emit
+    the 4-D layout; the raw forward still rejects 3-D input, which is what
+    made the original bug crash loudly instead of permuting silently."""
     torch.manual_seed(0)
     net = thRNN_5win(X, A, hidden_size=H)
     net.eval()
-    obs3d = torch.rand(B, L + 1, X).permute(1, 2, 0)  # predict()'s 3-D layout
+    obs3d = torch.rand(B, L + 1, X).permute(1, 2, 0)
     act3d = torch.rand(B, L, A).permute(1, 2, 0)
     with pytest.raises(RuntimeError):
         net(obs3d, act3d, batched=True)
