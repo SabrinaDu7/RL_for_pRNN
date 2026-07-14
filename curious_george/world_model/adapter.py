@@ -254,18 +254,25 @@ class PRNNAdapter:
     def make_batched_tracker(self, num_envs: int) -> "BatchedSRTracker":
         return BatchedSRTracker(self.pN, self.device, num_envs)
 
+    def _episode_tensors(self, images_tensor, hd_tensor, act_np: np.ndarray, last_obs):
+        """Format one episode segment for the pRNN: (obs (L+1, X) float in
+        [0,1], act (L, A) int64 SpeedHD). Shared by the serial and batched
+        training paths so their formatting cannot drift. Requires
+        fast_speedhd."""
+        L = len(images_tensor)
+        last_img = flat_obs_rows([last_obs]).to(images_tensor.device)
+        obs = torch.cat(
+            [images_tensor.detach().reshape(L, -1).to(torch.float32) / 255, last_img]
+        )
+        hd = hd_tensor.detach().cpu().numpy()
+        act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)[0]
+        return obs, act
+
     def train_on_episode(self, images_tensor, hd_tensor, act_np: np.ndarray, last_obs) -> None:
         """One pRNN gradient step on a single episode segment."""
         if self.fast_speedhd:
-            # tensor-native formatting: images stay on-device (already float
-            # 0..255 from the preprocessor), one row appended for last_obs
-            L = len(images_tensor)
-            last_img = flat_obs_rows([last_obs]).to(images_tensor.device)
-            obs = torch.cat(
-                [images_tensor.detach().reshape(L, -1).to(torch.float32) / 255, last_img]
-            ).unsqueeze(0)
-            hd = hd_tensor.detach().cpu().numpy()
-            act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)
+            obs, act = self._episode_tensors(images_tensor, hd_tensor, act_np, last_obs)
+            obs, act = obs.unsqueeze(0), act.unsqueeze(0)
         else:
             images_np = images_tensor.detach().cpu().numpy()
             hd_np = hd_tensor.detach().cpu().numpy()
@@ -278,6 +285,30 @@ class PRNNAdapter:
         obs = obs.to(self.device)
         act = act.to(self.device)
         _, _, _ = self.pN.trainStep(obs, act)
+        self.pN.numTrainingEpochs += 1
+
+    def train_on_episodes_batched(self, exps, done_indices: list[int], last_observations: list) -> None:
+        """ONE pooled pRNN gradient step over all equal-length episode
+        segments, stacked to (B, L): batched trainStep's loss is the mean of
+        the per-segment losses, so this replaces B sequential optimizer steps
+        with one step on the pooled gradient (optimization-semantics change -
+        flag-gated via predNet.batched_wm, curve-gate before defaulting on).
+        Requires fast_speedhd and equal segment lengths (callers check)."""
+        obs_rows, act_rows = [], []
+        for idx in range(1, len(done_indices)):
+            s, e = done_indices[idx - 1], done_indices[idx]
+            obs, act = self._episode_tensors(
+                exps.obs.image[s:e],
+                exps.obs.direction[s:e],
+                exps.action[s:e].detach().cpu().numpy(),
+                last_observations[idx - 1],
+            )
+            obs_rows.append(obs)
+            act_rows.append(act)
+
+        obs_b = torch.stack(obs_rows).to(self.device)  # (B, L+1, X)
+        act_b = torch.stack(act_rows).to(self.device)  # (B, L, A)
+        _, _, _ = self.pN.trainStep(obs_b, act_b, batched=True)
         self.pN.numTrainingEpochs += 1
 
 

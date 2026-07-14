@@ -11,14 +11,32 @@ def train_world_model_on_episodes(
     exps,
     done_indices: list[int],
     last_observations: list,
+    *,
+    batched: bool = False,
 ) -> None:
     """Train the pRNN on each episode segment of the (preprocessed) rollout.
 
     `exps.obs` must already be the preprocessed DictList (image/direction
     tensors); segments are [done_indices[i-1], done_indices[i]) and never
     span environment boundaries in the flat layout.
+
+    batched=True (predNet.batched_wm): ONE pooled gradient step on all
+    segments stacked to (B, L) instead of B sequential steps - an
+    optimization-semantics change, curve-gate before defaulting on. Falls
+    back to serial when segments are ragged or the encoding isn't SpeedHD.
     """
     with timer("update/wm_train"):
+        seg_lengths = {
+            done_indices[i] - done_indices[i - 1] for i in range(1, len(done_indices))
+        }
+        if (
+            batched
+            and adapter.fast_speedhd
+            and len(done_indices) > 2
+            and len(seg_lengths) == 1
+        ):
+            adapter.train_on_episodes_batched(exps, done_indices, last_observations)
+            return
         for idx in range(1, len(done_indices)):
             start_episode = done_indices[idx - 1]
             end_episode = done_indices[idx]

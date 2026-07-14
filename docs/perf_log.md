@@ -253,3 +253,27 @@ Perf effort end state: 218 FPS (pre-refactor CUDA default) -> 674 FPS
 (cluster CPU, B=8 sync, obs bank) = 3.1x, analysis events ~34x cheaper,
 cluster wall-times stabilized. Remaining lever if ever needed: thetaRNN
 Python loop (torch.compile), deferred by measurement.
+
+## Branch sdu/gpu-batched-wm: batched world-model training (flag, default OFF)
+
+- prnn 383ae24 (repinned): predict(batched=True) input-prep bug FIXED
+  (3-D -> 4-D (1,L,X,B)); batched forward verified equal to serial forwards
+  (float reduction noise ~2e-6); batched trainStep predloss == mean of
+  per-segment losses (prnn test/test_batched_predict.py).
+- predNet.batched_wm: train_world_model_on_episodes stacks the 8 equal-length
+  segments to (B, L) and takes ONE pooled trainStep instead of 8 sequential
+  ones (adapter.train_on_episodes_batched; shared _episode_tensors formatting
+  so serial/batched cannot drift; ragged/non-SpeedHD falls back to serial).
+- Speed (dev box, B=8 sync + obs bank): wm_train 1.07 -> 0.22 s/update;
+  **624 -> 1197 FPS with the flag on**. CUDA with the same flag: 927 FPS,
+  wm_train unchanged (~0.23s) - the remaining BPTT cost is the sequential
+  Python cell loop, not matmuls, i.e. exactly what point 3 (compile) targets.
+  Suite 110 passed / 0 failed (flag off changes nothing; serial-path
+  refactor covered by goldens).
+- NOT default: 8 optimizer steps -> 1 pooled step is an optimization-
+  semantics change (predloss = mean over segments). Needs the curve gate
+  (bsweep-style, batched_wm on/off, multi-seed) before flipping; consider a
+  predNet.lr rescale as part of that gate.
+- Signature note: batched_wm appended LAST to PredictivePPOAlgo.__init__ -
+  tests construct it positionally (a mid-signature insert briefly broke 3
+  tests during development; caught by the suite, fixed by reordering).

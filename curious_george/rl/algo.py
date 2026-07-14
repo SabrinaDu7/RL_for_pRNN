@@ -120,6 +120,7 @@ class PredictivePPOAlgo:
         k_curious=1,
         reward_alignment="legacy",
         loss="ppo_clip",
+        batched_wm=False,  # appended last: positional callers exist (tests)
     ):
         # env may be a single shell, a list of shells (parallel collection),
         # or an AsyncShellPool (process-parallel collection)
@@ -152,6 +153,7 @@ class PredictivePPOAlgo:
         self.noise_mu = noise_mu
         self.noise_std = noise_std
         self.prnn_seqdur = prnn_seqdur
+        self.batched_wm = batched_wm
         self.pastSR = pastSR
         self.curious_agent = curious_agent
         self.k_curious = k_curious
@@ -306,7 +308,8 @@ class PredictivePPOAlgo:
         if self.train_pN:
             self.adapter.to(self.device)
             train_world_model_on_episodes(
-                self.adapter, exps, done_indices, last_observations
+                self.adapter, exps, done_indices, last_observations,
+                batched=self.batched_wm,
             )
 
         return logs.as_dict()
