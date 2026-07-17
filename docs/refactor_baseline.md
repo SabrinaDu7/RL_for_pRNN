@@ -94,3 +94,17 @@ gates; the exact gate is the golden fixture.
 4. `pN.predict(batched=True)` permutation bug (workaround: direct `pN.pRNN` call).
 5. `predictiveNet.pRNN.k` missing on `thRNN_5win*` (theta-only attribute).
 6. Import-time env-var read in `RLutils/storage.py:24`.
+
+> **Status vs this baseline (2026-07-15, perf overhaul + GPU branch):**
+> suite is at **110 passed / 0 failed / 7 deselected**. Counts are NOT
+> comparable to the numbers above: tests/test_wandb_data.py (114 tests, 12
+> pre-existing failures) and tests/test_figure3_sRSA.py were DELETED with
+> Sabrina's approval (2026-07-09); test_analysis_omt's 4 pre-existing
+> failures were fixed at the test level (API drift); new perf-era tests
+> added (batch formatting, async pool, obs bank, spatial eval, batched wm).
+> Golden fixtures still bitwise-green - their capture configs are pinned to
+> exp.num_envs=1 + rewards=curious because main.yaml defaults moved to
+> num_envs=8 / curious_next_obs. Flaw #4 below (predict(batched=True)) is
+> FIXED upstream (prnn 383ae24, branch sdu/prnn-perf-optim - the repo pin).
+> Speed context for any future baseline: ~950 FPS CPU in real runs (was
+> ~218); see docs/perf_log.md.

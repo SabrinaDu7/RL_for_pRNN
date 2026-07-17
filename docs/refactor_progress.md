@@ -145,3 +145,91 @@ reward-alignment fix behind a flag, default `legacy`). Baselines in
   and env-wiring guards) held through every step; training golden_v0 held;
   suite 194 passed / 16 pre-existing failed; serial/batched/num_envs=2
   smoke runs clean.
+
+## Perf overhaul + GPU work (2026-07-07..15, branches sdu/rl-rollout-arch -> sdu/gpu-batched-wm)
+
+Full detail: docs/perf_baseline.md (methodology), docs/perf_log.md (per-commit
+log), docs/perf_changes_2026-07.md (review guide), docs/gpu_batched_wm_plan.md
+(current branch plan). Condensed here for hand-off.
+
+### What made CPU fast (218 -> ~1200+ FPS potential, ~950 FPS realized in runs)
+
+1. **CPU > CUDA at this model shape** (hidden=500): kernel-launch + sync
+   overhead dominates microsecond-scale ops. `CG_DEVICE=cpu`; training sbatch
+   scripts are CPU-only. Full 20.5M-frame run: ~6h wall on 16 cluster cpus.
+2. Sync removal (bitwise-gated): GAE numpy scan (100ms->0.7ms), no per-step
+   .item()/.cpu(), loss scalars aggregated on-device, plotSampleTrajectory
+   gated to logging.plot_interval=200 (was EVERY update).
+3. Vectorized SpeedHD formatting in world_model/adapter.py (bitwise-equal to
+   env2pred; tests/test_batch_format.py).
+4. **exp.num_envs=8 default** (curve-gated: 9-run bsweep, B in {1,4,8} x 3
+   seeds - B>1 learning-equivalent; docs/perf_log.md + bsweep.png).
+5. **Obs bank** (envs/obs_bank.py): partial RGB obs is a pure function of
+   (pos, dir, grid) -> precomputed per-grid-fingerprint banks in
+   data/obs_bank/, byte-equal to live renders (goldens prove it end-to-end).
+   env_step 6.4 -> 3.2 ms/step at B=8.
+6. Eval: pooled multi-trajectory spatial eval (exp.eval_trajs x
+   predNet.seqdur, matches training statistics), metrics computed AND
+   wandb-logged inside prnn (PredictiveNet.calculateSpatialMetrics, prnn
+   branch sdu/prnn-perf-optim). Analysis event 293s x2 -> ~9s x1.
+7. Slurm: OMP/MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK in every script
+   (unbounded torch threads in a cgroup caused 4-51s update-time thrashing).
+8. AsyncVectorEnv collection exists (envs/vector.py, exp.async_envs) but is
+   OFF: measured no faster locally (+6-9%) and slower on cluster - per-step
+   lockstep IPC latency eats the tiny render's parallelism.
+
+### Why the GPU doesn't help (measured, not assumed)
+
+The wm BPTT is ~5-10k tiny ops per trainStep (256 sequential timesteps x ~8
+ops x fwd+bwd). Each op pays a fixed tax (GPU kernel launch 5-10us) that
+exceeds its ~2us of arithmetic, and the time recurrence forbids queueing
+ahead -> GPU ~91% idle, 558 FPS vs 674 CPU (async_bench_10111153). Batching
+segments (8,256) cut trainStep CALLS 8x (wm_train 1.07->0.22s/update, CPU
+1197 FPS) but CUDA stayed at the same 0.23s: both now sit on the per-op
+dispatch floor. The bill is op COUNT, not op size.
+
+### batched_wm curve gate: FAILED (wmsweep, 2026-07-15)
+
+predNet.batched_wm=true (ONE pooled optimizer step vs 8 sequential per
+update) changes learning: 73k vs 10k RMSprop steps per run, pRNN loss ~2x
+higher at matched frames; wmsweep arms (lr x1, lr x2) fail the band badly
+(cur_reward_mean 0% in-band, value_loss 33-40% off). Flag stays OFF.
+Wall-clock it IS 1.6x faster (2019 vs 1278 FPS in full runs). Note
+wmsweep-B3-s3 died early (unexamined) - horizon truncated to 1.48M frames.
+
+### Next steps (in agreed order)
+
+1. **torch.compile / CUDA graphs on the thetaRNN cell loop** (option 3,
+   semantics-preserving, no curve gate - metric harness only). In-flight
+   probes: compiled CELL alone on CPU = 1.25x on serial (1,256); CUDA eager
+   batched (8,256) fwd+bwd = 187ms measured; CUDA compiled probe with
+   mode="reduce-overhead" TIMED OUT >2min (recompile/capture issue inside
+   the 256-step loop - unresolved; try default mode first, then piecewise).
+   Real prize: fuse the ~8 ops/timestep and/or capture the launch sequence.
+   Blockers catalogued in docs/perf_baseline.md (np.mod, asserts, dynamic
+   segment lengths); prnn changes go to branch sdu/prnn-perf-optim + repin.
+2. **k-steps middle design** for batched_wm (option 2): k pooled steps on
+   (8/k, 256) sub-stacks per update - interpolates step count (dynamics)
+   vs dispatch count (speed). Needs small adapter change + wmsweep-style
+   curve gate.
+3. **Free probe** (option 1, no code): rerun wmsweep arms with lr x4 / x8 -
+   likely insufficient (step-count deficit, RMSprop second-moment dynamics)
+   but nearly free to check.
+
+### Hand-off state (2026-07-15)
+
+- RL branches: sdu/rl-rollout-arch (perf overhaul, pushed), sdu/gpu-batched-wm
+  (current, pushed through 10059a4 + local commits - check `git log`).
+- prnn: pinned to BRANCH sdu/prnn-perf-optim in pyproject [tool.uv.sources]
+  (uv lock --upgrade-package prnn to advance). Contains
+  calculateSpatialMetrics + the predict(batched=True) 4-D prep fix (383ae24).
+  NOTE: pRNN repo has a PR-required rule that direct pushes bypass.
+- Suite: 110 passed / 0 failed / 7 deselected (test_wandb_data +
+  test_figure3_sRSA deleted with approval; goldens pinned to B=1 +
+  rewards=curious in capture configs and still bitwise-green).
+- Gates ladder: bitwise (goldens) -> metric harness (tests/perf/benchmark.py
+  + compare_metrics.py, fixed seed) -> curve gate (multi-seed banded
+  comparison via scripts/analysis_bsweep.py; used for bsweep PASS and
+  wmsweep FAIL).
+- Paused queue: thcycRNN_5win RL integration (docs/thcyc_rl_integration.md,
+  4 open design questions for Sabrina).

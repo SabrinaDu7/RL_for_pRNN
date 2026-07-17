@@ -156,3 +156,40 @@ left on the old device crashes `predict_single`.
    always picks cuda:0 when available) - honor or drop.
 8. `curious_george/utils/` has no `__init__.py` (works as an implicit
    namespace package); add one for convention if desired.
+
+## 2026-07-15 update (perf overhaul + GPU work) - corrections to the above
+
+Several notes above are now STALE; current truth:
+
+- **predict(batched=True) is FIXED** (prnn 383ae24 on branch
+  sdu/prnn-perf-optim, pinned in pyproject): input prep now emits the 4-D
+  (1, L, X, B) layout. trainStep(batched=True) works end-to-end and is used
+  by adapter.train_on_episodes_batched (predNet.batched_wm flag, default OFF
+  - failed its curve gate, see refactor_progress.md). BatchedSRTracker's
+  direct rnn() call remains for single-step SR. Old "do NOT use" note above
+  is obsolete; baseline flaw #4 resolved upstream.
+- **Defaults changed**: exp.num_envs=8 (bsweep curve-gated),
+  exp.async_envs=False (AsyncShellPool in envs/vector.py exists, tested,
+  measured not-faster), CG_DEVICE controls device (hardware.* config block
+  REMOVED - debt #7 done). CPU is the training device by verdict.
+- **Spatial eval**: pooled multi-trajectory (exp.eval_trajs x predNet.seqdur)
+  via PredictiveNet.calculateSpatialMetrics - computed AND wandb-logged
+  inside prnn (Sabrina's rule: pRNN metrics belong to prnn). Debts #2 and #3
+  above are done (no decoder by default, no duplicate SWdist rollout).
+  Legacy prnn path behind exp.eval_decoder=True. Reference values shifted by
+  design (training-matched statistics); sRSA/SI are rollout-length
+  sensitive.
+- **Obs bank** (envs/obs_bank.py): BankedRGBPartialObsWrapper replaces
+  RGBImgPartialObsWrapper_HD in factory + async thunks; per-grid-fingerprint
+  banks live in data/obs_bank/ (committed). Byte-equal to live renders;
+  rebuilt automatically for new layouts.
+- **Golden capture configs are PINNED** to exp.num_envs=1 + rewards=curious
+  (main.yaml defaults moved on; fixtures unchanged and green).
+- **Tests deleted with approval** (2026-07-09): test_wandb_data.py (12
+  failing + 102 passing) and test_figure3_sRSA.py. Suite: 110 passed /
+  0 failed. Sabrina's standing rule: NEVER change a failing test without
+  consulting her first.
+- Perf docs: perf_baseline.md / perf_log.md / perf_changes_2026-07.md /
+  gpu_batched_wm_plan.md. Next steps live in refactor_progress.md's
+  hand-off section (torch.compile on the cell loop, then k-steps batched_wm
+  middle design, then lr free-probe).
