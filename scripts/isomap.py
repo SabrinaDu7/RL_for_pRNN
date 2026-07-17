@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to generate Isomap visualization with random agent and predictive network.
-Based on tasks/ObjectMemoryTask/run_task.py
+Based on tasks/omt/main_task.py
 """
 
 from pathlib import Path
@@ -18,10 +18,10 @@ from sklearn import manifold
 from prnn.utils.figures import saveFig
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum, AgentInputType, PredictiveNet, RandomActionAgent
 from prnn.utils.Shell import FaramaMinigridShell
-from utils import get_ckpt_env_vars, AgentType
-from RLutils import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor, ActorCriticAgent
+from curious_george import get_ckpt_env_vars, AgentType
+from curious_george import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor, ActorCriticAgent
 from scripts.analysis_OMT import collect_eval_trajectories, load_eval_trajectories, EvalTrajectoryConfig, LabelFn
-from tasks.ObjectMemoryTask.define_task import get_view_coords_batch, State
+from tasks.omt.metrics import get_view_coords_batch, State
 
 plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300

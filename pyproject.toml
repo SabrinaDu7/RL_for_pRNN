@@ -3,7 +3,7 @@ name = "rl-for-prnn"
 version = "0.1.0"
 description = "pRNN embodied by curiosity-driven RL agents"
 readme = "README.md"
-requires-python = ">=3.9, <=3.10.15"
+requires-python = ">=3.10, <=3.10.15"
 license = "MIT"
 authors = [
     { name = "Daniel Levenstein", email = "daniel.levenstein@mila.quebec" },
@@ -11,9 +11,7 @@ authors = [
     { name = "Sabrina Du", email = "sabrina.du@mila.quebec"},
 ]
 
-dependencies = [
-    "minigrid", # Custom Minigrid package in local folder
-    "prnn", # Custom prnn package in local folder
+dependencies = [ # Custom prnn package in local folder
     "gymnasium==0.29.1",
     "ratinabox==1.7.1",
     "pynapple==0.6.1",
@@ -29,7 +27,6 @@ dependencies = [
     "importlib-metadata>=7.0.1",
     "pyparsing>=3.1.1",
     "zipp>=3.17.0",
-    "wandb[media]>=0.21.3",
     "hydra-core>=1.3.2",
     "torch-ac>=1.4.0",
     "plotly>=6.3.0",
@@ -42,6 +39,9 @@ dependencies = [
     "pyarrow>=21.0.0",
     "nbformat>=5.10.4",
     "pypatree>=0.4.0",
+    "wandb==0.28.0",
+    "minigrid",
+    "prnn",
 ]
 
 [dependency-groups]
@@ -57,13 +57,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["RLutils", "tasks", "utils"]
+packages = ["curious_george", "tasks"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.pytest.ini_options]
-testpaths = ["RLutils", "test*"]
+testpaths = ["curious_george", "test*"]
 python_files = ["test_*.py", "test.py"]
 python_functions = ["test_*"]
 addopts = "--durations=5 -m 'not slow'"
@@ -79,26 +79,22 @@ markers = ["slow: marks tests as slow to run"]
 [tool.ruff]
 include = [
     "pyproject.toml",
-    "RLUtils/*.py",
+    "curious_george/*.py",
     "test/*.py",
     "trainRL_Adel.py",
 ]
 
-[tool.uv.sources]
-minigrid = { path = "../minigrid", editable=true }
-prnn = { path = "../pRNN", editable=true }
-
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-include = ["RLutils", "tests", "utils", "tasks", "*.py"]
-extraPaths = [
-    "../minigrid",
-    "../pRNN",
-]
+include = ["curious_george", "tests", "tasks", "*.py"]
 
 # OVerride specific rules
 reportPossiblyUnboundVariable = "none"
+
+[tool.uv.sources]
+minigrid = { git = "https://github.com/SabrinaDu7/minigrid.git" }
+prnn = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git", branch = "sdu/prnn-perf-optim" }
 
 [project.urls]
 Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"

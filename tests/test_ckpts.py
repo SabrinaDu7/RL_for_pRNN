@@ -12,8 +12,8 @@ from prnn.utils import (
 )
 from prnn.utils.Shell import FaramaMinigridShell
 
-from RLutils import get_obss_preprocessor, make_env, get_pN, get_SR_acmodel, seed, DEVICE, ACModelSR, ActorCriticAgent
-from utils import get_ckpt_env_vars, AgentInputType, AgentType
+from curious_george import get_obss_preprocessor, make_env, get_pN, get_SR_acmodel, seed, DEVICE, ACModelSR, ActorCriticAgent
+from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
 seed(2)
 PRNN_CKPT, ACMODEL_STATUS_CKPT = get_ckpt_env_vars(AgentType.AC)
@@ -71,7 +71,7 @@ def _get_acmodel(acmodel_status_ckpt: str, env: FaramaMinigridShell, predNet: Pr
 
     @dataclass
     class ExperimentArgs:
-        with_obs: bool = True
+        with_obs: bool = False  # .env checkpoints are from the noObs config (matches Conf1_Adel exp.with_obs)
         rgb: bool = True
         with_HD: bool = True
 

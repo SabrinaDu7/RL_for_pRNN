@@ -1,0 +1,7 @@
+# @package exp
+# Actor-critic on raw observations only (ACModel, no SR input)
+input_type: 'Visual_FO'
+pRNN: False
+with_obs: True
+with_HD: True
+rgb: True

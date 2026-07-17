@@ -1,7 +1,7 @@
 # RL for pRNN
 
 This project is focused on modelling rat exploratory behavior in the Novel Object Recognition (NOR) paradigm, leveraging curiosity as an intrinsic reward signal for RL.
-An overview of the file system is found at the end of the README.
+An overview of the code layout and training flow is found at the end of the README.
 
 ## Project Setup
 
@@ -23,25 +23,46 @@ source .venv/bin/activate
 # Download dependencies from pyproject.toml
 uv sync
 ```
-Then, you should change the environment variables in ```.env```.
 
-## Running pRNN training
+Then, set the environment variables in ```.env``` (checkpoint paths, wandb
+entity/project, and `RL_STORAGE` — the single source of truth for where run
+outputs land; it points at the repo-local `./storage` by default).
 
-Default values for the training pipeline can be found in ```trainRL_Adel.py```. Configs utilize [Hydra](https://hydra.cc/docs/intro/) .and .yaml files. Here is an example run that alters a config value:
+## Running training
+
+The entry point is ```main_train.py``` (```trainRL_Adel.py``` is a deprecated
+shim to the same thing). Construction, the loop, and wandb logging live in
+```curious_george/training/{setup,loop,logging}.py```. Configs use
+[Hydra](https://hydra.cc/docs/intro/): `Configs/Conf1_Adel.yaml` composes
+swappable groups, and any key can be overridden from the CLI:
 
 ```bash
-uv run trainRL_Adel.py rl.steps=10000
+# default run (PPO, curiosity reward, legacy alignment)
+uv run main_train.py
+
+# override single keys
+uv run main_train.py rl.steps=10000 logging.save_interval=0
+
+# swap whole components (Configs/<group>/*.yaml)
+uv run main_train.py algo=a2c                      # loss function (rl.loss)
+uv run main_train.py rewards=curious_next_obs      # corrected t+1 curiosity alignment
+uv run main_train.py world_model=thrnn5win_prevact # pRNN arch + matching action encoding
+uv run main_train.py env=fourrooms model=plain_ac  # environment / AC architecture
+uv run main_train.py exp.num_envs=4                # parallel rollout collection (B=1 default)
 ```
 
-
-## Running RL training
-
-Possible inputs the agent can receive:
+Possible inputs the agent can receive (config group `model=`):
 
 - FO: full observation (often used as a positive control)
 - PO: partial observation (the same type of input as the pRNN)
 - h: the hidden state of the pRNN
 - h+PO: the hidden state of the pRNN and a partial observation
+
+## Object Memory Task
+
+```bash
+uv run tasks/ObjectMemoryTask/run_task.py
+```
 
 ## Setup on Mila's cluster
 
@@ -56,56 +77,63 @@ When using ```salloc/srun``` or ```sbatch```, you must activate the venv on the 
 and use the option ```--active``` to use the active venv. Example run command:
 
 ```bash
-uv run --active trainRL_Adel.py rl.steps=10000
+uv run --active main_train.py rl.steps=10000
 ```
 
-# Overview of file system
+# Overview of the code
 
-## Training
-```bash
-RL_Trainer
+```
+main_train.py                hydra entry: setup -> loop
+curious_george/
+  training/                  setup.py (build everything), loop.py, logging.py (wandb)
+  rl/algo.py                 ONE PredictivePPOAlgo for B>=1 envs
+  rl/collect/                rollout loop, diagnostics, agent, obs preprocessing
+  rl/update/                 losses (ppo_clip/a2c registry), updater, GAE,
+                             curiosity rewards (+ reward_alignment), pRNN training
+  world_model/               PRNNAdapter + SR trackers (the only prnn seam),
+                             on_device/eval_mode context managers
+  evaluation/                sRSA + SWdist (spatial.py), on-policy analysis
+  envs/                      make_env + wrapper accessors
+  models.py                  ACModel, ACModelSR
+  utils/                     enums, checkpoints, env vars, DEVICE/seed
+  storage.py                 run-output paths + checkpoint factories
+tasks/ObjectMemoryTask/      NOR task: train near novel object, quantify learning
+tests/golden/                bitwise behavior oracle + cross-version harnesses
+docs/                        refactor notes/baseline/progress, experiment logs
+```
+
+## Training flow
+
+```
+main_train.py
     │
-    ├─> Creates: env, acmodel (ACModelSR), predictiveNet (pRNN)
+    ├─> setup_training(cfg)  →  envs, pRNN, ACModelSR, PredictivePPOAlgo, agents
     │
-    ├─> Creates: algo = PredictivePPOAlgo(env, acmodel, predictiveNet, ...)
-    │
-    └─> Training loop:
+    └─> run_training():
             │
-            ├─> algo.collect_experiences()
-            │       │
-            │       ├─> For each step:
-            │       │   ├─> acmodel.forward(obs, SR) → get action dist
-            │       │   ├─> action = dist.sample()
+            ├─> algo.collect_experiences()          [rl/collect/collector.py]
+            │       ├─> per step (batched over B envs):
+            │       │   ├─> acmodel(obs, SR) → dist, value; action = dist.sample()
             │       │   ├─> obs, reward = env.step(action)
-            │       │   └─> SR = pRNN.predict(obs, action)
-            │       │
-            │       └─> Returns experiences (obs, actions, rewards, SRs, advantages)
+            │       │   └─> SR tracker step (pRNN predict_single / batched rnn)
+            │       ├─> curiosity rewards from pRNN prediction error
+            │       │   (rl/update/rewards.py; rl.reward_alignment: legacy|next_obs)
+            │       └─> GAE per env stream → experiences
             │
-            └─> algo.update_parameters(exps)
-                    │
-                    ├─> For each batch:
-                    │   ├─> acmodel.forward(obs, SR) → get new dist, value
-                    │   ├─> Compute PPO loss
-                    │   └─> optimizer.step() → update acmodel weights
-                    │
-                    └─> Optionally train pRNN
+            ├─> algo.update_parameters(exps)        [rl/update/]
+            │       ├─> updater: epochs/minibatches; loss from LOSSES[rl.loss]
+            │       └─> pRNN trained per episode segment (if predNet.train)
+            │
+            ├─> every log_interval: wandb metrics + sample-trajectory figure
+            ├─> every analysis_interval: sRSA + SWdist (evaluation/spatial.py)
+            │   and on-policy analysis (reuses the training rollout - free)
+            └─> every save_interval: status.pt + predictiveNet_state.pt
+                (0 = no checkpoints; everything lands under RL_STORAGE)
 ```
 
-## Analysis
-```bash
-RL_Trainer (analysis interval)
-    │
-    └─> Creates: analysisagent = ActorCriticAgent(env.action_space, acmodel, predictiveNet, DEVICE)
-            │
-            └─> predictiveNet.calculateSpatialRepresentation(env, analysisagent, ...)
-                    │
-                    └─> Internally calls: analysisagent.getObservations(env, tsteps)
-                            │
-                            ├─> For each step:
-                            │   ├─> acmodel.forward(obs, SR) → get action dist
-                            │   ├─> action = dist.sample()
-                            │   ├─> obs = env.step(action)
-                            │   └─> SR = pRNN.predict(obs, action)
-                            │
-                            └─> Returns: observations, actions, states (for analysis)
-```
+## Behavior guarantees
+
+The refactor is pinned by `tests/golden/golden_v0.pt` — a bitwise oracle of
+the pre-refactor training path. `uv run pytest` runs the suite;
+`docs/refactor_notes.md` documents the temporal-alignment contract, device
+policy, and batched-mode constraints.

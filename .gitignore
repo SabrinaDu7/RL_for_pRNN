@@ -4,15 +4,17 @@ LabNotebook/*
 nets/*
 RLvideos/*
 RLutils/__pycache__/*
-*.sh
 *.pyc
 *.ipynb
 .python*
 results/*
 omt-*/
 *.png
+.zed
 
 # Claude and outputs
 wandb/*
 outputs/
 docs/*
+storage/*
+tests/perf/results/*.prof

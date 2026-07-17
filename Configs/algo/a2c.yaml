@@ -1,0 +1,17 @@
+# @package rl
+algo: a2c
+loss: a2c # no ratio/value clipping; single epoch is conventional
+steps: 2.048e7
+frames: 2048
+trajs_per_batch: 8
+trajs_total: 80000
+discount: 0.98
+lr: 3e-4
+gae_lambda: 0.95
+entropy_coef: 0.0
+value_loss_coef: 1
+max_grad_norm: 0.5
+optim_eps: 1e-8
+ppo_epochs: 1
+ppo_batch_size: 256
+ppo_clip_eps: 0.2 # unused by a2c loss; kept for schema stability

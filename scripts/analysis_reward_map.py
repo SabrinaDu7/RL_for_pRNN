@@ -37,7 +37,7 @@ from prnn.utils import (
     ActionEncodingsEnum,
     MinigridEnvNames,
 )
-from RLutils import (
+from curious_george import (
     make_env,
     get_pN,
     get_SR_acmodel,
@@ -47,7 +47,7 @@ from RLutils import (
     seed,
     DEVICE,
 )
-from utils import get_ckpt_env_vars, AgentInputType, AgentType
+from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
 from scripts.analysis_OMT import (
     collect_eval_trajectories,

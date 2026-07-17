@@ -1,0 +1,54 @@
+defaults:
+    - _self_
+    - env: lroom # -> exp.*      (Configs/env/)
+    - model: sr_ac # -> exp.*      (Configs/model/)
+    - world_model: thrnn5win # -> predNet.* (Configs/world_model/)
+    - algo: ppo # -> rl.*       (Configs/algo/)
+    - rewards: curious_next_obs # -> rl.*       (Configs/rewards/)
+    - tasks: omt
+    - override hydra/hydra_logging: disabled
+    - override hydra/job_logging: disabled
+
+# Groups compose into the historical key paths (exp / predNet / rl) via
+# @package directives, so all call sites keep reading e.g. args.rl.lr.
+# Swap components from the CLI: `algo=a2c rewards=curious_next_obs
+# world_model=thrnn5win_prevact env=fourrooms model=plain_ac`.
+
+hydra:
+    output_subdir: null
+    sweep:
+        dir: .
+        subdir: .
+    run:
+        dir: .
+
+exp:
+    exp_name: omt
+    seed: 2 # Random seed
+    num_envs: 8 # Parallel envs for rollout collection (1 = exact historical serial path; learning-equivalence gated by the 2026-07 bsweep, docs/perf_log.md). NOTE: exp.random_action_agent=true requires num_envs=1
+    async_envs: False # num_envs>1 only: step envs in worker processes (AsyncVectorEnv). Off by default: measured no faster than the in-process list on dev box (+6-9%) or cluster (slower); transitions identical either way (tests/test_async_envs.py)
+    intrinsic: False # Use intrinsic rewards?
+    random_action_agent: False # If True, overrides PPO and chooses actions randomly. Used as control
+    curious_agent: True # Use pRNN loss as reward?
+    random_init_control: False # If True, never update parameters (random-init control)
+    offpolicy_prnn_eval: False # prnn eval with off-policy actions (random if PPO, vice versa). Off by default since 2026-07: each pass costs 2 CPU rollouts of eval_timesteps
+    onpolicy_prnn_eval: True # prnn eval with on-policy actions
+    eval_trajs: 8 # spatial eval: pooled trajectories of predNet.seqdur steps each (matches training trajectory statistics)
+    eval_timesteps: 15000 # LEGACY spatial-eval path only (eval_decoder=True): single-rollout length inside prnn
+    eval_decoder: False # use prnn's legacy spatial eval (own rollout + 5000-batch decoder fit + prnn-internal logging)
+    analyze_agent_behav: True # Policy/state analysis + mutual information logging
+
+logging:
+    wandb_log: True
+    wandb_entity: blake-richards
+    wandb_project: curious-george # curious-george-omt, curious-george-ctrl
+    video_log_freq: 0 # Episodes between video logs (0: no videos)
+    log_interval: 1 # Updates between two logs
+    plot_interval: 200 # Updates between plotSampleTrajectory figures (was implicitly log_interval=1: a figure + GPU<->CPU model swap EVERY update)
+    analysis_interval: 200 # Updates between analysis events (0: no analysis)
+    save_interval: 120 # Updates between two saves (0: don't save)
+    early_stop: False # Stop when the environment is solved?
+    save_params: True
+    focus: False # Which parameter to include in the group name, or False
+    load_acmodel: False
+    load_worldmodel: False

@@ -11,10 +11,10 @@ from sklearn.decomposition import PCA
 
 from prnn.utils.figures import saveFig
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum, AgentInputType
-from utils import get_ckpt_env_vars, AgentType
-from RLutils import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor
+from curious_george import get_ckpt_env_vars, AgentType
+from curious_george import make_env, get_pN, get_agent, get_SR_acmodel, get_obss_preprocessor
 from scripts.analysis_OMT import load_eval_trajectories, EvalTrajectoryConfig
-from tasks.ObjectMemoryTask.define_task import get_view_coords_batch
+from tasks.omt.metrics import get_view_coords_batch
 
 plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300

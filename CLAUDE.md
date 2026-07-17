@@ -36,6 +36,11 @@ Apply on any non-trivial task. This is how to think, decide, build, and communic
 
 - **Don't fabricate what you couldn't access.** An image you can't see, a reference you weren't given, a file that wouldn't open, a tool result that never returned — name the gap and say the access failed; never invent its contents or describe a screenshot you don't actually have. And if you're asked about a specific named thing — a library, product, paper, release — you don't recognize, look it up before answering rather than confabulating from the name. A confident description of something you never saw is the most dangerous inferred claim, because it doesn't read as one.
 
+- **Tests** For tests that you write, NEVER CHANGE A TEST THAT FAILS just because it fails, consult me first and
+ we'll figure out why it fails, even if it's a dumb issue like tensor dimensions being off.
+
+- **Formatting** For function signatures, use `*` to force named parameters when calling the function. Write the type of each variable, and if it's a tensor or array indicate the shape with jaxtyping. Always indicate the return type of the function as well. Write docstrings that are short but communicative.
+
 ## Judgment
 
 - **Ground recommendations in the project's own data, source-of-truth, and history.** Pull the real evidence before advising — the actual numbers, verbatim user text, the codebase's own constants, schema, or shader rather than an invented one, the git and migration history. Treat any load-bearing external contract as drifted until you've confirmed it live: fetch and quote the live source, because old code, a README, a plan, and training data all go stale silently. And interrogate the design you're handed, not only the ones you'd propose: when a schema, interface, or state model you've been asked to build on is brittle or short-sighted, say so and lay out the better long-horizon path with its trade-offs rather than quietly building on it.

@@ -1,0 +1,7 @@
+# @package exp
+env_name: MiniGrid-FourRooms-Objects-v0
+env_subroom_size: 8
+opt_return: 0.85
+start_rand: True
+door_poss: [1, 5, 3, 4,]
+start_room: 1
