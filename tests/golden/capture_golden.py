@@ -25,7 +25,7 @@ FRAMES = 64
 SEQDUR = 32
 UPDATES = 2
 DEVICE = torch.device("cpu")
-OUT = "tests/golden/golden_v0.pt"
+OUT = "tests/golden/golden_v1.pt"  # v0 = pre-migration (SabrinaDu7 prnn) fixture, kept for the legacy stack
 
 
 def main():
