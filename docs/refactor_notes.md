@@ -193,3 +193,21 @@ Several notes above are now STALE; current truth:
   gpu_batched_wm_plan.md. Next steps live in refactor_progress.md's
   hand-off section (torch.compile on the cell loop, then k-steps batched_wm
   middle design, then lr free-probe).
+
+## 2026-07-17 update (prnn-new migration) - supersedes pin/golden notes above
+
+- **prnn pin**: now LevensteinLab/pRNN branch `sdu/rl-integration` (curated
+  re-port of the fork's RL surface; see docs/migration_prnn_new.md +
+  migration_baseline.md). SabrinaDu7/pRNN is retired.
+- **Goldens**: `tests/golden/golden_v1.pt` pins the new stack (capture
+  config unchanged: B=1, rewards=curious, seed 2, CPU). golden_v0.pt kept
+  for the legacy stack only. golden_omt_v0 still valid (ckpt-based, passed
+  bitwise unchanged).
+- **Arch detection**: pastSR/thcyc now key off `pN.pRNNtype` (upstream
+  partial factories erased "prevAct" from str(pN.pRNN)).
+- **Dynamics**: identical to the old stack EXCEPT biases now train
+  (bias_lr 0.01; the fork's int(0.1)=0 froze them - bug). Round-0 rollouts
+  are bitwise identical across stacks.
+- predict(batched=True) fixed on the new branch; the direct rnn() call in
+  BatchedSRTracker remains only because forward(single=True) doesn't
+  forward `batched`.
