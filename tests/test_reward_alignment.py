@@ -140,6 +140,10 @@ class _StubModule:
 class _StubPN:
     def __init__(self, arch_name):
         self.pRNN = _StubModule(arch_name)
+        # infer_past_sr keys off pRNNtype since the prnn-new migration
+        # (upstream partial(MaskedRNN, ...) factories erased "prevAct" from
+        # the class repr).
+        self.pRNNtype = arch_name.split("(")[0]
 
 
 class _StubEnv:

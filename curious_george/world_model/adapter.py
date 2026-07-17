@@ -65,8 +65,13 @@ def encode_speed_hd_seq(act_np, hd_np, num_acts: int, num_hd: int) -> torch.Tens
 
 
 def infer_past_sr(predictive_net: PredictiveNet) -> bool:
-    """pastSR is determined by the architecture family (see module docstring)."""
-    return not ("prevAct" in str(predictive_net.pRNN))
+    """pastSR is determined by the architecture family (see module docstring).
+
+    Detection is by pRNNtype key, not str(pN.pRNN): upstream prnn builds the
+    architectures from partial(MaskedRNN, ...) factories, so the class repr no
+    longer contains "prevAct".
+    """
+    return "prevAct" not in predictive_net.pRNNtype
 
 
 def validate_action_encoding(predictive_net: PredictiveNet, env, pastSR: bool) -> None:
@@ -87,7 +92,7 @@ class PRNNAdapter:
         self.pastSR = pastSR
         # Theta-cycle nets (thcyc*) roll k+1 windows along dim 0 of predict()'s
         # returns; masked nets (thRNN_5win*) have no .k attribute.
-        self.theta = "thcyc" in str(self.pN.pRNN)
+        self.theta = "thcyc" in self.pN.pRNNtype
         if self.theta:
             self.k = self.pN.pRNN.k + 1
 
@@ -418,9 +423,9 @@ class BatchedSRTracker:
     Steps B independent pRNN streams in one forward pass by calling the RNN
     layer directly with its `batched=True` 4-D layout (input (k+1, T=1, D, B),
     trailing batch dim) - `pRNN.forward(single=True)` does not forward the
-    `batched` flag, so this is the sanctioned workaround (same pattern as
-    scripts/analysis_OMT.py; predict(batched=True) has a known permutation
-    bug and is NOT used).
+    `batched` flag, so the direct rnn() call remains the single-step seam.
+    (predict(batched=True) itself is fixed on the LevensteinLab
+    sdu/rl-integration branch and used for full-sequence prediction.)
 
     Per-env phase counters and hidden states allow envs to reset at different
     times. With trainNoiseMeanStd=(0,0) a batched step is exactly equal to B

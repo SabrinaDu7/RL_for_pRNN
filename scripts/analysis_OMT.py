@@ -243,9 +243,8 @@ def collect_eval_trajectories(
                 all_renders[n] = np.stack(render, axis=0)
 
         # Phase 2: Batched pRNN prediction
-        # pN.predict(batched=True) has an untested permutation bug, so we
-        # call pN.pRNN directly with the 4-D layout it expects:
-        #   (theta+1, time, features, batch) = (1, T+1, X, B)
+        # predict(batched=True) input prep is fixed on the LevensteinLab
+        # sdu/rl-integration branch (4-D (1, L, X, B) layout).
         with torch.no_grad():
             obs_pred, obs_next, h_t = pN.predict(
                 all_obs.unsqueeze(1),  # (B, 1, T, obs_size)

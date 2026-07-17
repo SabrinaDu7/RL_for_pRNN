@@ -183,7 +183,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
     else:
         cfg.predNet.seqdur = 0
 
-    pastSR = not ("prevAct" in str(predictiveNet.pRNN))
+    pastSR = "prevAct" not in predictiveNet.pRNNtype
     print("pastSR:", pastSR)
 
     algo = PredictivePPOAlgo(

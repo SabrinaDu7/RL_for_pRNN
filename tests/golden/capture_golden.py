@@ -65,7 +65,7 @@ def main():
     )
     acmodel.to(DEVICE)
 
-    pastSR = not ("prevAct" in str(predictiveNet.pRNN))
+    pastSR = "prevAct" not in predictiveNet.pRNNtype
     assert pastSR
 
     algo = PredictivePPOAlgo(

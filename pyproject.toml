@@ -11,7 +11,7 @@ authors = [
     { name = "Sabrina Du", email = "sabrina.du@mila.quebec"},
 ]
 
-dependencies = [ # Custom prnn package in local folder
+dependencies = [
     "gymnasium==0.29.1",
     "ratinabox==1.7.1",
     "pynapple==0.6.1",
@@ -94,7 +94,7 @@ reportPossiblyUnboundVariable = "none"
 
 [tool.uv.sources]
 minigrid = { git = "https://github.com/SabrinaDu7/minigrid.git" }
-prnn = { git = "ssh://git@github.com/SabrinaDu7/pRNN.git", branch = "sdu/prnn-perf-optim" }
+prnn = { git = "ssh://git@github.com/LevensteinLab/pRNN.git", branch = "sdu/rl-integration" }
 
 [project.urls]
 Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"
