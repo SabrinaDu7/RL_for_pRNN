@@ -56,4 +56,7 @@ rsync -a $RL_STORAGE/ $DEST_DIR/
 for d in *-cur-* *-rand-* results outputs; do
     [ -d "$d" ] && rsync -a "$d" $DEST_DIR/
 done
-mv /home/mila/d/dus/scratch/pRNN/logs/$JOB_ID* $DEST_DIR/
+# cp, not mv: SLURM holds --output/--error open while the job runs, so mv
+# fails with "Device or resource busy" and its exit code 1 marks the whole
+# job FAILED even after a clean run (train_prnn.sh has the same latent bug).
+cp /home/mila/d/dus/scratch/pRNN/logs/$JOB_ID* $DEST_DIR/ || true
