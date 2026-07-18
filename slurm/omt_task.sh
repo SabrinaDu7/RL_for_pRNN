@@ -50,5 +50,10 @@ uv run tasks/omt/main_task.py \
     tasks.testing.start_random=False \
     logging.wandb_project=curious-george-omt
 
+# OMT saves nets under ./<run_name>/ (relative save_path) and figures under
+# ./results/ - both live in the tmpdir repo copy, so sync them explicitly.
 rsync -a $RL_STORAGE/ $DEST_DIR/
+for d in *-cur-* *-rand-* results outputs; do
+    [ -d "$d" ] && rsync -a "$d" $DEST_DIR/
+done
 mv /home/mila/d/dus/scratch/pRNN/logs/$JOB_ID* $DEST_DIR/
