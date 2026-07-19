@@ -5,9 +5,13 @@
 #SBATCH --time=15:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=16G
+#SBATCH --constraint=sapphire
 # CPU-only on purpose: async_bench_10111153 measured CUDA at 558 FPS with the
 # GPU ~91% idle vs 674 FPS on 16 CPUs (docs/perf_log.md cluster verdicts).
-# Full run at ~674 FPS is ~8.5h; 15h leaves buffer.
+# sapphire constraint: Sapphire Rapids nodes (cn-m001 class) run this at
+# ~1270 FPS -> full 20.5M frames in ~4.5h (run 10129601); Milan (cn-h*) nodes
+# measured ~2x slower (~656 FPS, run 10150201) and cn-h001 specifically has
+# a chronic noisy-neighbor I/O storm. 15h wall leaves buffer either way.
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 
