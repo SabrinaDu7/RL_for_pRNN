@@ -85,8 +85,140 @@ def validate_action_encoding(predictive_net: PredictiveNet, env, pastSR: bool) -
     )
 
 
+class _GraphWMSegmentTrainer:
+    """CUDA-graph capture of the single-segment world-model trainStep.
+
+    Reproduces `PredictiveNet.trainStep` for the MaskedRNN / SpeedHD /
+    theta==0 path with the RL defaults (with_homeostat=False, no encoder
+    training), splitting it into an eager prologue and a captured region:
+
+    - Eager prologue (per update): `restructure_inputs` runs dropout and the
+      numpy-mask input scatter - the ops that CANNOT be captured (host-side
+      numpy indexing). Its outputs are copied into static buffers.
+    - Captured region (once per segment length L): `generate_noise` (in-graph
+      RNG, verified to advance per replay), the RNN timestep loop, outlayer,
+      output masking as a float multiply (capture-safe; the bool-scatter in
+      `predict` calls nonzero() and cannot be captured), MSE loss, backward,
+      and one RMSprop step.
+
+    ONE optimizer step per segment - identical step COUNT and math to the
+    serial eager path, so this needs no curve gate (bitwise with dropout+noise
+    off; distributionally identical otherwise, since the in-graph RNG stream
+    realizes different-but-equivalent draws than pure-eager order).
+
+    Fresh-run only: the optimizer is rebuilt capturable, which requires empty
+    optimizer state (asserted). Resuming a run with populated optimizer state
+    onto this path is not yet supported.
+    """
+
+    def __init__(self, pN: PredictiveNet, device: torch.device):
+        self.pN = pN
+        self.device = device
+        self.H = pN.hidden_size
+        self.noise_std = float(pN.trainNoiseMeanStd[1])
+        self.graphs: dict[int, dict] = {}  # L -> static buffers + graph
+        self._ensure_capturable_optimizer()
+
+    def _ensure_capturable_optimizer(self) -> None:
+        """Rebuild pN.optimizer with capturable=True, PRESERVING every param
+        group. PredictiveNet builds RMSprop with per-group lr/weight_decay
+        (W/W_out/W_in scaled by rootk, a bias group scaled by bias_lr) and
+        non-default alpha/eps - collapsing them changes the learning rates and
+        silently breaks equivalence."""
+        opt = self.pN.optimizer
+        assert type(opt) is torch.optim.RMSprop, (
+            f"predNet.cuda_graph assumes plain RMSprop, got {type(opt).__name__} "
+            "(RMSpropEG / eg_lr path not supported)"
+        )
+        if opt.param_groups[0].get("capturable", False):
+            return
+        assert all(len(st) == 0 for st in opt.state.values()), (
+            "predNet.cuda_graph supports fresh runs only "
+            "(optimizer state must be empty at capture time)"
+        )
+        groups = []
+        for g in opt.param_groups:
+            ng = {k: v for k, v in g.items() if k != "params"}
+            ng["params"] = list(g["params"])
+            ng["capturable"] = True
+            groups.append(ng)
+        self.pN.optimizer = torch.optim.RMSprop(groups)
+
+    def _capture(self, L: int, outmask_np: np.ndarray) -> None:
+        prnn, opt = self.pN.pRNN, self.pN.optimizer
+        x_s = torch.zeros(1, L, prnn.W_in.shape[1], device=self.device)
+        tgt_s = torch.zeros(1, L, self.pN.obs_size, device=self.device)
+        mask_f = torch.as_tensor(
+            np.resize(np.asarray(outmask_np), L), device=self.device
+        ).float().view(1, L, 1)
+        state_z = torch.zeros(1, 1, self.H, device=self.device)
+
+        def region():
+            noise = prnn.generate_noise((0.0, self.noise_std), (1, L, self.H))
+            h, _ = prnn.rnn(x_s, internal=noise, state=state_z, theta=0)
+            h = h[:, :, : self.H]
+            y = prnn.outlayer(h) * mask_f
+            loss = self.pN.loss_fn(y, tgt_s, h)
+            opt.zero_grad(set_to_none=False)
+            loss.backward()
+            opt.step()
+            return loss
+
+        # snapshot to undo the warmup steps' effect on weights + opt state
+        w_snap = [p.detach().clone() for p in prnn.parameters()]
+
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(s):
+            for _ in range(3):
+                region()
+        torch.cuda.current_stream().wait_stream(s)
+
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            loss_s = region()
+
+        # restore pristine weights and zero the (now-allocated) optimizer state
+        # tensors in place - keeping the SAME tensors the graph captured - so
+        # the first real replay is the first real step from a fresh optimizer.
+        with torch.no_grad():
+            for p, w in zip(prnn.parameters(), w_snap):
+                p.copy_(w)
+            for st in opt.state.values():
+                for v in st.values():
+                    if isinstance(v, torch.Tensor):
+                        v.zero_()
+
+        self.graphs[L] = dict(graph=graph, x_s=x_s, tgt_s=tgt_s, loss_s=loss_s)
+
+    def train_segment(self, obs: torch.Tensor, act: torch.Tensor) -> None:
+        """obs (L+1, X_obs) float in [0,1], act (L, A) - the `_episode_tensors`
+        contract. Runs one graphed pRNN gradient step on the segment."""
+        prnn = self.pN.pRNN
+        obs_b = obs.unsqueeze(0).to(self.device)
+        act_b = act.unsqueeze(0).to(self.device)
+        x_t, obs_target, outmask = prnn.restructure_inputs(
+            obs_in=obs_b, act=act_b, obs_target=None
+        )
+        L = x_t.size(1)
+        if L not in self.graphs:
+            self._capture(L, np.asarray(outmask))
+        g = self.graphs[L]
+        g["x_s"].copy_(x_t.detach())
+        g["tgt_s"].copy_(obs_target.detach())
+        g["graph"].replay()
+        self.pN.recordTrainingTrial(g["loss_s"].item())
+        self.pN.numTrainingEpochs += 1
+
+
 class PRNNAdapter:
-    def __init__(self, predictive_net: PredictiveNet, device: torch.device, pastSR: bool):
+    def __init__(
+        self,
+        predictive_net: PredictiveNet,
+        device: torch.device,
+        pastSR: bool,
+        cuda_graph: bool = False,
+    ):
         self.pN = predictive_net
         self.device = device
         self.pastSR = pastSR
@@ -102,6 +234,12 @@ class PRNNAdapter:
         self.fast_speedhd = getattr(shell.encodeAction, "__name__", "") == "SpeedHD"
         self.num_acts = shell.action_space.n
         self.num_hd = shell.numHDs
+
+        # CUDA-graph world-model training (predNet.cuda_graph). Only viable on a
+        # CUDA device for the maskless-theta SpeedHD path; trainer is built
+        # lazily on first use so weights are already on-device.
+        self.cuda_graph = bool(cuda_graph) and self.device.type == "cuda"
+        self._graph_trainer: _GraphWMSegmentTrainer | None = None
 
     def seq2pred(self, obs_dicts, act_np):
         """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item
@@ -273,8 +411,17 @@ class PRNNAdapter:
         act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)[0]
         return obs, act
 
+    def _use_graph_wm(self) -> bool:
+        return self.cuda_graph and self.fast_speedhd and not self.theta
+
     def train_on_episode(self, images_tensor, hd_tensor, act_np: np.ndarray, last_obs) -> None:
         """One pRNN gradient step on a single episode segment."""
+        if self._use_graph_wm():
+            obs, act = self._episode_tensors(images_tensor, hd_tensor, act_np, last_obs)
+            if self._graph_trainer is None:
+                self._graph_trainer = _GraphWMSegmentTrainer(self.pN, self.device)
+            self._graph_trainer.train_segment(obs, act)
+            return
         if self.fast_speedhd:
             obs, act = self._episode_tensors(images_tensor, hd_tensor, act_np, last_obs)
             obs, act = obs.unsqueeze(0), act.unsqueeze(0)
