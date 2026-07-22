@@ -114,7 +114,35 @@ class _GraphWMSegmentTrainer:
         self.pN = pN
         self.device = device
         self.graphs: dict[int, dict] = {}  # L+1 -> static buffers + graph
+        self._param_ptrs: tuple[int, ...] = ()
         self._ensure_capturable_optimizer()
+
+    def _fingerprint(self) -> tuple[int, ...]:
+        """Storage addresses of the pRNN parameters.
+
+        A captured graph writes to the addresses its parameters had AT CAPTURE
+        TIME. `Module.to()` replaces `param.data`, so ANY device round-trip
+        leaves every captured graph pointing at freed memory - a use-after-free
+        that silently corrupts whatever the allocator hands those blocks to
+        next, and only sometimes crashes.
+
+        This bit us for real: `logging.plot_interval`/`analysis_interval`
+        (both 200) wrap plotting and the spatial eval in
+        `on_device([predictiveNet, acmodel], "cpu")` (training/loop.py,
+        evaluation/spatial.py). A 2026-07-22 cluster run died 7 updates after
+        the update-200 event with `direction`=184 - the freed parameter block
+        had been reused for `exps.obs.direction` and graph replay overwrote it.
+
+        Guarding inside `PRNNAdapter.to()` is NOT sufficient: `on_device` calls
+        `world_model.device._move()` straight on the PredictiveNet and never
+        goes through the adapter. Checking the addresses before every replay
+        covers every path, present and future.
+        """
+        return tuple(p.data_ptr() for p in self.pN.pRNN.parameters())
+
+    def _invalidate_if_moved(self) -> None:
+        if self.graphs and self._fingerprint() != self._param_ptrs:
+            self.graphs.clear()
 
     def _ensure_capturable_optimizer(self) -> None:
         """Rebuild pN.optimizer with capturable=True, PRESERVING every param
@@ -156,8 +184,16 @@ class _GraphWMSegmentTrainer:
             opt.step()
             return loss
 
-        # snapshot to undo the warmup steps' effect on weights + opt state
+        # Snapshot to undo the warmup's effect: this region runs REAL optimizer
+        # steps during warmup and capture. The optimizer state is snapshotted
+        # (not just zeroed) because a re-capture can happen MID-TRAINING - a
+        # new segment length, or a device move invalidating the graphs - and
+        # zeroing would silently wipe RMSprop's accumulated second moments.
         w_snap = [p.detach().clone() for p in pN.pRNN.parameters()]
+        opt_snap = {
+            id(p): {k: v.detach().clone() for k, v in st.items() if isinstance(v, torch.Tensor)}
+            for p, st in opt.state.items()
+        }
 
         s = torch.cuda.Stream()
         s.wait_stream(torch.cuda.current_stream())
@@ -170,26 +206,31 @@ class _GraphWMSegmentTrainer:
         with torch.cuda.graph(graph):
             loss_s = region()
 
-        # restore pristine weights and zero the (now-allocated) optimizer state
-        # tensors in place - keeping the SAME tensors the graph captured - so
-        # the first real replay is the first real step from a fresh optimizer.
+        # Restore pristine weights and optimizer state IN PLACE - keeping the
+        # SAME tensors the graph captured - so the next replay continues from
+        # exactly the pre-capture state. Params with no prior state (the first
+        # capture) are zeroed, which is a fresh RMSprop start.
         with torch.no_grad():
             for p, w in zip(pN.pRNN.parameters(), w_snap):
                 p.copy_(w)
-            for st in opt.state.values():
-                for v in st.values():
-                    if isinstance(v, torch.Tensor):
-                        v.zero_()
+            for p, st in opt.state.items():
+                prior = opt_snap.get(id(p), {})
+                for k, v in st.items():
+                    if not isinstance(v, torch.Tensor):
+                        continue
+                    v.copy_(prior[k]) if k in prior else v.zero_()
 
         self.graphs[obs_s.size(1)] = dict(
             graph=graph, obs_s=obs_s, act_s=act_s, loss_s=loss_s
         )
+        self._param_ptrs = self._fingerprint()
 
     def train_segment(self, obs: torch.Tensor, act: torch.Tensor) -> None:
         """obs (L+1, X_obs) float in [0,1], act (L, A) - the `_episode_tensors`
         contract. Runs one graphed pRNN gradient step on the segment."""
         obs_b = obs.unsqueeze(0).to(self.device)
         act_b = act.unsqueeze(0).to(self.device)
+        self._invalidate_if_moved()  # a device round-trip freed the old params
         key = obs_b.size(1)  # L+1; equal-length segments share one graph
         if key not in self.graphs:
             self._capture(obs_b, act_b)
