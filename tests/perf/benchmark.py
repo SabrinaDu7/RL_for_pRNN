@@ -40,6 +40,7 @@ def run_benchmark(cfg, n_updates: int, include_plot: bool, include_analysis: boo
     import torch
 
     from curious_george.training.setup import setup_training
+    from curious_george.utils.common import DEVICE
     from curious_george.utils.timing import timer
 
     timer.enabled = True
@@ -102,7 +103,11 @@ def run_benchmark(cfg, n_updates: int, include_plot: bool, include_analysis: boo
             "git": subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"], cwd=REPO,
                 capture_output=True, text=True).stdout.strip(),
-            "device": "cuda" if torch.cuda.is_available() else "cpu",
+            # the device actually used (CG_DEVICE-controlled, bound at import
+            # in utils.common), NOT merely what is available - a CPU run on a
+            # GPU box used to self-label "cuda" and corrupt the perf record.
+            "device": str(DEVICE),
+            "cuda_available": torch.cuda.is_available(),
             "n_updates": n_updates,
             "frames_per_update": cfg.rl.frames,
             "num_envs": cfg.exp.num_envs,

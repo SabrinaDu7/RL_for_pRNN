@@ -15,3 +15,4 @@ sparsity: 0.5
 train: True # Train pRNN simultaneously with RL?
 seqdur: 256 # Only relevant if train is on
 batched_wm: False # One pooled gradient step over all rollout segments stacked (B, L) instead of B sequential steps. Optimization-semantics change: curve-gate before enabling by default
+cuda_graph: False # CUDA-graph the per-segment world-model trainStep (fwd+bwd+RMSprop). Keeps B sequential steps (same dynamics as serial), CUDA-only; requires a fresh run (empty optimizer state)

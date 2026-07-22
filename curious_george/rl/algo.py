@@ -121,6 +121,7 @@ class PredictivePPOAlgo:
         reward_alignment="legacy",
         loss="ppo_clip",
         batched_wm=False,  # appended last: positional callers exist (tests)
+        cuda_graph=False,
     ):
         # env may be a single shell, a list of shells (parallel collection),
         # or an AsyncShellPool (process-parallel collection)
@@ -154,6 +155,7 @@ class PredictivePPOAlgo:
         self.noise_std = noise_std
         self.prnn_seqdur = prnn_seqdur
         self.batched_wm = batched_wm
+        self.cuda_graph = cuda_graph
         self.pastSR = pastSR
         self.curious_agent = curious_agent
         self.k_curious = k_curious
@@ -168,7 +170,11 @@ class PredictivePPOAlgo:
             if prnn_seqdur > 0:
                 assert T % prnn_seqdur == 0, "per-env T must divide by prnn_seqdur"
 
-        self.adapter = PRNNAdapter(self.pN, self.device, pastSR) if self.pN else None
+        self.adapter = (
+            PRNNAdapter(self.pN, self.device, pastSR, cuda_graph=cuda_graph)
+            if self.pN
+            else None
+        )
         self._subroom_size = subroom_size(self.env)
 
         if hasattr(self.env, "loc_mask"):
