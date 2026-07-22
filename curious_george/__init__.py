@@ -1,7 +1,7 @@
 # Curious George: curiosity-driven RL with pRNN spatial representations.
 #
 # Package layout (see docs/refactor_baseline.md and the refactor plan):
-#   utils        - DEVICE, seeding, small stat helpers, checkpoints, enums, dev_env
+#   utils        - get_device/on_cuda/DEVICE, seeding, small stat helpers, checkpoints, enums, dev_env
 #   envs         - env construction (factory) and wrapper accessors (access)
 #   models       - actor-critic models (ACModel, ACModelSR)
 #   rl           - PPO algo, rollout agent, obs preprocessing
@@ -11,6 +11,8 @@
 
 from curious_george.utils.common import (
     DEVICE,
+    get_device,
+    on_cuda,
     seed,
     synthesize,
     mean_by_action,
@@ -129,6 +131,8 @@ __all__ = [
     "ACModelSR",
     # Other
     "DEVICE",
+    "get_device",
+    "on_cuda",
     "seed",
     "synthesize",
     "mean_by_action",

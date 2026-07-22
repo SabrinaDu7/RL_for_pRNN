@@ -8,7 +8,7 @@ from tqdm import tqdm
 from prnn.utils import save_pN
 
 import wandb
-from curious_george.utils.common import DEVICE, synthesize
+from curious_george.utils.common import synthesize
 from curious_george.evaluation.on_policy import OnPolicyAnalysis, mutual_info_policy
 from curious_george.evaluation.spatial import evaluate_spatial_representation
 from curious_george.storage import save_analysis_of_agent_behav, save_status

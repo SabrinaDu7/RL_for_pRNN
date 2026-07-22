@@ -40,11 +40,12 @@ def run_benchmark(cfg, n_updates: int, include_plot: bool, include_analysis: boo
     import torch
 
     from curious_george.training.setup import setup_training
-    from curious_george.utils.common import DEVICE
+    from curious_george.utils.common import DEVICE, on_cuda
     from curious_george.utils.timing import timer
 
     timer.enabled = True
-    timer.sync_cuda = torch.cuda.is_available()
+    # follows the device actually in use, not mere availability
+    timer.sync_cuda = on_cuda()
 
     comps = setup_training(cfg)
     algo = comps.algo

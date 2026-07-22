@@ -20,6 +20,8 @@ from contextlib import contextmanager
 
 import torch
 
+from curious_george.utils.common import on_cuda
+
 
 class StageTimer:
     def __init__(self):
@@ -33,13 +35,15 @@ class StageTimer:
         if not self.enabled:
             yield
             return
-        if self.sync_cuda and torch.cuda.is_available():
+        # on_cuda(), NOT torch.cuda.is_available(): a CG_DEVICE=cpu run on a
+        # GPU box must not pay a CUDA sync at every stage boundary.
+        if self.sync_cuda and on_cuda():
             torch.cuda.synchronize()
         t0 = time.perf_counter()
         try:
             yield
         finally:
-            if self.sync_cuda and torch.cuda.is_available():
+            if self.sync_cuda and on_cuda():
                 torch.cuda.synchronize()
             self.totals[name] += time.perf_counter() - t0
             self.counts[name] += 1

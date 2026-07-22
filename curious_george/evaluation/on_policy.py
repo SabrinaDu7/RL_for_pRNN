@@ -7,7 +7,7 @@ from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 
 from curious_george.rl.collect.format import get_obss_preprocessor
-from curious_george.utils.common import DEVICE
+from curious_george.utils.common import get_device
 from curious_george.rl.algo import PredictivePPOAlgo
 
 SCALES = {
@@ -174,7 +174,7 @@ class EnvironmentFeaturesAnalysis:
             )
             with torch.no_grad():
                 _, _, data["h"] = self.prnn.predict(
-                    prnn_obs.to(DEVICE), prnn_act.to(DEVICE)
+                    prnn_obs.to(get_device()), prnn_act.to(get_device())
                 )
 
         else:
@@ -196,7 +196,7 @@ class EnvironmentFeaturesAnalysis:
 
         for t in range(self.timesteps):
             preprocessed_obs = self.preprocess_obss(
-                [self.data["obs"][t + 1]], device=DEVICE
+                [self.data["obs"][t + 1]], device=get_device()
             )
             with torch.no_grad():
                 if self.prnn:

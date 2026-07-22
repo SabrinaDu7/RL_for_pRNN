@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from prnn.utils import PredictiveNet, load_pN
 
-from curious_george.utils.common import DEVICE, seed as seed_everything
+from curious_george.utils.common import get_device, seed as seed_everything
 from curious_george.envs.factory import make_env
 from curious_george.models import ACModel, ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
@@ -114,7 +114,7 @@ def setup_envs(cfg) -> list:
 def load_status(cfg) -> dict:
     if cfg.logging.load_acmodel:
         _, acmodel_status_ckpt = get_ckpt_env_vars()
-        return torch.load(acmodel_status_ckpt, map_location=DEVICE, weights_only=False)
+        return torch.load(acmodel_status_ckpt, map_location=get_device(), weights_only=False)
     return {StatusCkptKeys.NUM_FRAMES.value: 0, StatusCkptKeys.UPDATE.value: 0}
 
 
@@ -140,7 +140,7 @@ def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
         prnn_ckpt, _ = get_ckpt_env_vars()
         load_pN(
             model_ckpt_filepath=prnn_ckpt,
-            device=DEVICE,
+            device=get_device(),
             pRNNtype=cfg.predNet.pRNNtype,
             predictive_net=predictiveNet,
         )
@@ -168,16 +168,17 @@ def setup_acmodel(cfg, env, obs_space, status: dict) -> nn.Module:
             receiver=acmodel,
             status=status,
             status_key=StatusCkptKeys.MODEL_STATE,
-            device=DEVICE,
+            device=get_device(),
         )
         print("Existing AC model loaded from status checkpoint")
 
-    acmodel.to(DEVICE)
+    acmodel.to(get_device())
     return acmodel
 
 
 def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
-               device: torch.device = DEVICE) -> PredictivePPOAlgo:
+               device: torch.device | None = None) -> PredictivePPOAlgo:
+    device = get_device() if device is None else device
     if cfg.predNet.train:
         assert cfg.predNet.seqdur > 0, "Set an appropriate seqdur"
     else:
@@ -235,7 +236,7 @@ def setup_training(cfg) -> TrainingComponents:
     """Build the full stack in the historical order (seed -> env -> status ->
     preprocessor -> world model -> AC model -> algo -> analysis agents)."""
     seed_everything(cfg.exp.seed)
-    print(f"Device: {DEVICE}\n")
+    print(f"Device: {get_device()}\n")
 
     envs = setup_envs(cfg)
     env = envs[0]
@@ -251,7 +252,7 @@ def setup_training(cfg) -> TrainingComponents:
         env=env,
         agent_Type=AgentType.AC,
         prnn=predictiveNet,
-        device=DEVICE,
+        device=get_device(),
         ac_model=acmodel,
         pastSR=pastSR,
     )

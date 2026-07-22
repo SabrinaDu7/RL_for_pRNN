@@ -19,7 +19,7 @@ from curious_george.rl.collect.agent import ActorCriticAgent
 from curious_george.utils.checkpoints import (
     StatusCkptKeys,
 )
-from curious_george.utils.common import DEVICE
+from curious_george.utils.common import get_device
 from curious_george.utils.dev_env import get_env_var
 from curious_george.utils.enums import AgentType
 
@@ -71,7 +71,7 @@ def get_status_path(model_dir: str | Path):
 
 def get_status(model_dir: str | Path):
     path = get_status_path(model_dir)
-    return torch.load(path, map_location=DEVICE, weights_only=False)
+    return torch.load(path, map_location=get_device(), weights_only=False)
 
 
 def get_pN(
