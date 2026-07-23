@@ -178,3 +178,16 @@ def test_random_init_control_does_not_update_either_model():
         )
     finally:
         algo.envs.close()
+
+
+def test_optimizer_betas_are_configurable():
+    algo = setup_training(
+        _config(
+            device_env=True,
+            extra_overrides=("rl.optim_betas=[0.8,0.97]",),
+        )
+    ).algo
+    try:
+        assert algo.optimizer.param_groups[0]["betas"] == (0.8, 0.97)
+    finally:
+        algo.envs.close()

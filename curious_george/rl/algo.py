@@ -122,6 +122,7 @@ class PredictivePPOAlgo:
         batched_wm=False,  # appended last: positional callers exist (tests)
         cuda_graph=False,
         batched_curiosity=False,
+        adam_betas=(0.9, 0.999),
     ):
         # env may be a single shell, a list of shells (parallel collection),
         # or a batched shell pool (process-parallel or device-resident)
@@ -231,7 +232,16 @@ class PredictivePPOAlgo:
         self.batch_size = batch_size
         assert self.batch_size % self.recurrence == 0
 
-        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
+        if len(adam_betas) != 2 or not (
+            0 <= adam_betas[0] < 1 and 0 <= adam_betas[1] < 1
+        ):
+            raise ValueError(f"Adam betas must be two values in [0, 1), got {adam_betas}")
+        self.optimizer = torch.optim.Adam(
+            self.acmodel.parameters(),
+            lr,
+            betas=tuple(adam_betas),
+            eps=adam_eps,
+        )
         self.batch_num = 0
 
         # analysis code reads these off the algo after each collect

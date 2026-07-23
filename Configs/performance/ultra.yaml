@@ -5,9 +5,9 @@
 #   ... performance=ultra
 #
 # Device transition/formatting is trajectory-equivalent to the CPU table path
-# (tests/test_device_collector.py). The pooled world-model step and larger PPO
-# minibatch intentionally change optimizer semantics and require a learning-
-# curve/science gate before production experiments.
+# (tests/test_device_collector.py). The pooled world-model step, rollout size,
+# and optimizer settings intentionally change training semantics. This is a
+# fast local starting point, not a claim of scientific equivalence.
 
 exp:
     num_envs: 1024
@@ -20,3 +20,6 @@ predNet:
 rl:
     frames: 262144 # num_envs * one 256-step segment
     ppo_batch_size: 131072 # 2 minibatches/epoch, 8 Adam steps/update
+    lr: 1e-3
+    optim_betas: [0.8, 0.97]
+    entropy_coef: 0.01

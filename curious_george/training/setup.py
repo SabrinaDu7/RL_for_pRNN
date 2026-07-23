@@ -238,6 +238,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         k_curious=cfg.rl.k_curious,
         reward_alignment=cfg.rl.get("reward_alignment", "legacy"),
         loss=cfg.rl.get("loss", "ppo_clip"),
+        adam_betas=cfg.rl.get("optim_betas", [0.9, 0.999]),
     )
 
     if StatusCkptKeys.OPTIMIZER_STATE.value in status:
