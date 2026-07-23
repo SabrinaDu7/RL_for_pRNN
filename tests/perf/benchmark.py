@@ -65,7 +65,7 @@ def run_benchmark(
 
     timer.enabled = True
     # follows the device actually in use, not mere availability
-    timer.sync_cuda = sync_stages
+    timer.sync_device = sync_stages
 
     comps = setup_training(cfg)
     algo = comps.algo

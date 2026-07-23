@@ -1,111 +1,69 @@
-"""Rollout buffer utilities.
+"""Device-resident generalized advantage estimation."""
 
-For now this holds the GAE computation as a pure in-place function over the
-algo's preallocated [T] tensors. The RolloutBuffer class generalizing these
-to [T, B] arrives with parallel-env support (refactor plan Phase 5).
-"""
-
-import numpy as np
 import torch
 
 
+@torch.no_grad()
 def compute_gae(
     *,
-    advantages: torch.Tensor,
-    rewards: torch.Tensor,
-    int_rewards: torch.Tensor,
-    curious_rewards: torch.Tensor,
-    values: torch.Tensor,
-    masks: torch.Tensor,
-    final_next_value: torch.Tensor,
-    final_mask,
-    num_frames: int,
-    discount: float,
-    gae_lambda: float,
-    k_int: float,
-    k_curious: float,
-) -> None:
-    """n-step TD generalized advantage estimates, written into `advantages`.
-
-    Index conventions preserved from the original loop: masks[i] is the mask
-    recorded BEFORE step i's transition, so next_mask for step i is
-    masks[i+1] (or the live post-rollout mask for the last step).
-
-    The recurrence runs in float32 numpy (identical IEEE ops / op order to the
-    historical per-element tensor loop; masks are exactly 0/1 so the one
-    reassociated multiply is exact) - per-element indexing of device tensors
-    in a Python loop was a measured hotspot.
-    """
-    rewards_np = rewards.detach().cpu().numpy()
-    int_np = int_rewards.detach().cpu().numpy()
-    cur_np = curious_rewards.detach().cpu().numpy()
-    values_np = values.detach().cpu().numpy()
-    masks_np = masks.detach().cpu().numpy()
-
-    next_values = np.empty_like(values_np)
-    next_values[:-1] = values_np[1:]
-    next_values[-1] = float(final_next_value)
-    next_masks = np.empty_like(masks_np)
-    next_masks[:-1] = masks_np[1:]
-    next_masks[-1] = final_mask
-
-    reward_term = rewards_np + k_int * int_np + k_curious * cur_np
-    deltas = reward_term + np.float32(discount) * next_values * next_masks - values_np
-
-    decay = np.float32(discount * gae_lambda) * next_masks
-    adv = np.empty_like(deltas)
-    next_adv = np.float32(0.0)
-    for i in range(num_frames - 1, -1, -1):
-        next_adv = deltas[i] + decay[i] * next_adv
-        adv[i] = next_adv
-
-    advantages.copy_(torch.from_numpy(adv).to(advantages.device))
-
-
-def compute_gae_batched(
-    *,
-    advantages: torch.Tensor,
     rewards: torch.Tensor,
     int_rewards: torch.Tensor,
     curious_rewards: torch.Tensor,
     values: torch.Tensor,
     masks: torch.Tensor,
     final_next_values: torch.Tensor,
-    final_masks: np.ndarray,
+    final_masks,
     discount: float,
     gae_lambda: float,
     k_int: float,
     k_curious: float,
-) -> None:
-    """Batched equivalent of :func:`compute_gae` for ``(T, B)`` tensors.
+) -> torch.Tensor:
+    """Return GAE for rollout tensors shaped ``(T, ...)``.
 
-    The old collector called ``compute_gae`` B times, causing five
-    device-to-host transfers per environment. This transfers each rollout
-    tensor once, performs the same reverse recurrence vectorized across B,
-    and uploads the complete advantage array once.
+    ``masks[t]`` describes the state before transition ``t``, so transition
+    ``t`` uses ``masks[t + 1]`` (and ``final_masks`` at the rollout tail).
+
+    The reverse affine recurrence
+
+    ``adv[t] = delta[t] + decay[t] * adv[t + 1]``
+
+    is an associative prefix scan after reversing time. A Hillis-Steele scan
+    evaluates it in ``ceil(log2(T))`` device stages, keeps arbitrary episode
+    boundaries, and avoids both a host synchronization and a 256-kernel
+    sequential device loop.
     """
-    rewards_np = rewards.detach().cpu().numpy()
-    int_np = int_rewards.detach().cpu().numpy()
-    cur_np = curious_rewards.detach().cpu().numpy()
-    values_np = values.detach().cpu().numpy()
-    masks_np = masks.detach().cpu().numpy()
-    final_values_np = final_next_values.detach().cpu().numpy()
+    final_values = torch.as_tensor(
+        final_next_values, dtype=values.dtype, device=values.device
+    )
+    final_mask_tensor = torch.as_tensor(
+        final_masks, dtype=masks.dtype, device=masks.device
+    )
+    next_values = torch.cat((values[1:], final_values.unsqueeze(0)), dim=0)
+    next_masks = torch.cat((masks[1:], final_mask_tensor.unsqueeze(0)), dim=0)
 
-    next_values = np.empty_like(values_np)
-    next_values[:-1] = values_np[1:]
-    next_values[-1] = final_values_np
-    next_masks = np.empty_like(masks_np)
-    next_masks[:-1] = masks_np[1:]
-    next_masks[-1] = np.asarray(final_masks, dtype=masks_np.dtype)
+    reward = rewards + k_int * int_rewards + k_curious * curious_rewards
+    deltas = reward + discount * next_values * next_masks - values
 
-    reward_term = rewards_np + k_int * int_np + k_curious * cur_np
-    deltas = reward_term + np.float32(discount) * next_values * next_masks - values_np
-    decay = np.float32(discount * gae_lambda) * next_masks
-
-    adv = np.empty_like(deltas)
-    next_adv = np.zeros(values_np.shape[1], dtype=values_np.dtype)
-    for i in range(values_np.shape[0] - 1, -1, -1):
-        next_adv = deltas[i] + decay[i] * next_adv
-        adv[i] = next_adv
-
-    advantages.copy_(torch.from_numpy(adv).to(advantages.device))
+    # Each pair represents f(x) = bias + scale*x. Prefix composition of these
+    # affine functions is associative:
+    #   (b2, s2) o (b1, s1) = (b2 + s2*b1, s2*s1).
+    bias = deltas.flip(0)
+    scale = (discount * gae_lambda * next_masks).flip(0)
+    offset = 1
+    while offset < bias.shape[0]:
+        bias = torch.cat(
+            (
+                bias[:offset],
+                bias[offset:] + scale[offset:] * bias[:-offset],
+            ),
+            dim=0,
+        )
+        scale = torch.cat(
+            (
+                scale[:offset],
+                scale[offset:] * scale[:-offset],
+            ),
+            dim=0,
+        )
+        offset *= 2
+    return bias.flip(0)

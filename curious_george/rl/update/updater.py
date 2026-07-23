@@ -182,7 +182,7 @@ def _update_policy_epochs(
                 with timer("update/policy/adam"):
                     optimizer.step()
             else:
-                grad_norm = 0.0
+                grad_norm = batch_loss.new_zeros(())
 
             # Update log values
 

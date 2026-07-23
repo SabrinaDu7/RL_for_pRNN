@@ -235,7 +235,7 @@ class PredictivePPOAlgo:
         self.batch_num = 0
 
         # analysis code reads these off the algo after each collect
-        self.obss: list = []
+        self.directions = np.empty(0, dtype=np.int64)
         self.locs: list = []
         self.subroom_ids: list = []
         self.last_joint_dist = None
@@ -277,7 +277,7 @@ class PredictivePPOAlgo:
         )
 
         # expose the rollout on the algo for analysis/tasks that read attributes
-        self.obss = result.obss
+        self.directions = result.directions
         self.locs = result.locs
         self.subroom_ids = result.subroom_ids
         self.actions = result.actions
@@ -321,7 +321,7 @@ class PredictivePPOAlgo:
             update_params=update_params,
         )
 
-        if self.train_pN:
+        if self.train_pN and update_params:
             self.adapter.to(self.device)
             train_world_model_on_episodes(
                 self.adapter, exps, done_indices, last_observations,

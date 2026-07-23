@@ -33,8 +33,14 @@ def flat_obs_rows(obs_dicts) -> torch.Tensor:
     Bitwise-equal to env2pred's per-dict get_visual loop + /255, with one
     numpy stack instead of N Python-level reshapes/copies.
     """
-    imgs = np.stack([o["image"] for o in obs_dicts])
-    return torch.from_numpy(imgs.reshape(len(obs_dicts), -1)).to(torch.float32) / 255
+    images = [obs["image"] for obs in obs_dicts]
+    if torch.is_tensor(images[0]):
+        return torch.stack(images).reshape(len(images), -1).to(torch.float32) / 255
+    stacked = np.stack(images)
+    return (
+        torch.from_numpy(stacked.reshape(len(images), -1)).to(torch.float32)
+        / 255
+    )
 
 
 def encode_speed_hd_rows(act_np, hd_np, num_acts: int, num_hd: int) -> torch.Tensor:
@@ -793,12 +799,10 @@ class BatchedSRTrackerShim:
         return torch.zeros((1, self.adapter.pN.hidden_size), device=self.adapter.device)
 
     def reset_all_envs(self) -> torch.Tensor:
-        self.adapter.reset_state()
         self.tracker.reset_all()
         return self.tracker.sr().clone()
 
     def end_rollout(self) -> None:
-        self.adapter.reset_state()
         self.tracker.reset_all()
 
 
@@ -859,12 +863,28 @@ class BatchedSRTracker:
         """Current SRs, shape (B, hidden_size) (trimmed to pN.hidden_size)."""
         return self.state[:, 0, : self.pN.hidden_size]
 
+    def _input_and_noise(self, obs_x, act_x):
+        x = torch.cat((obs_x, act_x), dim=1).permute(1, 0)[None, None]
+        noise = self.pN.pRNN.generate_noise(
+            self.pN.trainNoiseMeanStd,
+            (1, 1, self.hidden_size, self.B),
+        ).to(self.device)
+        return x, noise
+
+    def _run_cell(self, x, noise) -> torch.Tensor:
+        with timer("collect/sr/cell"):
+            with torch.no_grad():
+                _, state = self.pN.pRNN.rnn(
+                    x, internal=noise, state=self.state, batched=True
+                )
+        self.state = state[0].unsqueeze(1)
+        return self.sr()
+
     def step(self, obs_x: torch.Tensor, act_x: torch.Tensor) -> torch.Tensor:
         """One batched step. obs_x (B, obs_size), act_x (B, act_size) -
         the single-timestep rows produced by env2pred per env.
         Returns the new SRs, shape (B, pN.hidden_size).
         """
-        pRNN = self.pN.pRNN
         with timer("collect/sr/mask_noise"):
             obs_m = torch.as_tensor(
                 self.in_mask[self.phases], dtype=obs_x.dtype, device=self.device
@@ -875,20 +895,8 @@ class BatchedSRTracker:
             obs_x = obs_x * obs_m[:, None]
             act_x = act_x * act_m[:, None]
             self.phases = (self.phases + 1) % self.phase_k
-
-            x = torch.cat((obs_x, act_x), dim=1)          # (B, D)
-            x = x.permute(1, 0)[None, None]                # (1, 1, D, B)
-            noise = pRNN.generate_noise(
-                self.pN.trainNoiseMeanStd, (1, 1, self.hidden_size, self.B)
-            ).to(self.device)
-
-        with timer("collect/sr/cell"):
-            with torch.no_grad():
-                _, state = pRNN.rnn(
-                    x, internal=noise, state=self.state, batched=True
-                )
-        self.state = state[0].unsqueeze(1)             # (B, 1, H)
-        return self.sr()
+            x, noise = self._input_and_noise(obs_x, act_x)
+        return self._run_cell(x, noise)
 
     def step_synchronized(
         self, *, obs_x: torch.Tensor, act_x: torch.Tensor
@@ -900,7 +908,6 @@ class BatchedSRTracker:
         a length-B mask because independently terminating CPU envs can have
         different phases.
         """
-        pRNN = self.pN.pRNN
         phase = int(self.phases[0])
         with timer("collect/sr/mask_noise"):
             if self.in_mask[phase] == 0:
@@ -912,18 +919,5 @@ class BatchedSRTracker:
             elif self.act_mask[phase] != 1:
                 act_x = act_x * float(self.act_mask[phase])
             self.phases.fill((phase + 1) % self.phase_k)
-
-            x = torch.cat((obs_x, act_x), dim=1)
-            x = x.permute(1, 0)[None, None]
-            noise = pRNN.generate_noise(
-                self.pN.trainNoiseMeanStd,
-                (1, 1, self.hidden_size, self.B),
-            ).to(self.device)
-
-        with timer("collect/sr/cell"):
-            with torch.no_grad():
-                _, state = pRNN.rnn(
-                    x, internal=noise, state=self.state, batched=True
-                )
-        self.state = state[0].unsqueeze(1)
-        return self.sr()
+            x, noise = self._input_and_noise(obs_x, act_x)
+        return self._run_cell(x, noise)

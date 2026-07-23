@@ -303,8 +303,8 @@ Implementation toggles:
   implies the table wrapper during construction, requires `num_envs>1`, and
   currently accepts only the non-rewarding/non-terminating static L-room used
   for training. Episode cuts remain the known synchronized `predNet.seqdur`.
-- `performance=ultra`: measured preset (`B=512`, 131,072 frames/update,
-  minibatch 65,536, batched curiosity and pooled world-model update).
+- `performance=ultra`: measured preset (`B=1,024`, 262,144 frames/update,
+  minibatch 131,072, batched curiosity and pooled world-model update).
 
 The device pool keeps position, direction, transition table, and observation
 bank on MPS/CUDA. The sampled action tensor is indexed directly into the
@@ -318,7 +318,8 @@ Additional fixes made along the call chain:
 
 - policy preprocessing omits unused RGB/mission fields when `with_CV=false`;
 - policy probabilities remain on-device and transfer once per rollout;
-- GAE transfers `(T,B)` arrays in bulk and vectorizes the recurrence over B;
+- GAE uses an associative device scan with `ceil(log2(T))` stages, preserving
+  arbitrary episode masks without a host transfer or 256-kernel device loop;
 - curiosity formats/predicts every equal segment in one device-native call;
 - world-model training can pool equal segments behind `batched_wm`;
 - synchronized device environments use one scalar 5-window phase mask rather
@@ -337,9 +338,16 @@ Additional fixes made along the call chain:
 - `tests/test_device_collector.py` compares complete CPU-table and
   device-table rollouts under matched weights/RNG. It requires exact equality
   for action, SR, value, reward, advantage, return, log-probability, RGB,
-  direction, boundaries, locations, curiosity, and joint statistics.
-- Targeted gate after the final reset/device changes: 27 passed.
-- Full suite after changes: 91 passed, 8 failed, 5 errors, 22 skipped,
+  direction, boundaries, locations, curiosity, and joint statistics across
+  two consecutive updates. It also requires CPU and accelerator RNG states to
+  remain equal, which catches reset calls that consume randomness without
+  affecting the first rollout.
+- `tests/test_advantage.py` compares the device scan with a sequential
+  recurrence for scalar, irregular-length, 256-step, batched, and arbitrary
+  episode-mask cases.
+- Targeted CPU and MPS gates after the final reset/device changes: 50 passed
+  on each device.
+- Full suite after changes: 98 passed, 8 failed, 5 errors, 22 skipped,
   7 deselected. The 8/5 are the identical pre-existing missing-checkpoint
   failures under ignored `outputs/ckpts`; there is no new failure class.
 - Stored B=1 golden differs at roughly 1e-6 because it was captured with
@@ -374,9 +382,9 @@ synchronized timing measured 0.2 ms total across 256 calls.
 
 Post-rollout synchronizations remain:
 
-- bulk rollout image/direction/location views for diagnostics;
+- one bulk direction/location metadata export for CPU diagnostics;
 - one bulk action export and one probability export;
-- bulk GAE/log arrays;
+- logging-array exports after device-resident GAE and curiosity finish;
 - PPO's one summary export;
 - pRNN `trainStep`'s scalar training-loss record.
 
@@ -393,79 +401,77 @@ where nested details are explicitly described.
 
 | Parent work | CPU table boundary | Final device path |
 |---|---:|---:|
-| Policy inference/sample/action boundary | 784.5 ms | 431.9 ms |
-| Policy rollout recording | 183.8 ms | 129.2 ms |
-| pRNN state step | 503.9 ms | 289.9 ms |
-| Environment + rollout state copies | 351.4 ms | 52.4 ms |
-| PPO optimization | 266.2 ms | 172.5 ms |
-| Pooled world-model update | 137.3 ms | 140.8 ms |
-| Curiosity | 96.7 ms | 43.8 ms |
-| GAE + log prep | 3.3 ms | 2.9 ms |
-| Other bulk export/bookkeeping | ~143 ms | ~90 ms |
-| **Total** | **2.470 s / 13,265 FPS** | **1.353 s / 24,218 FPS** |
+| Policy inference/sample/action boundary | 784.5 ms | 448.3 ms |
+| Policy rollout recording | 183.8 ms | 124.4 ms |
+| pRNN state step | 503.9 ms | 263.3 ms |
+| Environment + rollout state copies | 351.4 ms | 47.7 ms |
+| PPO optimization | 266.2 ms | 167.2 ms |
+| Pooled world-model update | 137.3 ms | 102.9 ms |
+| Curiosity | 96.7 ms | 43.1 ms |
+| GAE + log prep | 3.3 ms | 2.2 ms |
+| Other bulk export/bookkeeping | ~143 ms | ~63 ms |
+| **Total** | **2.470 s / 13,265 FPS** | **1.263 s / 25,949 FPS** |
 
 Final nested detail:
 
-- policy: network 187.8 ms, categorical sample 241.0 ms, preprocessing
-  0.3 ms, action-host scope 0.2 ms;
-- pRNN: device formatting 67.2 ms, recurrent body 219.9 ms; inside the body,
-  mask/noise is 58.8 ms and the cell is 125.3 ms;
-- PPO (32 minibatches): indexing 42.1 ms, forward 25.8 ms, loss 25.6 ms,
-  backward 33.6 ms, grad clip 15.0 ms, Adam 21.9 ms;
-- device environment: 52.4 ms includes transition lookup plus writing
+- policy: network 175.5 ms, categorical sample 233.8 ms, action-host scope
+  0.25 ms;
+- pRNN: device formatting 62.4 ms, recurrent body 198.2 ms; inside the body,
+  mask/noise is 55.4 ms and the cell is 107.8 ms;
+- PPO (32 minibatches): indexing 40.9 ms, forward 25.2 ms, loss 25.8 ms,
+  backward 32.2 ms, grad clip 14.8 ms, Adam 19.9 ms;
+- device environment: 47.7 ms includes transition lookup plus writing
   image/direction/position rollout buffers. It is not a host sync.
 
 ### Normal-execution batch sweep (complete training)
 
 M4 Pro MPS, T=256, pooled WM, batched/device curiosity, device environment,
-PPO minibatch 4,096 unless marked otherwise:
+and a PPO minibatch equal to half the rollout (eight Adam steps/update):
 
-| B | Frames/update | FPS |
-|---:|---:|---:|
-| 32 | 8,192 | 8,989 |
-| 64 | 16,384 | 13,923 |
-| 128 | 32,768 | 26,886 |
-| 256 | 65,536 | 37,370 |
-| 512 | 131,072 | 52,798 |
-| 1,024 | 262,144 | 58,041 |
-| 512, minibatch 16,384 | 131,072 | 64,461 |
-| 512, minibatch 65,536 | 131,072 | 75,310 |
-| 1,024, minibatch 131,072 | 262,144 | **89,881** |
+| B | Frames/update | PPO minibatch | Measured updates | FPS |
+|---:|---:|---:|---:|---:|
+| 256 | 65,536 | 32,768 | 5 | 65,296 |
+| 512 | 131,072 | 65,536 | 10 | 92,437 |
+| 1,024 | 262,144 | 131,072 | 5 | **107,354** |
+| 2,048 | 524,288 | 262,144 | 3 | **114,448** |
+| 4,096 | 1,048,576 | 524,288 | 2 | 68,767 |
 
-The final B=1,024 point performs 8 PPO optimizer steps/update rather than
-256 at minibatch 4,096. The device environment, native formatting, and
-synchronized phase mask preserve collected trajectories; pooled WM and
-larger PPO minibatches change optimizer semantics and need a learning-curve
-gate.
+Throughput keeps improving through B=2,048, then collapses at B=4,096:
+world-model time rises to 6.56 s/update, curiosity to 1.81 s, and PPO indexing
+to 1.26 s. B=2,048 is the measured laptop peak, not a practical default:
+it gains only 6.6% over B=1,024 while doubling rollout memory and update
+latency. `performance=ultra` therefore uses B=1,024.
 
-The final one-command `performance=ultra` runtime smoke measured 79,292 FPS
-for one timed update after one warmup; the two-update measurement in the table
-(75,310 FPS) is the less cherry-picked local reference.
+The final unmodified `performance=ultra` command measured 111,976 FPS across
+three updates after one warmup. The five-update 107,354 FPS row is retained
+as the more conservative reference.
 
-At the final B=1,024 point, the timer (normal asynchronous, so useful for
-call counts and coarse parents, not kernel attribution) reports: WM 773 ms,
-policy rollout 498 ms, PPO 300 ms, curiosity 205 ms, pRNN rollout 125 ms,
-and environment/buffer writes 12 ms. Total is 2.915 s/update.
+At B=1,024, normal asynchronous timing reports about 481 ms/update for the
+pooled WM step, 578 ms for policy rollout, 266 ms for PPO, 170 ms for
+curiosity, 135 ms for pRNN rollout, and 12 ms for environment/buffer writes.
+The five measured updates take 2.24-2.54 s each.
 
-The final five-update **default CPU** reference on this M4 Pro
-(`OMP_NUM_THREADS=MKL_NUM_THREADS=16`) is 1,970.6 FPS, with update times
-1.019-1.095 s. Its dominant measured parent is the unchanged eight-step
-world-model training schedule at 607 ms/update; reference MiniGrid stepping
-is 173 ms/update.
+The final ten-update **default CPU** recheck on this M4 Pro
+(`OMP_NUM_THREADS=MKL_NUM_THREADS=16`) is 1,901.3 FPS, with update times
+1.038-1.147 s. Its dominant measured parent is the eight-step world-model
+training schedule at 635 ms/update; reference MiniGrid stepping is
+172 ms/update. This run is slightly slower than earlier 1,970 FPS samples,
+consistent with the observed machine-state variance rather than a new
+environment/GAE cost (GAE itself is 0.12 ms/update).
 
 ### Updated H100 inference from measured utilization
 
-The final M4 run executes roughly 5.55 MFLOP/frame, or about 1.45 TFLOP per
-262,144-frame update. Its 89,881 FPS corresponds to roughly 0.50 TFLOP/s
-application-level throughput, about 7.5% of the separately measured 6.7
+The final M4 run executes roughly 5.55 MFLOP/frame. Its 114,448 FPS peak
+corresponds to roughly 0.64 TFLOP/s application-level throughput, about 9.5%
+of the separately measured 6.7
 TFLOP/s large-GEMM ceiling on this M4. The loss is caused by the 256 causal
 steps, many normalization/elementwise kernels, and optimizer/framework work,
 not environment bandwidth.
 
 **Inferred, not H100-measured:**
 
-- Applying the same 7.5% fraction to H100's 60 TFLOP/s FP32 peak gives about
-  0.8 million FPS.
+- Applying the same 9.5% fraction to H100's 60 TFLOP/s FP32 peak gives about
+  1.0 million FPS.
 - Large B makes the dominant `[B,500]@[500,500]` GEMMs viable; a competent
   eager CUDA port should therefore be in the broad **0.5-2 million FPS**
   range, depending on launch/framework efficiency.

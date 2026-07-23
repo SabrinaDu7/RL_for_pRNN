@@ -145,9 +145,17 @@ def test_device_table_pool_matches_independent_shells():
     try:
         for _episode in range(4):
             expected_obss = [shell.reset() for shell in references]
-            actual_obss, actual_pos = pool.reset_all()
+            _, actual_pos = pool.reset_all()
+            actual_images, actual_directions = pool.observation_device()
             for b in range(B):
-                _assert_observation_equal(expected_obss[b], actual_obss[b])
+                _assert_observation_equal(
+                    expected_obss[b],
+                    {
+                        "mission": pool.mission,
+                        "image": actual_images[b].numpy(),
+                        "direction": int(actual_directions[b]),
+                    },
+                )
                 assert tuple(actual_pos[b]) == references[b].get_agent_pos()
 
             for _ in range(127):

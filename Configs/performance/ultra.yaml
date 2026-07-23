@@ -10,9 +10,7 @@
 # curve/science gate before production experiments.
 
 exp:
-    num_envs: 512
-    async_envs: False
-    table_env: True
+    num_envs: 1024
     device_env: True
 
 predNet:
@@ -20,5 +18,5 @@ predNet:
     batched_curiosity: True
 
 rl:
-    frames: 131072 # num_envs * one 256-step segment
-    ppo_batch_size: 65536 # 2 minibatches/epoch, 8 Adam steps/update
+    frames: 262144 # num_envs * one 256-step segment
+    ppo_batch_size: 131072 # 2 minibatches/epoch, 8 Adam steps/update

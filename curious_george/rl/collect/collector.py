@@ -24,7 +24,7 @@ from curious_george.rl.collect.diagnostics import (
     check_large_jump,
     new_joint_probabilities,
 )
-from curious_george.rl.update.advantage import compute_gae_batched
+from curious_george.rl.update.advantage import compute_gae
 from curious_george.rl.update.rewards import (
     REWARD_ALIGNMENTS,
     compute_curious_rewards,
@@ -57,6 +57,14 @@ def _preprocess_policy_obss(obss, acmodel, preprocess_obss, device):
     return DictList({
         "direction": torch.tensor(directions, device=device, dtype=torch.uint8)
     })
+
+
+def _device_policy_obss(images, directions, acmodel):
+    """Build only the device fields consumed by the configured policy."""
+    data = {"direction": directions.to(torch.uint8)}
+    if getattr(acmodel, "with_CV", True):
+        data["image"] = images.to(torch.float32)
+    return DictList(data)
 
 
 @dataclass
@@ -93,28 +101,12 @@ class CollectorState:
     finished_frames: list = field(default_factory=list)
 
 
-def init_collector_state(envs, tracker) -> CollectorState:
-    obs_b = [env.reset() for env in envs]
-    loc_b = [_agent_pos(env) for env in envs]
-    B = len(envs)
-    return CollectorState(
-        obs_b=obs_b,
-        loc_b=loc_b,
-        mask_b=np.ones(B, dtype=np.float32),
-        sr=tracker.initial_sr(),
-        init_loc_b=[torch.tensor(loc) for loc in loc_b],
-        ep_return=[0.0] * B,
-        ep_reshaped=[0.0] * B,
-        ep_frames=[0] * B,
-    )
-
-
 @dataclass
 class CollectResult:
     exps: DictList
     logs: dict
     # flat (B*T) views kept for analysis code that reads algo attributes
-    obss: list
+    directions: np.ndarray
     locs: list
     subroom_ids: list
     actions: torch.Tensor
@@ -162,19 +154,17 @@ def collect_rollout(
                 "without the single-env intrinsic reference"
             )
 
-    diagnostics_env = (
-        pool
-        if pool is not None
-        else device_pool
-        if device_pool is not None
-        else envs[0]
-    )
+    diagnostics_env = envs if pool is not None or device_pool is not None else envs[0]
     joint = new_joint_probabilities(diagnostics_env, getattr(acmodel, "act_dim"))
 
-    obss = [[None] * T for _ in range(B)]
-    locs = [[None] * T for _ in range(B)]
+    obss = None if device_pool is not None else [[None] * T for _ in range(B)]
+    locs = None if device_pool is not None else [[None] * T for _ in range(B)]
     subroom_ids: list = []
-    done_indices_b = [[0] for _ in range(B)]
+    done_indices_b = (
+        [list(range(0, T + 1, cfg.prnn_seqdur)) for _ in range(B)]
+        if device_pool is not None
+        else [[0] for _ in range(B)]
+    )
     last_obs_b: list[list] = [[] for _ in range(B)]
 
     actions = torch.zeros((T, B), device=device, dtype=torch.int)
@@ -195,8 +185,6 @@ def collect_rollout(
         device_directions = torch.empty((T, B), dtype=torch.long, device=device)
         device_positions = torch.empty((T, B, 2), dtype=torch.long, device=device)
         device_obs = device_pool.observation_device()
-        device_segment_initial = device_pool.positions.clone()
-        device_segment_steps = 0
         device_reset_index = 0
         device_pool.prepare_resets(count=T // cfg.prnn_seqdur)
         # Each item is (post image, post direction, post position, initial
@@ -211,7 +199,9 @@ def collect_rollout(
         with timer("collect/policy_fwd"):
             with timer("collect/policy/preprocess"):
                 if device_pool is not None:
-                    preprocessed = DictList({"direction": device_obs[1]})
+                    preprocessed = _device_policy_obss(
+                        device_obs[0], device_obs[1], acmodel
+                    )
                 else:
                     preprocessed = _preprocess_policy_obss(
                         state.obs_b, acmodel, preprocess_obss, device
@@ -250,7 +240,7 @@ def collect_rollout(
 
         # --- environment stepping ----------------------------------------
         pre_obs_b = None if device_pool is not None else list(state.obs_b)
-        done_b = [False] * B
+        seq_done = cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0
         if device_pool is not None:
             with timer("collect/env_step"):
                 pre_images, pre_directions = device_obs
@@ -262,20 +252,13 @@ def collect_rollout(
                 )
                 device_obs = (post_images, post_directions)
                 rewards[t].copy_(step_rewards)
-                seq_done = (
-                    cfg.prnn_seqdur > 0
-                    and (t + 1) % cfg.prnn_seqdur == 0
-                )
-                done_b = [seq_done] * B
                 state.mask_b.fill(1 - seq_done)
-                device_segment_steps += 1
         elif pool is not None:
             with timer("collect/env_step"):
                 # one parallel step for all B envs (positions ride the infos)
                 obs_next_b, step_rewards, _, loc_next_b = pool.step(det_np)
-                seq_done = cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0
+                done_b = [seq_done] * B
                 for b in range(B):
-                    done_b[b] = seq_done
                     if check_large_jump(state.loc_b[b], loc_next_b[b]) and t % cfg.prnn_seqdur != 0:
                         print("====== DEBUG START ======")
                         print(f"Large jump detected at step {t} (env {b}): from {state.loc_b[b]} to {loc_next_b[b]}")
@@ -293,35 +276,44 @@ def collect_rollout(
                     state.mask_b[b] = 1 - seq_done
                     last_post_obs = obs_next_b[b]
         else:
-          with timer("collect/env_step"):
-            for b, env in enumerate(envs):
-                # CAREFUL: obs_next is post-action; pre_obs_b[b] is pre-action
-                obs_next, reward, terminated, truncated, _ = env.step(det_np[b:b + 1])
-                loc = _agent_pos(env)
+            done_b = [False] * B
+            with timer("collect/env_step"):
+                for b, env in enumerate(envs):
+                    # CAREFUL: obs_next is post-action; pre_obs_b[b] is pre-action
+                    obs_next, reward, terminated, truncated, _ = env.step(
+                        det_np[b : b + 1]
+                    )
+                    loc = _agent_pos(env)
 
-                done = terminated or truncated
-                if cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0:
-                    done = True
-                done_b[b] = done
+                    done = terminated or truncated
+                    if cfg.prnn_seqdur > 0 and (t + 1) % cfg.prnn_seqdur == 0:
+                        done = True
+                    done_b[b] = done
 
-                # DEBUG (historical: modulo only evaluated when a jump is seen)
-                if check_large_jump(state.loc_b[b], loc) and t % cfg.prnn_seqdur != 0:
-                    print("====== DEBUG START ======")
-                    print(f"Large jump detected at step {t} (env {b}): from {state.loc_b[b]} to {loc}")
-                    print("====== DEBUG END ======")
+                    # DEBUG (historical: modulo only evaluated when a jump is seen)
+                    if (
+                        check_large_jump(state.loc_b[b], loc)
+                        and t % cfg.prnn_seqdur != 0
+                    ):
+                        print("====== DEBUG START ======")
+                        print(
+                            f"Large jump detected at step {t} (env {b}): "
+                            f"from {state.loc_b[b]} to {loc}"
+                        )
+                        print("====== DEBUG END ======")
 
-                obss[b][t] = pre_obs_b[b]
-                locs[b][t] = state.loc_b[b]
-                rewards[t, b] = reward
+                    obss[b][t] = pre_obs_b[b]
+                    locs[b][t] = state.loc_b[b]
+                    rewards[t, b] = reward
 
-                state.ep_return[b] += reward
-                state.ep_reshaped[b] += float(reward)
-                state.ep_frames[b] += 1
+                    state.ep_return[b] += reward
+                    state.ep_reshaped[b] += float(reward)
+                    state.ep_frames[b] += 1
 
-                state.obs_b[b] = obs_next
-                state.loc_b[b] = loc
-                state.mask_b[b] = 1 - done
-                last_post_obs = obs_next
+                    state.obs_b[b] = obs_next
+                    state.loc_b[b] = loc
+                    state.mask_b[b] = 1 - done
+                    last_post_obs = obs_next
 
         # --- SR step (batched; before any reset, matching serial order) ---
         with timer("collect/sr_step"):
@@ -337,7 +329,7 @@ def collect_rollout(
         # Device episodes can only end at synchronized, Python-known seqdur
         # boundaries. No tensor value is inspected and no D2H occurs here.
         if device_pool is not None:
-            if done_b[0]:
+            if seq_done:
                 device_last_batches.append(
                     (
                         post_images.clone(),
@@ -346,28 +338,18 @@ def collect_rollout(
                         device_segment_initial.clone(),
                     )
                 )
-                for b in range(B):
-                    state.done_counter += 1
-                    state.ep_frames[b] += device_segment_steps
-                    state.finished_returns.append(state.ep_return[b])
-                    state.finished_reshaped.append(state.ep_reshaped[b])
-                    state.finished_frames.append(state.ep_frames[b])
-                    state.ep_return[b] = 0.0
-                    state.ep_reshaped[b] = 0.0
-                    state.ep_frames[b] = 0
-                    done_indices_b[b].append(t + 1)
+                # This backend rejects environment rewards/terminations, so
+                # synchronized segment statistics are known without B Python
+                # bookkeeping iterations.
+                state.done_counter += B
+                state.finished_returns.extend([0.0] * B)
+                state.finished_reshaped.extend([0.0] * B)
+                state.finished_frames.extend([cfg.prnn_seqdur] * B)
 
-                # Preserve reset order: recurrent state first, environment
-                # RNG streams second. Both resets are batched.
                 state.sr = tracker.reset_all_envs()
-                obs_reset_b, loc_reset_b = device_pool.apply_prepared_reset(
-                    index=device_reset_index
-                )
+                device_pool.apply_prepared_reset(index=device_reset_index)
                 device_reset_index += 1
-                state.obs_b = obs_reset_b
-                state.loc_b = [tuple(loc) for loc in loc_reset_b]
                 device_obs = device_pool.observation_device()
-                device_segment_steps = 0
             continue
 
         # --- per-env episode termination -----------------------------------
@@ -415,82 +397,74 @@ def collect_rollout(
                 state.loc_b[b] = loc_reset_b[b]
 
     if device_pool is not None:
-        # Materialize science/analysis views only after the rollout. These
-        # bulk transfers synchronize, but there is no barrier between any two
-        # environment transitions.
-        images_bt = device_images.permute(1, 0, 2, 3, 4).cpu().numpy()
-        meta_bt = torch.cat(
+        # Only directions and positions are needed by CPU diagnostics. Images
+        # and terminal observations stay on-device for PPO/world-model work.
+        meta_tb = torch.cat(
+            (device_directions.unsqueeze(-1), device_positions), dim=-1
+        ).cpu().numpy()
+        last_observations = [
+            {
+                "mission": device_pool.mission,
+                "image": batch[0][b],
+                "direction": batch[1][b],
+            }
+            for b in range(B)
+            for batch in device_last_batches
+        ]
+        last_batch = device_last_batches[-1]
+        dist_travelled = int(
+            (last_batch[2][-1] - last_batch[3][-1]).abs().sum().item()
+        )
+    else:
+        meta_tb = np.asarray(
             [
-                device_directions.unsqueeze(-1),
-                device_positions,
-            ],
-            dim=-1,
-        ).permute(1, 0, 2).cpu().numpy()
-        last_images = torch.stack(
-            [batch[0] for batch in device_last_batches]
-        ).permute(1, 0, 2, 3, 4).cpu().numpy()
-        last_meta = torch.stack(
-            [
-                torch.cat(
-                    [
-                        batch[1].unsqueeze(-1),
-                        batch[2],
-                        batch[3],
-                    ],
-                    dim=-1,
-                )
-                for batch in device_last_batches
-            ]
-        ).permute(1, 0, 2).cpu().numpy()
-
-        for b in range(B):
-            for t in range(T):
-                direction, x, y = meta_bt[b, t]
-                obss[b][t] = {
-                    "mission": device_pool.mission,
-                    "image": images_bt[b, t],
-                    "direction": int(direction),
-                }
-                locs[b][t] = (int(x), int(y))
-            for segment in range(last_images.shape[1]):
-                direction, x, y, init_x, init_y = last_meta[b, segment]
-                last_obs_b[b].append(
-                    {
-                        "mission": device_pool.mission,
-                        "image": last_images[b, segment],
-                        "direction": int(direction),
-                    }
-                )
-                if b == B - 1 and segment == last_images.shape[1] - 1:
-                    dist_travelled = (
-                        abs(int(x) - int(init_x))
-                        + abs(int(y) - int(init_y))
+                [
+                    (
+                        obss[b][t]["direction"],
+                        locs[b][t][0],
+                        locs[b][t][1],
                     )
+                    for b in range(B)
+                ]
+                for t in range(T)
+            ]
+        )
 
     # Policy probabilities are diagnostics-only. Keep them on the training
     # device during the recurrent rollout and transfer once here; the old path
-    # performed a second device->host copy in every timestep. Accumulation
-    # remains in historical (t, b) order for exact float32 results.
+    # performed a second device->host copy in every timestep. np.add.at uses
+    # the same historical (t, b) accumulation order without a Python loop.
     probs_np = policy_probs.cpu().numpy()
-    for t in range(T):
-        for b in range(B):
-            hd = obss[b][t]["direction"]
-            x, y = locs[b][t]
-            joint[hd, x, y, :] += probs_np[t, b]
+    np.add.at(
+        joint,
+        (
+            meta_tb[:, :, 0].reshape(-1),
+            meta_tb[:, :, 1].reshape(-1),
+            meta_tb[:, :, 2].reshape(-1),
+        ),
+        probs_np.reshape(B * T, -1),
+    )
 
     # make sure last obs is included in done indices (per env stream)
-    for b in range(B):
-        if done_indices_b[b][-1] != T:
-            done_indices_b[b].append(T)
-            last_obs_b[b].append(state.obs_b[b])
+    if device_pool is None:
+        for b in range(B):
+            if done_indices_b[b][-1] != T:
+                done_indices_b[b].append(T)
+                last_obs_b[b].append(state.obs_b[b])
 
     # --- flatten env-major: index = b*T + t --------------------------------
-    flat_obss = [obss[b][t] for b in range(B) for t in range(T)]
-    flat_locs = [locs[b][t] for b in range(B) for t in range(T)]
+    flat_obss = (
+        None
+        if device_pool is not None
+        else [obss[b][t] for b in range(B) for t in range(T)]
+    )
+    directions = meta_tb[:, :, 0].transpose(1, 0).reshape(B * T)
+    positions = meta_tb[:, :, 1:].transpose(1, 0, 2).reshape(B * T, 2)
+    flat_locs = [tuple(map(int, position)) for position in positions]
 
     if subroom_size_ is not None:
         # one batched call; (t, b) order matches the historical per-step appends
-        step_locs = np.asarray([locs[b][t] for t in range(T) for b in range(B)])
+        step_locs = meta_tb[:, :, 1:].reshape(B * T, 2)
         subroom_ids = get_subroom_id(torch.from_numpy(step_locs), subroom_size_).tolist()
 
     def flat(x):  # (T, B, ...) -> (B*T, ...)
@@ -502,15 +476,18 @@ def collect_rollout(
     f_log_probs = flat(log_probs)
     f_masks = flat(masks)
     f_SRs = flat(SRs)
-    advantages_tb = torch.zeros((T, B), device=device)
     curious_rewards = torch.zeros(B * T, device=device)
     int_rewards = torch.zeros(B * T, device=device)
 
     done_indices: list[int] = []
-    last_observations: list = []
+    if device_pool is None:
+        last_observations = []
     for b in range(B):
-        done_indices.extend(b * T + d for d in done_indices_b[b] if not (b > 0 and d == 0))
-        last_observations.extend(last_obs_b[b])
+        done_indices.extend(
+            b * T + d for d in done_indices_b[b] if not (b > 0 and d == 0)
+        )
+        if device_pool is None:
+            last_observations.extend(last_obs_b[b])
 
     # --- curiosity reward ---------------------------------------------------
     actions_np = None
@@ -548,7 +525,7 @@ def collect_rollout(
 
     # --- bootstrap value + GAE per env stream -------------------------------
     if device_pool is not None:
-        preprocessed = DictList({"direction": device_obs[1]})
+        preprocessed = _device_policy_obss(device_obs[0], device_obs[1], acmodel)
     else:
         preprocessed = _preprocess_policy_obss(
             state.obs_b, acmodel, preprocess_obss, device
@@ -556,8 +533,7 @@ def collect_rollout(
     with torch.no_grad():
         _, next_values = acmodel(preprocessed, SR=state.sr)
     with timer("collect/gae"):
-        compute_gae_batched(
-            advantages=advantages_tb,
+        advantages_tb = compute_gae(
             rewards=rewards,
             int_rewards=int_rewards.reshape(B, T).transpose(0, 1),
             curious_rewards=curious_rewards.reshape(B, T).transpose(0, 1),
@@ -640,7 +616,7 @@ def collect_rollout(
     return CollectResult(
         exps=exps,
         logs=logs,
-        obss=flat_obss,
+        directions=directions,
         locs=flat_locs,
         subroom_ids=subroom_ids,
         actions=f_actions,

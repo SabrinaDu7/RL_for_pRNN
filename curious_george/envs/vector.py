@@ -265,9 +265,6 @@ class DeviceTableShellPool:
         self.observation_space = eval_shell.observation_space
         self.positions = torch.empty((self.B, 2), dtype=torch.long, device=self.device)
         self.directions = torch.empty(self.B, dtype=torch.long, device=self.device)
-        self.step_counts = torch.empty(self.B, dtype=torch.long, device=self.device)
-        self._prepared_obss: list[list] = []
-        self._prepared_positions_np: list[np.ndarray] = []
         self._prepared_positions: torch.Tensor | None = None
         self._prepared_directions: torch.Tensor | None = None
 
@@ -294,7 +291,8 @@ class DeviceTableShellPool:
 
     def reset_all(self) -> tuple[list, np.ndarray]:
         """Continue each CPU shell's RNG stream and upload only reset state."""
-        obss = [shell.reset() for shell in self._training_shells]
+        for shell in self._training_shells:
+            shell.reset()
         positions = np.asarray(
             [wrapper.unwrapped.agent_pos for wrapper in self._wrappers],
             dtype=np.int64,
@@ -305,18 +303,19 @@ class DeviceTableShellPool:
         )
         self.positions.copy_(torch.as_tensor(positions, device=self.device))
         self.directions.copy_(torch.as_tensor(directions, device=self.device))
-        self.step_counts.zero_()
-        return obss, positions
+        # BatchedSRTracker only needs the stream count; policy/pRNN inputs come
+        # directly from observation_device().
+        return [None] * self.B, positions
 
     def prepare_resets(self, *, count: int) -> None:
         """Precompute and upload the finite reset schedule before rollout."""
         if count <= 0:
             raise ValueError("prepared reset count must be positive")
-        self._prepared_obss = []
-        self._prepared_positions_np = []
+        position_rows = []
         directions_rows = []
         for _ in range(count):
-            obss = [shell.reset() for shell in self._training_shells]
+            for shell in self._training_shells:
+                shell.reset()
             positions = np.asarray(
                 [wrapper.unwrapped.agent_pos for wrapper in self._wrappers],
                 dtype=np.int64,
@@ -325,31 +324,26 @@ class DeviceTableShellPool:
                 [wrapper.unwrapped.agent_dir for wrapper in self._wrappers],
                 dtype=np.int64,
             )
-            self._prepared_obss.append(obss)
-            self._prepared_positions_np.append(positions)
+            position_rows.append(positions)
             directions_rows.append(directions)
 
         self._prepared_positions = torch.as_tensor(
-            np.stack(self._prepared_positions_np), device=self.device
+            np.stack(position_rows), device=self.device
         )
         self._prepared_directions = torch.as_tensor(
             np.stack(directions_rows), device=self.device
         )
 
-    def apply_prepared_reset(
-        self, *, index: int
-    ) -> tuple[list, np.ndarray]:
+    def apply_prepared_reset(self, *, index: int) -> None:
         """Select an already resident reset row without any host transfer."""
         if (
             self._prepared_positions is None
             or self._prepared_directions is None
-            or not 0 <= index < len(self._prepared_obss)
+            or not 0 <= index < self._prepared_positions.shape[0]
         ):
             raise IndexError(f"prepared reset {index} is unavailable")
         self.positions.copy_(self._prepared_positions[index])
         self.directions.copy_(self._prepared_directions[index])
-        self.step_counts.zero_()
-        return self._prepared_obss[index], self._prepared_positions_np[index]
 
     def step_device(
         self, *, actions: torch.Tensor
@@ -369,7 +363,6 @@ class DeviceTableShellPool:
         ]
         self.positions.copy_(next_rows[:, :2])
         self.directions.copy_(next_rows[:, 2])
-        self.step_counts.add_(1)
         images, directions = self.observation_device()
         return images, directions, self._zero_rewards
 
