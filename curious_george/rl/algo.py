@@ -29,7 +29,6 @@ from curious_george.rl.collect.collector import (
     RolloutConfig,
     collect_rollout,
     get_dist_travelled,
-    init_collector_state,
 )
 from curious_george.rl.collect.diagnostics import LocationStats
 from curious_george.rl.update.losses import LOSSES
@@ -122,13 +121,16 @@ class PredictivePPOAlgo:
         loss="ppo_clip",
         batched_wm=False,  # appended last: positional callers exist (tests)
         cuda_graph=False,
+        batched_curiosity=False,
     ):
         # env may be a single shell, a list of shells (parallel collection),
-        # or an AsyncShellPool (process-parallel collection)
-        from curious_george.envs.vector import AsyncShellPool
+        # or a batched shell pool (process-parallel or device-resident)
+        from curious_george.envs.vector import AsyncShellPool, DeviceTableShellPool
 
         self.is_async = isinstance(env, AsyncShellPool)
-        if self.is_async:
+        self.is_device_env = isinstance(env, DeviceTableShellPool)
+        self.is_pool = self.is_async or self.is_device_env
+        if self.is_pool:
             self.envs = env
             self.env = env.eval_shell  # shell services (encodeAction, grid, ...)
         else:
@@ -171,7 +173,13 @@ class PredictivePPOAlgo:
                 assert T % prnn_seqdur == 0, "per-env T must divide by prnn_seqdur"
 
         self.adapter = (
-            PRNNAdapter(self.pN, self.device, pastSR, cuda_graph=cuda_graph)
+            PRNNAdapter(
+                self.pN,
+                self.device,
+                pastSR,
+                cuda_graph=cuda_graph,
+                batched_curiosity=batched_curiosity,
+            )
             if self.pN
             else None
         )
@@ -180,7 +188,9 @@ class PredictivePPOAlgo:
         if hasattr(self.env, "loc_mask"):
             self.loc_mask = self.env.loc_mask
         else:
-            self.loc_mask = [x == None or x.can_overlap() for x in self.env.grid.grid]
+            self.loc_mask = [
+                x is None or x.can_overlap() for x in self.env.grid.grid
+            ]
 
         assert self.acmodel.recurrent or self.recurrence == 1
         assert self.num_frames % self.recurrence == 0
@@ -193,7 +203,7 @@ class PredictivePPOAlgo:
         # Rollout machinery (env resets + initial SR happen here, in the
         # same order as the historical constructor: reset then init_SR)
         self.tracker = None
-        if self.is_async:
+        if self.is_pool:
             self._first_obs, first_locs = self.envs.reset_all()
             loc_b = [loc for loc in first_locs]
         else:

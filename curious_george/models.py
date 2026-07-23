@@ -3,7 +3,6 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 import torch_ac
 
@@ -80,7 +79,7 @@ class ACModel(nn.Module, torch_ac.ACModel):
             embedding = x
 
         x = self.actor(embedding)
-        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        dist = Categorical(logits=x)
 
         x = self.critic(embedding)
         value = x.squeeze(1)
@@ -154,10 +153,9 @@ class ACModelSR(ACModel):
                 embedding = SR
 
         x = self.actor(embedding)
-        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        dist = Categorical(logits=x)
 
         x = self.critic(embedding)
         value = x.squeeze(1)
 
         return dist, value
-

@@ -125,6 +125,28 @@ def test_next_obs_respects_episode_boundaries(episode_stream):
     assert torch.isfinite(nxt).all()
 
 
+@pytest.mark.parametrize("offset", (0, 1))
+def test_batched_curiosity_matches_serial_without_stochasticity(
+    episode_stream, offset
+):
+    serial, obss, acts, last_obs = episode_stream
+    batched = PRNNAdapter(
+        serial.pN,
+        torch.device("cpu"),
+        pastSR=True,
+        batched_curiosity=True,
+    )
+    obss_2 = obss + obss
+    acts_2 = np.concatenate([acts, acts])
+    dones = [0, L, 2 * L]
+    lasts = [last_obs, last_obs]
+
+    expected = _mses(serial, obss_2, acts_2, dones, lasts, offset)
+    actual = _mses(batched, obss_2, acts_2, dones, lasts, offset)
+
+    assert torch.allclose(actual, expected, atol=1e-5)
+
+
 # ---------------------------------------------------------------------------
 # pastSR / action-encoding conventions
 # ---------------------------------------------------------------------------

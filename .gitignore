@@ -16,5 +16,6 @@ omt-*/
 wandb/*
 outputs/
 docs/*
+!docs/throughput_investigation_2026-07-23.md
 storage/*
 tests/perf/results/*.prof

@@ -5,3 +5,5 @@ opt_return: 0.85 # Optimal return for the environment
 start_rand: True # Whether to randomize the agent start position
 door_poss: [1, 5, 3, 4,]
 start_room: 1
+table_env: False # True: exact static L-room transition/observation tables; rejects unsupported mutable layouts
+device_env: False # True: one GPU/MPS-resident batched table state machine; implies table_env, requires num_envs>1 and synchronized seqdur cuts

@@ -1,0 +1,24 @@
+# @package _global_
+#
+# Measured high-throughput preset for static L-room pRNN training.
+# Usage:
+#   ... performance=ultra
+#
+# Device transition/formatting is trajectory-equivalent to the CPU table path
+# (tests/test_device_collector.py). The pooled world-model step and larger PPO
+# minibatch intentionally change optimizer semantics and require a learning-
+# curve/science gate before production experiments.
+
+exp:
+    num_envs: 512
+    async_envs: False
+    table_env: True
+    device_env: True
+
+predNet:
+    batched_wm: True
+    batched_curiosity: True
+
+rl:
+    frames: 131072 # num_envs * one 256-step segment
+    ppo_batch_size: 65536 # 2 minibatches/epoch, 8 Adam steps/update

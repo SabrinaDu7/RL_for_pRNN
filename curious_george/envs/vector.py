@@ -21,11 +21,10 @@ env transitions are deterministic given actions.
 
 import gymnasium as gym
 import numpy as np
+import torch
 from gymnasium import spaces
 from gymnasium.core import ObservationWrapper, Wrapper
-from minigrid.wrappers import FullyObsWrapper, RGBImgPartialObsWrapper_HD
-
-from curious_george.utils.enums import AgentInputType
+from minigrid.wrappers import FullyObsWrapper
 
 
 class DropMission(ObservationWrapper):
@@ -83,9 +82,17 @@ def _make_worker_thunk(cfg, seed_offset: int):
         if input_type == "Visual_FO":
             env = FullyObsWrapper(env)
         elif "pRNN" in input_type or "PO" in input_type:
-            from curious_george.envs.obs_bank import BankedRGBPartialObsWrapper
+            from curious_george.envs.obs_bank import (
+                BankedRGBPartialObsWrapper,
+                TableDrivenRGBPartialObsWrapper,
+            )
 
-            env = BankedRGBPartialObsWrapper(env, tile_size=1)
+            wrapper_cls = (
+                TableDrivenRGBPartialObsWrapper
+                if cfg.exp.get("table_env", False)
+                else BankedRGBPartialObsWrapper
+            )
+            env = wrapper_cls(env, tile_size=1)
         else:
             raise ValueError(f"async envs not supported for input_type={input_type}")
         env.reset(seed=seed)
@@ -175,3 +182,197 @@ class AsyncShellPool:
 
     def close(self) -> None:
         self.envs.close()
+
+
+class DeviceTableShellPool:
+    """One batched static L-room state machine resident on the train device.
+
+    The ordinary list-of-envs path requires a device-to-host action copy and
+    then runs ``B`` Python ``env.step`` calls at every timestep.  This pool
+    stores ``(x, y, direction)`` for all streams in tensors and applies the
+    same exhaustive transition table with one advanced-indexing operation.
+
+    CPU shells produce the independently seeded reset schedule before each
+    rollout; all reset rows are uploaded together. The supported training
+    layout has no environment-triggered reward/termination, so no tensor value
+    has to be inspected by Python inside the transition loop.
+    """
+
+    def __init__(
+        self, *, training_shells: list, eval_shell, device: torch.device
+    ):
+        from curious_george.envs.obs_bank import TableDrivenRGBPartialObsWrapper
+
+        if len(training_shells) < 2:
+            raise ValueError("device_env is a batched path and requires num_envs > 1")
+
+        wrappers = []
+        for shell in training_shells:
+            wrapper = shell.env
+            if not isinstance(wrapper, TableDrivenRGBPartialObsWrapper):
+                raise ValueError(
+                    "device_env requires TableDrivenRGBPartialObsWrapper; "
+                    "enable the static table environment"
+                )
+            wrapper._ensure_bank()
+            wrappers.append(wrapper)
+
+        reference = wrappers[0]
+        for wrapper in wrappers[1:]:
+            if (
+                wrapper._fingerprint != reference._fingerprint
+                or not np.array_equal(wrapper._next_state, reference._next_state)
+                or not np.array_equal(wrapper._bank, reference._bank)
+            ):
+                raise ValueError(
+                    "device_env requires every stream to share one static grid"
+                )
+
+        if np.any(reference._rewarding) or np.any(reference._terminated):
+            raise ValueError(
+                "device_env currently requires a transition table with no "
+                "environment-triggered rewards/terminations; synchronized "
+                "prnn_seqdur episode cuts remain supported"
+            )
+
+        self.B = len(training_shells)
+        self.eval_shell = eval_shell
+        self._training_shells = training_shells
+        self._wrappers = wrappers
+        self.device = torch.device(device)
+        self._mission = reference.unwrapped.mission
+
+        # Copy read-only NumPy banks before torch takes ownership. State table
+        # is tiny; the uint8 observation bank is only ~150 KiB for 16x16.
+        self.next_state = torch.tensor(
+            np.array(reference._next_state),
+            dtype=torch.long,
+            device=self.device,
+        )
+        self.obs_bank = torch.tensor(
+            np.array(reference._bank),
+            dtype=torch.uint8,
+            device=self.device,
+        )
+        self._zero_rewards = torch.zeros(self.B, device=self.device)
+
+        # Static shell services used by setup/diagnostics.
+        self.numHDs = eval_shell.numHDs
+        self.width = eval_shell.width
+        self.height = eval_shell.height
+        self.obs_shape = eval_shell.obs_shape
+        self.action_space = eval_shell.action_space
+        self.observation_space = eval_shell.observation_space
+        self.positions = torch.empty((self.B, 2), dtype=torch.long, device=self.device)
+        self.directions = torch.empty(self.B, dtype=torch.long, device=self.device)
+        self.step_counts = torch.empty(self.B, dtype=torch.long, device=self.device)
+        self._prepared_obss: list[list] = []
+        self._prepared_positions_np: list[np.ndarray] = []
+        self._prepared_positions: torch.Tensor | None = None
+        self._prepared_directions: torch.Tensor | None = None
+
+    def __len__(self) -> int:
+        return self.B
+
+    def __getitem__(self, i: int):
+        if i == 0:
+            return self.eval_shell
+        raise IndexError(
+            "DeviceTableShellPool: only [0] (the eval shell) is addressable"
+        )
+
+    @property
+    def mission(self) -> str:
+        return self._mission
+
+    def observation_device(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return image uint8 ``(B,H,W,C)`` and direction int64 ``(B,)``."""
+        images = self.obs_bank[
+            self.positions[:, 0], self.positions[:, 1], self.directions
+        ]
+        return images, self.directions
+
+    def reset_all(self) -> tuple[list, np.ndarray]:
+        """Continue each CPU shell's RNG stream and upload only reset state."""
+        obss = [shell.reset() for shell in self._training_shells]
+        positions = np.asarray(
+            [wrapper.unwrapped.agent_pos for wrapper in self._wrappers],
+            dtype=np.int64,
+        )
+        directions = np.asarray(
+            [wrapper.unwrapped.agent_dir for wrapper in self._wrappers],
+            dtype=np.int64,
+        )
+        self.positions.copy_(torch.as_tensor(positions, device=self.device))
+        self.directions.copy_(torch.as_tensor(directions, device=self.device))
+        self.step_counts.zero_()
+        return obss, positions
+
+    def prepare_resets(self, *, count: int) -> None:
+        """Precompute and upload the finite reset schedule before rollout."""
+        if count <= 0:
+            raise ValueError("prepared reset count must be positive")
+        self._prepared_obss = []
+        self._prepared_positions_np = []
+        directions_rows = []
+        for _ in range(count):
+            obss = [shell.reset() for shell in self._training_shells]
+            positions = np.asarray(
+                [wrapper.unwrapped.agent_pos for wrapper in self._wrappers],
+                dtype=np.int64,
+            )
+            directions = np.asarray(
+                [wrapper.unwrapped.agent_dir for wrapper in self._wrappers],
+                dtype=np.int64,
+            )
+            self._prepared_obss.append(obss)
+            self._prepared_positions_np.append(positions)
+            directions_rows.append(directions)
+
+        self._prepared_positions = torch.as_tensor(
+            np.stack(self._prepared_positions_np), device=self.device
+        )
+        self._prepared_directions = torch.as_tensor(
+            np.stack(directions_rows), device=self.device
+        )
+
+    def apply_prepared_reset(
+        self, *, index: int
+    ) -> tuple[list, np.ndarray]:
+        """Select an already resident reset row without any host transfer."""
+        if (
+            self._prepared_positions is None
+            or self._prepared_directions is None
+            or not 0 <= index < len(self._prepared_obss)
+        ):
+            raise IndexError(f"prepared reset {index} is unavailable")
+        self.positions.copy_(self._prepared_positions[index])
+        self.directions.copy_(self._prepared_directions[index])
+        self.step_counts.zero_()
+        return self._prepared_obss[index], self._prepared_positions_np[index]
+
+    def step_device(
+        self, *, actions: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Apply ``B`` transitions without a device-to-host copy or sync.
+
+        Returns post-step images, directions, and the reusable all-zero reward
+        vector. Episode cuts are owned by the collector's known Python
+        timestep, not by data-dependent device control flow.
+        """
+        actions = actions.to(dtype=torch.long)
+        next_rows = self.next_state[
+            self.positions[:, 0],
+            self.positions[:, 1],
+            self.directions,
+            actions,
+        ]
+        self.positions.copy_(next_rows[:, :2])
+        self.directions.copy_(next_rows[:, 2])
+        self.step_counts.add_(1)
+        images, directions = self.observation_device()
+        return images, directions, self._zero_rewards
+
+    def close(self) -> None:
+        for shell in self._training_shells:
+            shell.env.close()

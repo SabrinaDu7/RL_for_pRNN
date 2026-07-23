@@ -60,3 +60,52 @@ def compute_gae(
         adv[i] = next_adv
 
     advantages.copy_(torch.from_numpy(adv).to(advantages.device))
+
+
+def compute_gae_batched(
+    *,
+    advantages: torch.Tensor,
+    rewards: torch.Tensor,
+    int_rewards: torch.Tensor,
+    curious_rewards: torch.Tensor,
+    values: torch.Tensor,
+    masks: torch.Tensor,
+    final_next_values: torch.Tensor,
+    final_masks: np.ndarray,
+    discount: float,
+    gae_lambda: float,
+    k_int: float,
+    k_curious: float,
+) -> None:
+    """Batched equivalent of :func:`compute_gae` for ``(T, B)`` tensors.
+
+    The old collector called ``compute_gae`` B times, causing five
+    device-to-host transfers per environment. This transfers each rollout
+    tensor once, performs the same reverse recurrence vectorized across B,
+    and uploads the complete advantage array once.
+    """
+    rewards_np = rewards.detach().cpu().numpy()
+    int_np = int_rewards.detach().cpu().numpy()
+    cur_np = curious_rewards.detach().cpu().numpy()
+    values_np = values.detach().cpu().numpy()
+    masks_np = masks.detach().cpu().numpy()
+    final_values_np = final_next_values.detach().cpu().numpy()
+
+    next_values = np.empty_like(values_np)
+    next_values[:-1] = values_np[1:]
+    next_values[-1] = final_values_np
+    next_masks = np.empty_like(masks_np)
+    next_masks[:-1] = masks_np[1:]
+    next_masks[-1] = np.asarray(final_masks, dtype=masks_np.dtype)
+
+    reward_term = rewards_np + k_int * int_np + k_curious * cur_np
+    deltas = reward_term + np.float32(discount) * next_values * next_masks - values_np
+    decay = np.float32(discount * gae_lambda) * next_masks
+
+    adv = np.empty_like(deltas)
+    next_adv = np.zeros(values_np.shape[1], dtype=values_np.dtype)
+    for i in range(values_np.shape[0] - 1, -1, -1):
+        next_adv = deltas[i] + decay[i] * next_adv
+        adv[i] = next_adv
+
+    advantages.copy_(torch.from_numpy(adv).to(advantages.device))
