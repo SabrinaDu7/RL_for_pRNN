@@ -6,6 +6,8 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=16G
 #SBATCH --constraint=sapphire
+#SBATCH --exclusive     # whole node, no neighbours
+
 # CPU-only on purpose: async_bench_10111153 measured CUDA at 558 FPS with the
 # GPU ~91% idle vs 674 FPS on 16 CPUs (docs/perf_log.md cluster verdicts).
 # sapphire constraint: Sapphire Rapids nodes (cn-m001 class) run this at
