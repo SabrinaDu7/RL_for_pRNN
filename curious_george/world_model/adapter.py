@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from prnn.utils import PredictiveNet
+from curious_george.utils.timing import timer
 
 FORWARD_IDX = 2  # ActionEncodings.forwardIDX - the action bit SpeedHD keeps
 
@@ -32,8 +33,14 @@ def flat_obs_rows(obs_dicts) -> torch.Tensor:
     Bitwise-equal to env2pred's per-dict get_visual loop + /255, with one
     numpy stack instead of N Python-level reshapes/copies.
     """
-    imgs = np.stack([o["image"] for o in obs_dicts])
-    return torch.from_numpy(imgs.reshape(len(obs_dicts), -1)).to(torch.float32) / 255
+    images = [obs["image"] for obs in obs_dicts]
+    if torch.is_tensor(images[0]):
+        return torch.stack(images).reshape(len(images), -1).to(torch.float32) / 255
+    stacked = np.stack(images)
+    return (
+        torch.from_numpy(stacked.reshape(len(images), -1)).to(torch.float32)
+        / 255
+    )
 
 
 def encode_speed_hd_rows(act_np, hd_np, num_acts: int, num_hd: int) -> torch.Tensor:
@@ -249,6 +256,7 @@ class PRNNAdapter:
         device: torch.device,
         pastSR: bool,
         cuda_graph: bool = False,
+        batched_curiosity: bool = False,
     ):
         self.pN = predictive_net
         self.device = device
@@ -271,6 +279,7 @@ class PRNNAdapter:
         # lazily on first use so weights are already on-device.
         self.cuda_graph = bool(cuda_graph) and self.device.type == "cuda"
         self._graph_trainer: _GraphWMSegmentTrainer | None = None
+        self.batched_curiosity = bool(batched_curiosity)
 
     def seq2pred(self, obs_dicts, act_np):
         """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item
@@ -366,6 +375,24 @@ class PRNNAdapter:
           no boundary special case.
         """
         assert target_offset in (0, 1)
+        segment_lengths = np.diff(done_indices)
+        can_batch = (
+            self.batched_curiosity
+            and self.fast_speedhd
+            and not self.theta
+            and len(segment_lengths) > 1
+            and np.all(segment_lengths == segment_lengths[0])
+        )
+        if can_batch:
+            return self._prediction_mses_batched(
+                obss,
+                actions_np,
+                done_indices,
+                last_observations,
+                num_frames,
+                target_offset,
+            )
+
         with torch.no_grad():
             MSEs = torch.zeros(num_frames, device=self.device)
 
@@ -381,6 +408,151 @@ class PRNNAdapter:
                 MSEs[start_episode:end_episode] = errors
 
         return MSEs
+
+    def _prediction_mses_batched(
+        self,
+        obss: list,
+        actions_np: np.ndarray,
+        done_indices: list[int],
+        last_observations: list,
+        num_frames: int,
+        target_offset: int,
+    ) -> torch.Tensor:
+        """One full-sequence pRNN forward for all equal-length segments.
+
+        This preserves the per-row computation but changes dropout/noise RNG
+        ordering relative to serial segment calls. It is therefore explicitly
+        flag-gated for high-throughput runs; with stochasticity disabled the
+        result matches serial forwards to normal float32 reduction tolerance.
+        """
+        with timer("collect/curious/format"):
+            obs_rows = []
+            act_rows = []
+            for idx in range(1, len(done_indices)):
+                start, end = done_indices[idx - 1], done_indices[idx]
+                acts_ep = actions_np[start:end]
+                last_obs = last_observations[idx - 1]
+                if target_offset == 0:
+                    acts_now = acts_ep
+                    obs_now = list(obss[start:end]) + [last_obs]
+                else:
+                    acts_now = np.append(acts_ep, 0)
+                    obs_now = list(obss[start:end]) + [last_obs, last_obs]
+
+                obs_formatted, act_formatted = self.seq2pred(obs_now, acts_now)
+                if target_offset == 1:
+                    act_formatted[:, -1, :] = 0
+                obs_rows.append(obs_formatted[0])
+                act_rows.append(act_formatted[0])
+
+            obs_b = torch.stack(obs_rows).to(self.device)
+            act_b = torch.stack(act_rows).to(self.device)
+        with timer("collect/curious/predict"):
+            with torch.no_grad():
+                obs_pred, obs_next, _ = self.pN.predict(
+                    obs_b, act_b, batched=True
+                )
+        with timer("collect/curious/error"):
+            # Batched masked-pRNN layout is (phase=1, L, X, B).
+            errors = ((obs_pred - obs_next) ** 2).mean(dim=2)[0].transpose(0, 1)
+            errors = errors[:, target_offset:]
+
+        MSEs = torch.zeros(num_frames, device=self.device)
+        for b, (start, end) in enumerate(
+            zip(done_indices[:-1], done_indices[1:])
+        ):
+            MSEs[start:end] = errors[b]
+        return MSEs
+
+    def prediction_mses_device(
+        self,
+        *,
+        images_tb: torch.Tensor,
+        directions_tb: torch.Tensor,
+        actions_tb: torch.Tensor,
+        last_batches: list[tuple[torch.Tensor, ...]],
+        target_offset: int,
+    ) -> torch.Tensor:
+        """Batched curiosity directly from device-resident rollout tensors.
+
+        ``images_tb`` and friends are in collector order ``(T,B,...)``;
+        recurrent segments are presented to pRNN in env-major order, exactly
+        matching the ordinary ``done_indices`` path. No observation/action
+        round-trip through NumPy or Python dictionaries is required.
+        """
+        assert target_offset in (0, 1)
+        assert self.fast_speedhd and not self.theta
+        T, B = actions_tb.shape
+        segments = len(last_batches)
+        if segments == 0 or T % segments:
+            raise ValueError("device curiosity requires equal closed segments")
+        L = T // segments
+        N = B * segments
+
+        with timer("collect/curious/format"):
+            images = (
+                images_tb.permute(1, 0, 2, 3, 4)
+                .reshape(N, L, -1)
+                .to(torch.float32)
+                / 255
+            )
+            directions = (
+                directions_tb.permute(1, 0).reshape(N, L).long()
+            )
+            actions = actions_tb.permute(1, 0).reshape(N, L).long()
+            last_images = (
+                torch.stack([batch[0] for batch in last_batches])
+                .permute(1, 0, 2, 3, 4)
+                .reshape(N, 1, -1)
+                .to(torch.float32)
+                / 255
+            )
+
+            if target_offset == 0:
+                obs_b = torch.cat([images, last_images], dim=1)
+                act_b = torch.zeros(
+                    (N, L, self.num_acts + self.num_hd),
+                    dtype=torch.int64,
+                    device=images.device,
+                )
+                act_b[:, :, FORWARD_IDX] = (
+                    actions == FORWARD_IDX
+                ).to(torch.int64)
+                act_b.scatter_(
+                    2,
+                    (self.num_acts + directions).unsqueeze(-1),
+                    1,
+                )
+            else:
+                obs_b = torch.cat(
+                    [images, last_images, last_images], dim=1
+                )
+                act_b = torch.zeros(
+                    (N, L + 1, self.num_acts + self.num_hd),
+                    dtype=torch.int64,
+                    device=images.device,
+                )
+                act_b[:, :L, FORWARD_IDX] = (
+                    actions == FORWARD_IDX
+                ).to(torch.int64)
+                act_b[:, :L].scatter_(
+                    2,
+                    (self.num_acts + directions).unsqueeze(-1),
+                    1,
+                )
+
+        with timer("collect/curious/predict"):
+            with torch.no_grad():
+                obs_pred, obs_next, _ = self.pN.predict(
+                    obs_b, act_b, batched=True
+                )
+        with timer("collect/curious/error"):
+            errors = (
+                ((obs_pred - obs_next) ** 2)
+                .mean(dim=2)[0]
+                .transpose(0, 1)[:, target_offset:]
+            )
+            return errors.reshape(B, segments, L).reshape(B * T)
 
     def episode_prediction_rows(
         self,
@@ -477,21 +649,38 @@ class PRNNAdapter:
         with one step on the pooled gradient (optimization-semantics change -
         flag-gated via predNet.batched_wm, curve-gate before defaulting on).
         Requires fast_speedhd and equal segment lengths (callers check)."""
-        obs_rows, act_rows = [], []
-        for idx in range(1, len(done_indices)):
-            s, e = done_indices[idx - 1], done_indices[idx]
-            obs, act = self._episode_tensors(
-                exps.obs.image[s:e],
-                exps.obs.direction[s:e],
-                exps.action[s:e].detach().cpu().numpy(),
-                last_observations[idx - 1],
-            )
-            obs_rows.append(obs)
-            act_rows.append(act)
+        with timer("update/wm/format"):
+            B = len(done_indices) - 1
+            L = done_indices[1] - done_indices[0]
+            images = exps.obs.image.reshape(B, L, -1)
+            directions = exps.obs.direction.reshape(B, L).long()
+            actions = exps.action.reshape(B, L).long()
 
-        obs_b = torch.stack(obs_rows).to(self.device)  # (B, L+1, X)
-        act_b = torch.stack(act_rows).to(self.device)  # (B, L, A)
-        _, _, _ = self.pN.trainStep(obs_b, act_b, batched=True)
+            last_images = flat_obs_rows(last_observations).to(
+                device=self.device, dtype=torch.float32
+            )
+            obs_b = torch.cat(
+                [images.to(torch.float32) / 255, last_images[:, None, :]], dim=1
+            )
+
+            act_b = torch.zeros(
+                (B, L, self.num_acts + self.num_hd),
+                dtype=torch.int64,
+                device=self.device,
+            )
+            act_b[:, :, FORWARD_IDX] = (actions == FORWARD_IDX).to(torch.int64)
+            act_b.scatter_(
+                2,
+                (self.num_acts + directions).unsqueeze(-1),
+                1,
+            )
+            # The speed channel is already zero when the action is the
+            # segment-start sentinel (-1).  The former ``if no_action.any()``
+            # converted a device scalar to a Python bool and synchronized the
+            # whole GPU for a branch that never changed the tensor.
+
+        with timer("update/wm/train_step"):
+            _, _, _ = self.pN.trainStep(obs_b, act_b, batched=True)
         self.pN.numTrainingEpochs += 1
 
 
@@ -560,11 +749,12 @@ class BatchedSRTrackerShim:
         obs_src = pre_obss if self.adapter.pastSR else post_obss
         if self.adapter.fast_speedhd:
             # one batched conversion (bitwise-equal to the per-env env2pred loop)
-            obs_x = flat_obs_rows(obs_src).to(self.adapter.device)
-            act_x = encode_speed_hd_rows(
-                det_np, [o["direction"] for o in obs_src],
-                self.adapter.num_acts, self.adapter.num_hd,
-            ).to(self.adapter.device)
+            with timer("collect/sr/format_and_transfer"):
+                obs_x = flat_obs_rows(obs_src).to(self.adapter.device)
+                act_x = encode_speed_hd_rows(
+                    det_np, [o["direction"] for o in obs_src],
+                    self.adapter.num_acts, self.adapter.num_hd,
+                ).to(self.adapter.device)
         else:
             obs_rows, act_rows = [], []
             for b, obs in enumerate(obs_src):
@@ -573,14 +763,46 @@ class BatchedSRTrackerShim:
                 act_rows.append(a_x[:, 0, :])
             obs_x = torch.cat(obs_rows, dim=0).to(self.adapter.device)
             act_x = torch.cat(act_rows, dim=0).to(self.adapter.device)
-        return self.tracker.step(obs_x, act_x).clone()
+        with timer("collect/sr/recurrent"):
+            return self.tracker.step(obs_x, act_x).clone()
+
+    def step_device(
+        self,
+        *,
+        actions: torch.Tensor,
+        images: torch.Tensor,
+        directions: torch.Tensor,
+    ) -> torch.Tensor:
+        """Device-native SpeedHD formatting and one batched recurrent step."""
+        if not self.adapter.fast_speedhd:
+            raise ValueError("device_env currently requires SpeedHD encoding")
+        with timer("collect/sr/format_and_transfer"):
+            obs_x = images.reshape(images.shape[0], -1).to(torch.float32) / 255
+            act_x = torch.zeros(
+                (images.shape[0], self.adapter.num_acts + self.adapter.num_hd),
+                dtype=torch.int64,
+                device=images.device,
+            )
+            act_x[:, FORWARD_IDX] = (actions == FORWARD_IDX).to(torch.int64)
+            act_x.scatter_(
+                1,
+                (self.adapter.num_acts + directions.long()).unsqueeze(1),
+                1,
+            )
+        with timer("collect/sr/recurrent"):
+            return self.tracker.step_synchronized(
+                obs_x=obs_x, act_x=act_x
+            ).clone()
 
     def reset_env(self, b: int, current_obs) -> torch.Tensor:
         self.tracker.reset_env(b)
         return torch.zeros((1, self.adapter.pN.hidden_size), device=self.adapter.device)
 
+    def reset_all_envs(self) -> torch.Tensor:
+        self.tracker.reset_all()
+        return self.tracker.sr().clone()
+
     def end_rollout(self) -> None:
-        self.adapter.reset_state()
         self.tracker.reset_all()
 
 
@@ -641,26 +863,61 @@ class BatchedSRTracker:
         """Current SRs, shape (B, hidden_size) (trimmed to pN.hidden_size)."""
         return self.state[:, 0, : self.pN.hidden_size]
 
+    def _input_and_noise(self, obs_x, act_x):
+        x = torch.cat((obs_x, act_x), dim=1).permute(1, 0)[None, None]
+        noise = self.pN.pRNN.generate_noise(
+            self.pN.trainNoiseMeanStd,
+            (1, 1, self.hidden_size, self.B),
+        ).to(self.device)
+        return x, noise
+
+    def _run_cell(self, x, noise) -> torch.Tensor:
+        with timer("collect/sr/cell"):
+            with torch.no_grad():
+                _, state = self.pN.pRNN.rnn(
+                    x, internal=noise, state=self.state, batched=True
+                )
+        self.state = state[0].unsqueeze(1)
+        return self.sr()
+
     def step(self, obs_x: torch.Tensor, act_x: torch.Tensor) -> torch.Tensor:
         """One batched step. obs_x (B, obs_size), act_x (B, act_size) -
         the single-timestep rows produced by env2pred per env.
         Returns the new SRs, shape (B, pN.hidden_size).
         """
-        pRNN = self.pN.pRNN
-        obs_m = torch.as_tensor(self.in_mask[self.phases], dtype=obs_x.dtype, device=self.device)
-        act_m = torch.as_tensor(self.act_mask[self.phases], dtype=act_x.dtype, device=self.device)
-        obs_x = obs_x * obs_m[:, None]
-        act_x = act_x * act_m[:, None]
-        self.phases = (self.phases + 1) % self.phase_k
+        with timer("collect/sr/mask_noise"):
+            obs_m = torch.as_tensor(
+                self.in_mask[self.phases], dtype=obs_x.dtype, device=self.device
+            )
+            act_m = torch.as_tensor(
+                self.act_mask[self.phases], dtype=act_x.dtype, device=self.device
+            )
+            obs_x = obs_x * obs_m[:, None]
+            act_x = act_x * act_m[:, None]
+            self.phases = (self.phases + 1) % self.phase_k
+            x, noise = self._input_and_noise(obs_x, act_x)
+        return self._run_cell(x, noise)
 
-        x = torch.cat((obs_x, act_x), dim=1)          # (B, D)
-        x = x.permute(1, 0)[None, None]                # (1, 1, D, B)
-        noise = pRNN.generate_noise(
-            self.pN.trainNoiseMeanStd, (1, 1, self.hidden_size, self.B)
-        ).to(self.device)
+    def step_synchronized(
+        self, *, obs_x: torch.Tensor, act_x: torch.Tensor
+    ) -> torch.Tensor:
+        """Faster step when every stream has the same phase/reset schedule.
 
-        with torch.no_grad():
-            _, state = pRNN.rnn(x, internal=noise, state=self.state, batched=True)
-        self.state = state[0].unsqueeze(1)             # (B, 1, H)
-        return self.sr()
-
+        DeviceTableShellPool only permits synchronized seqdur cuts, so its
+        phase mask is one scalar. The generic tracker constructs and uploads
+        a length-B mask because independently terminating CPU envs can have
+        different phases.
+        """
+        phase = int(self.phases[0])
+        with timer("collect/sr/mask_noise"):
+            if self.in_mask[phase] == 0:
+                obs_x = torch.zeros_like(obs_x)
+            elif self.in_mask[phase] != 1:
+                obs_x = obs_x * float(self.in_mask[phase])
+            if self.act_mask[phase] == 0:
+                act_x = torch.zeros_like(act_x)
+            elif self.act_mask[phase] != 1:
+                act_x = act_x * float(self.act_mask[phase])
+            self.phases.fill((phase + 1) % self.phase_k)
+            x, noise = self._input_and_noise(obs_x, act_x)
+        return self._run_cell(x, noise)

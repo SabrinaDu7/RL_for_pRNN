@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from torch_ac.utils import DictList
 
 from curious_george.rl.update.losses import LOSSES, ppo_clip_loss
 from curious_george.utils.timing import timer
@@ -57,6 +58,31 @@ def get_batches_starting_indexes(num_frames: int, recurrence: int, batch_size: i
     return batches_starting_indexes
 
 
+def _index_policy_batch(exps, indexes, acmodel):
+    """Index only fields consumed by actor/critic and the configured losses.
+
+    The recurrent world model needs ``exps.obs.image`` after PPO, but the
+    default SR actor has ``with_CV=False``. Indexing the 147-float RGB row for
+    every PPO sample/epoch was therefore pure accelerator traffic.
+    """
+    if getattr(acmodel, "with_CV", True):
+        return exps[indexes]
+
+    sb = DictList({
+        "SR": exps.SR[indexes],
+        "action": exps.action[indexes],
+        "value": exps.value[indexes],
+        "advantage": exps.advantage[indexes],
+        "returnn": exps.returnn[indexes],
+        "log_prob": exps.log_prob[indexes],
+    })
+    if getattr(acmodel, "with_HD", False):
+        sb.obs = DictList({"direction": exps.obs.direction[indexes]})
+    else:
+        sb.obs = DictList()
+    return sb
+
+
 def update_policy(
     acmodel,
     optimizer,
@@ -96,7 +122,10 @@ def _update_policy_epochs(
         log_value_losses = []
         log_grad_norms = []
 
-        batches = get_batches_starting_indexes(num_frames, recurrence, batch_size, batch_num)
+        with timer("update/policy/batch_indexes"):
+            batches = get_batches_starting_indexes(
+                num_frames, recurrence, batch_size, batch_num
+            )
         batch_num += 1
 
         for inds in batches: # inds should be multiples of ppo_batch_size
@@ -111,12 +140,15 @@ def _update_policy_epochs(
             for i in range(recurrence): # only loops once
                 # Create a sub-batch of experience
 
-                sb = exps[inds + i]
+                with timer("update/policy/index"):
+                    sb = _index_policy_batch(exps, inds + i, acmodel)
 
                 # Compute loss
 
-                dist, value = acmodel(sb.obs, SR=sb.SR)
-                loss, terms = loss_fn(dist, value, sb, **loss_kwargs)
+                with timer("update/policy/forward"):
+                    dist, value = acmodel(sb.obs, SR=sb.SR)
+                with timer("update/policy/loss"):
+                    loss, terms = loss_fn(dist, value, sb, **loss_kwargs)
 
                 # Update batch values
 
@@ -137,16 +169,20 @@ def _update_policy_epochs(
             # Update actor-critic
 
             if update_params:
-                optimizer.zero_grad()
-                batch_loss.backward()
+                with timer("update/policy/zero_grad"):
+                    optimizer.zero_grad(set_to_none=True)
+                with timer("update/policy/backward"):
+                    batch_loss.backward()
                 # clip_grad_norm_ returns the pre-clip total L2 norm - the
                 # same quantity the old per-parameter .item() sum computed.
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    acmodel.parameters(), max_grad_norm
-                ).detach()
-                optimizer.step()
+                with timer("update/policy/grad_clip"):
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        acmodel.parameters(), max_grad_norm
+                    ).detach()
+                with timer("update/policy/adam"):
+                    optimizer.step()
             else:
-                grad_norm = 0.0
+                grad_norm = batch_loss.new_zeros(())
 
             # Update log values
 
@@ -156,16 +192,24 @@ def _update_policy_epochs(
             log_value_losses.append(batch_value_loss)
             log_grad_norms.append(grad_norm)
 
-    # log entries are 0-dim tensors; sum on-device, one host sync per metric
-    def _mean(xs) -> float:
-        return float(sum(xs) / len(xs))
+    # Aggregate every scalar on-device and perform one host transfer/sync.
+    with timer("update/policy/log_sync"):
+        summary = torch.stack(
+            [
+                sum(log_entropies) / len(log_entropies),
+                sum(log_values) / len(log_values),
+                sum(log_policy_losses) / len(log_policy_losses),
+                sum(log_value_losses) / len(log_value_losses),
+                sum(log_grad_norms) / len(log_grad_norms),
+            ]
+        ).detach().cpu().tolist()
 
     logs = UpdateLogs(
-        entropy=_mean(log_entropies),
-        value=_mean(log_values),
-        policy_loss=_mean(log_policy_losses),
-        value_loss=_mean(log_value_losses),
-        grad_norm=_mean(log_grad_norms),
+        entropy=summary[0],
+        value=summary[1],
+        policy_loss=summary[2],
+        value_loss=summary[3],
+        grad_norm=summary[4],
     )
 
     return logs, batch_num

@@ -95,11 +95,30 @@ def setup_env(cfg, seed_offset: int = 0):
         agent_start_pos=None,
         agent_start_dir=None,
         agent_start_room=start_room,  # Only applicable for FourRooms env
+        table_env=(
+            cfg.exp.get("table_env", False)
+            or cfg.exp.get("device_env", False)
+        ),
     )
 
 
 def setup_envs(cfg) -> list:
     num_envs = cfg.exp.get("num_envs", 1)
+    if cfg.exp.get("device_env", False):
+        from curious_george.envs.vector import DeviceTableShellPool
+
+        if num_envs <= 1:
+            raise ValueError("exp.device_env requires exp.num_envs > 1")
+        training_shells = [
+            setup_env(cfg, seed_offset=1000 * i) for i in range(num_envs)
+        ]
+        # Evaluation must not mutate one of the training reset RNG streams.
+        eval_shell = setup_env(cfg, seed_offset=1000 * num_envs)
+        return DeviceTableShellPool(
+            training_shells=training_shells,
+            eval_shell=eval_shell,
+            device=get_device(),
+        )
     if num_envs > 1 and cfg.exp.get("async_envs", True):
         from curious_george.envs.vector import AsyncShellPool
 
@@ -211,6 +230,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         prnn_seqdur=cfg.predNet.seqdur,
         batched_wm=cfg.predNet.get("batched_wm", False),
         cuda_graph=cfg.predNet.get("cuda_graph", False),
+        batched_curiosity=cfg.predNet.get("batched_curiosity", False),
         intrinsic=cfg.exp.intrinsic,
         k_int=cfg.rl.k_int,
         pastSR=pastSR,
@@ -218,6 +238,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         k_curious=cfg.rl.k_curious,
         reward_alignment=cfg.rl.get("reward_alignment", "legacy"),
         loss=cfg.rl.get("loss", "ppo_clip"),
+        adam_betas=cfg.rl.get("optim_betas", [0.9, 0.999]),
     )
 
     if StatusCkptKeys.OPTIMIZER_STATE.value in status:
