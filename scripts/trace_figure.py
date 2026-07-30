@@ -121,10 +121,16 @@ def occupancy_figure(
     """Sanity panel: raw sample counts and the mask derived from them."""
     fig, (a, b) = plt.subplots(1, 2, figsize=(7, 3.2))
     im = a.imshow(occupancy, origin="upper", cmap="viridis")
-    a.set_title(f"probe occupancy (min {occupancy[valid].min():.0f})", fontsize=9)
+    a.set_title(
+        f"probe occupancy  min {occupancy[valid].min():.0f} / "
+        f"med {np.median(occupancy[valid]):.0f} / max {occupancy.max():.0f}",
+        fontsize=8,
+    )
     fig.colorbar(im, ax=a, fraction=0.046)
-    b.imshow(valid, origin="upper", cmap="gray")
-    b.set_title(f"valid bins: {valid.sum()}/{valid.size}", fontsize=9)
+    # Excluded bins are drawn BLANK here, matching the rate-map panels, so the
+    # two figures never disagree about which colour means "no data".
+    b.imshow(np.where(valid, 1.0, np.nan), origin="upper", cmap="Greys", vmin=0, vmax=2)
+    b.set_title(f"valid bins (grey): {valid.sum()}/{valid.size}", fontsize=9)
     for ax in (a, b):
         ax.set_xticks([])
         ax.set_yticks([])

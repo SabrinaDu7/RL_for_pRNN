@@ -69,14 +69,28 @@ def spatial_info(
     *,
     maps: Float[np.ndarray, "H ny nx"],
     occupancy: Float[np.ndarray, "ny nx"],
+    weighting: str = "occupancy",
 ) -> Float[np.ndarray, "H"]:
     """Skaggs spatial information in bits per sample, over valid bins only.
 
-    SI = sum_i p_i * (r_i / r) * log2(r_i / r), with p_i the occupancy
-    probability. NaN for units whose mean rate is zero.
+    SI = sum_i p_i * (r_i / r) * log2(r_i / r), with p_i the bin weight.
+    NaN for units whose mean rate is zero.
+
+    weighting="occupancy" is the standard Skaggs form, p_i proportional to
+    dwell time. That is the right estimator for a freely-behaving animal, but
+    the random-action probe oversamples corners ~9x (it pushes forward 60% of
+    the time and parks against walls), so it inflates the SI of wall- and
+    corner-tuned units. weighting="uniform" weights every valid bin equally,
+    which removes that bias at the cost of trusting sparsely-sampled bins as
+    much as dense ones. Report both; disagreement between them IS the bias.
     """
     valid = np.isfinite(maps[0]) & (occupancy > 0)
-    p = occupancy[valid] / occupancy[valid].sum()
+    if weighting == "uniform":
+        p = np.full(int(valid.sum()), 1.0 / int(valid.sum()))
+    elif weighting == "occupancy":
+        p = occupancy[valid] / occupancy[valid].sum()
+    else:
+        raise ValueError(f"weighting must be 'occupancy' or 'uniform', got {weighting!r}")
     r = maps[:, valid]                                   # (H, n_valid)
     mean_rate = (r * p[None, :]).sum(axis=1)             # (H,)
 
