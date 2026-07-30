@@ -108,9 +108,15 @@ checkpoint directory it reads).
 under it:
 
 ```
-$RL_STORAGE/<run_name>/<traj_count>/pN-<traj_count>.pt
+$RL_STORAGE/<run_name>/<traj_count>/predictiveNet_state.pt
 $RL_STORAGE/<run_name>/<traj_count>/status.pt
 ```
+
+Those are deliberately the **same two filenames `main_train.py` writes**, so any
+step directory can be handed straight to `CUR_CKPT_DIR` and re-loaded by
+`get_ckpt_env_vars` — that is how a task run is chained off another task run.
+`status.pt` likewise uses the same keys, with the pRNN's optimizer under its own
+`prnn_optimizer_state` (see below).
 
 with `run_name = "{exp.exp_name}-{cur|rand}-{room_type_green}-{MMDD-HHMMSS}"`,
 e.g. `omt-cur-dot-0730-120749`. Syncing `$RL_STORAGE` off a cluster node is
@@ -132,10 +138,30 @@ Figures are written under the run directory when `figure.py` is called with
 `save=True`; the in-training analysis path calls it with `save=False` and logs
 the figure straight to wandb.
 
-**Known naming drift (not fixed):** `scripts/analysis_OMT_h.py::get_ckpts`
-hardcodes `omt-cur-dot-noObs-goal{i}{j}/{step}/pN-{step}.pt`, which is neither
-the name nor the location `main_task.py` produces today. Downstream analysis
-will need that path patched to `$RL_STORAGE/<run_name>/<step>/pN-<step>.pt`.
+### Checkpoint interop (fixed 2026-07-30)
+
+Task checkpoints used to be unloadable by the code that loads `main_train`
+ones, in two ways. Both are fixed; old checkpoints still load.
+
+1. **Filename.** Steps were written as `pN-<count>.pt`, which
+   `get_ckpt_env_vars` cannot find (it looks for `predictiveNet_state.pt`).
+   They now use the canonical name — the count is already the directory. For
+   reading, `curious_george.resolve_prnn_ckpt(dir)` accepts either name, so
+   pre-existing runs on scratch keep working.
+2. **Optimizer key collision.** `status.pt["optimizer_state"]` meant the **AC
+   Adam** (1 param group) when written by `main_train` and the **pRNN RMSprop**
+   (4 param groups) when written by a task. `setup_algo` loads that key into
+   the AC Adam, so a task `status.pt` blew up on reload. The pRNN's optimizer
+   now has its own key, `prnn_optimizer_state`; `optimizer_state` means the AC
+   optimizer everywhere. `load_prnn_optimizer_state` reads the new key and
+   falls back to the old one when its shape matches, and `setup_algo` raises a
+   named error rather than an opaque torch one if it is handed a legacy file.
+
+**Known naming drift (still not fixed):** `scripts/analysis_OMT_h.py::get_ckpts`,
+`scripts/isomap.py` and `scripts/analysis_reward_map.py` hardcode
+`omt-cur-dot-noObs-goal{i}{j}/{step}/pN-{step}.pt`, which is neither the name
+nor the location `main_task.py` produces today. Point them at
+`$RL_STORAGE/<run_name>/<step>/` and use `resolve_prnn_ckpt`.
 
 ## Post-refactor status (2026-07-30)
 

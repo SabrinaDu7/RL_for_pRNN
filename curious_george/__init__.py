@@ -33,6 +33,7 @@ from curious_george.utils.checkpoints import (
 from curious_george.utils.dev_env import (
     get_env_var,
     get_ckpt_env_vars,
+    resolve_prnn_ckpt,
     get_wandb_env_vars,
     get_logdir_env_var,
     get_root_dir_env_var,
@@ -162,6 +163,7 @@ __all__ = [
     # Env vars
     "get_env_var",
     "get_ckpt_env_vars",
+    "resolve_prnn_ckpt",
     "get_wandb_env_vars",
     "get_logdir_env_var",
     "get_root_dir_env_var",

@@ -1,4 +1,6 @@
+import glob
 import os
+
 from dotenv import load_dotenv
 
 from curious_george.utils.enums import AgentType
@@ -25,6 +27,38 @@ def get_env_var(var_name: str) -> str:
 # at the run DIRECTORY is enough to locate both.
 PRNN_CKPT_FILENAME = "predictiveNet_state.pt"
 ACMODEL_CKPT_FILENAME = "status.pt"
+
+# Task checkpoints written before 2026-07-30 named the pRNN file after the
+# trajectory count instead of using the canonical name above.
+LEGACY_PRNN_CKPT_GLOB = "pN-*.pt"
+
+
+def resolve_prnn_ckpt(ckpt_dir: str) -> str:
+    """Path of the pRNN checkpoint inside a run (or task-step) directory.
+
+    Prefers the canonical PRNN_CKPT_FILENAME and falls back to the legacy
+    `pN-<count>.pt` name so checkpoint directories written by older task runs
+    still load. Raises if neither is present, or if the legacy glob is
+    ambiguous.
+    """
+    canonical = os.path.join(ckpt_dir, PRNN_CKPT_FILENAME)
+    if os.path.isfile(canonical):
+        return canonical
+
+    legacy = sorted(glob.glob(os.path.join(ckpt_dir, LEGACY_PRNN_CKPT_GLOB)))
+    if len(legacy) == 1:
+        return legacy[0]
+    if len(legacy) > 1:
+        raise FileNotFoundError(
+            f"{ckpt_dir} holds several '{LEGACY_PRNN_CKPT_GLOB}' files "
+            f"({', '.join(os.path.basename(p) for p in legacy)}); "
+            "point at a single checkpoint-step directory."
+        )
+    raise FileNotFoundError(
+        f"{ckpt_dir} contains neither '{PRNN_CKPT_FILENAME}' nor "
+        f"'{LEGACY_PRNN_CKPT_GLOB}'. Point it at a finished training-run "
+        "directory or a task checkpoint-step directory."
+    )
 
 
 def get_ckpt_dir_var(agent_type: AgentType = AgentType.AC, env_type: MinigridEnvNames = MinigridEnvNames.LRoom) -> str:
@@ -54,14 +88,18 @@ def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC, env_type: MinigridEn
         ckpt_dir = None
 
     if ckpt_dir is not None:
-        prnn_ckpt = os.path.join(ckpt_dir, PRNN_CKPT_FILENAME)
+        # resolve_prnn_ckpt accepts both the canonical filename and the legacy
+        # pN-<count>.pt one, so a task checkpoint-step directory works here too.
+        try:
+            prnn_ckpt = resolve_prnn_ckpt(ckpt_dir)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"{dir_var}={ckpt_dir}: {exc}") from exc
         acmodel_status_ckpt = os.path.join(ckpt_dir, ACMODEL_CKPT_FILENAME)
-        for path in (prnn_ckpt, acmodel_status_ckpt):
-            if not os.path.isfile(path):
-                raise FileNotFoundError(
-                    f"{dir_var}={ckpt_dir} does not contain '{os.path.basename(path)}'. "
-                    "Point it at a finished training-run directory."
-                )
+        if not os.path.isfile(acmodel_status_ckpt):
+            raise FileNotFoundError(
+                f"{dir_var}={ckpt_dir} does not contain '{ACMODEL_CKPT_FILENAME}'. "
+                "Point it at a finished training-run directory."
+            )
         return prnn_ckpt, acmodel_status_ckpt
 
     # Legacy names, preserved verbatim including a pre-existing inconsistency:

@@ -181,7 +181,13 @@ class ObjectMemoryTask:
         )
 
         def on_save(index: int) -> None:
-            save_pN_and_acmodel(self.pN_post, self.algo.acmodel, self.save_path, index * self.trajs_per_batch)
+            save_pN_and_acmodel(
+                self.pN_post,
+                self.algo.acmodel,
+                self.save_path,
+                index * self.trajs_per_batch,
+                ac_optimizer=self.algo.optimizer,
+            )
 
         def on_analysis(index: int, traj_count: int) -> None:
             if self.traj_fig:
@@ -206,7 +212,13 @@ class ObjectMemoryTask:
             on_analysis=on_analysis,
         )
 
-        save_pN_and_acmodel(self.pN_post, self.algo.acmodel, self.save_path, (num_batches - 1) * self.trajs_per_batch)
+        save_pN_and_acmodel(
+            self.pN_post,
+            self.algo.acmodel,
+            self.save_path,
+            (num_batches - 1) * self.trajs_per_batch,
+            ac_optimizer=self.algo.optimizer,
+        )
         print(f"Saved trained net to {self.save_path}")
 
         # Restore the learning rate

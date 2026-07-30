@@ -26,7 +26,11 @@ from curious_george.storage import (
     get_model_dir,
     get_video_dir,
 )
-from curious_george.utils.checkpoints import StatusCkptKeys, load_statedict_from_acmodel_status
+from curious_george.utils.checkpoints import (
+    StatusCkptKeys,
+    load_statedict_from_acmodel_status,
+    status_optimizer_matches,
+)
 from curious_george.utils.dev_env import get_ckpt_env_vars
 from curious_george.utils.enums import AgentType
 
@@ -221,6 +225,19 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
     )
 
     if StatusCkptKeys.OPTIMIZER_STATE.value in status:
+        # Guard against a status.pt written before 2026-07-30 by a task run,
+        # which stored the pRNN's 4-group RMSprop under this key. Loading that
+        # into the AC model's 1-group Adam otherwise fails with an opaque
+        # torch error.
+        if not status_optimizer_matches(
+            algo.optimizer, status[StatusCkptKeys.OPTIMIZER_STATE.value]
+        ):
+            raise ValueError(
+                f"'{StatusCkptKeys.OPTIMIZER_STATE.value}' in this checkpoint does not "
+                f"match the AC optimizer ({len(algo.optimizer.param_groups)} param "
+                "group(s)). Pre-2026-07-30 task checkpoints stored the pRNN optimizer "
+                "under this key; drop it from the status dict before loading."
+            )
         load_statedict_from_acmodel_status(
             receiver=algo.optimizer,
             status=status,

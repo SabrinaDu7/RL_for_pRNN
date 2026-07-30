@@ -20,7 +20,7 @@ from curious_george.utils.checkpoints import (
     StatusCkptKeys,
 )
 from curious_george.utils.common import get_device
-from curious_george.utils.dev_env import get_env_var
+from curious_george.utils.dev_env import PRNN_CKPT_FILENAME, get_env_var
 from curious_george.utils.enums import AgentType
 
 RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
@@ -193,15 +193,34 @@ def save_analysis_of_agent_behav(onpolicyAnalysis, model_dir, update_step):
 
 
 def save_pN_and_acmodel(
-    pN: PredictiveNet, ac_model: ACModel, save_path: str, count: int
+    pN: PredictiveNet,
+    ac_model: ACModel,
+    save_path: str,
+    count: int,
+    *,
+    ac_optimizer=None,
 ):
-    save_pN(pN, f"{save_path}/{count}/pN-{count}.pt")
-    print(f"Saved trained net to {save_path}/pN-{count}.pt")
+    """Write one checkpoint step under `save_path/count/`.
+
+    Uses the SAME two filenames and the SAME status keys as main_train.py
+    (training/loop.py::save_checkpoint), so a step directory can be handed
+    straight to get_ckpt_env_vars / setup_task. `count` lives in the directory
+    name, not the filename.
+
+    ac_optimizer: the AC model's optimizer. Passing it makes the step fully
+    resumable; omitting it leaves OPTIMIZER_STATE out rather than filling it
+    with the pRNN's optimizer, which is what the pre-2026-07-30 layout did.
+    """
+    step_dir = f"{save_path}/{count}"
+    save_pN(pN, f"{step_dir}/{PRNN_CKPT_FILENAME}")
+    print(f"Saved trained net to {step_dir}/{PRNN_CKPT_FILENAME}")
     status_save = {
         StatusCkptKeys.MODEL_STATE.value: ac_model.state_dict(),
-        StatusCkptKeys.OPTIMIZER_STATE.value: pN.optimizer.state_dict(),
+        StatusCkptKeys.PRNN_OPTIMIZER_STATE.value: pN.optimizer.state_dict(),
     }
-    save_status(status_save, f"{save_path}/{count}")
+    if ac_optimizer is not None:
+        status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = ac_optimizer.state_dict()
+    save_status(status_save, step_dir)
 
 
 # def get_vocab(model_dir):

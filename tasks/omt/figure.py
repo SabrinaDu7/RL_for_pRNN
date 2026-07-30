@@ -14,6 +14,7 @@ from prnn.utils import PredictiveNet, ActionEncodingsEnum, MinigridEnvNames
 from prnn.utils.Shell import FaramaMinigridShell
 from curious_george import get_env_var, AgentInputType
 from curious_george import get_pN, make_env, grid_to_pixel_coords
+from curious_george.utils.dev_env import resolve_prnn_ckpt
 
 RL_STORAGE = get_env_var("RL_STORAGE")
 DEVICE = torch.device("cpu")
@@ -416,7 +417,8 @@ def figure_object_learning(env_name: MinigridEnvNames | FaramaMinigridShell,
         env = env_name
 
     if pN is None:
-        prnn_ckpt = str(run_filepath / f"pN-{traj_num}.pt")
+        # resolver handles both the canonical filename and the legacy pN-<n>.pt
+        prnn_ckpt = resolve_prnn_ckpt(str(run_filepath))
         predictiveNet = get_pN(args=config, env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
     else:
         predictiveNet = pN
