@@ -447,6 +447,61 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
+**2026-07-30 (e)** — Resolved the dissociation. Two results.
+
+**1. The behaviour is real in a single run — but one of the three locations is an artifact.**
+32 on-policy rollouts in the object-PRESENT env at each checkpoint, percentile of the object
+location among all 172 walkable cells (`scripts/trace_behavior.py`,
+`outputs/trace/fig_behavior_timecourse.png`):
+
+| object | occupancy %ile, first 4 → last 4 | occupancy value, first → last | median cell |
+|---|---|---|---|
+| (7,11) | 35 → 87 | 0.041 → 0.157 | ~0.045 |
+| (7,2) | 22 at traj 0 → 92–98 from traj 400 | 0.013 → 0.16 | ~0.05 |
+| (14,7) | 73 → 81, **already 87.2 at traj 0** | 0.128 → 0.124 | ~0.045 |
+
+(7,11) and (7,2) show genuine object-directed behaviour without pooling seeds. **(14,7) does
+not** — it is elevated before exposure could cause it, being near the L-notch corner and
+structurally high-traffic. This is the same false positive that inflated its rate-map
+percentile, and it is exactly what averaging across seeds would hide. Caveat: 32 rollouts is
+too few (percentiles swing 98.8 → 0.6 between adjacent checkpoints); rerun at 128 before
+quoting numbers.
+
+**2. The object information lives in the READOUT, not the recurrent dynamics.**
+`outlayer` is `Linear(500 -> 147, bias=False)` + `Sigmoid`, parameter `W_out`. Building
+chimaeras from the pre- and post-exposure checkpoints and measuring predicted green at the
+absent object location relative to control locations (`scripts/trace_readout_test.py`):
+
+| object | trained (full effect) | base dyn + TRAINED readout | trained dyn + BASE readout | readout share |
+|---|---:|---:|---:|---:|
+| (7,11) | +0.0988 | **+0.0928** | +0.0150 | 94% |
+| (14,7) | +0.0941 | **+0.0699** | +0.0282 | 74% |
+| (7,2)  | +0.0658 | **+0.0537** | +0.0242 | 82% |
+
+Transplanting only `W_out` onto the untrained dynamics recovers 74–94% of the object effect;
+transplanting the trained dynamics with the old readout recovers 15–37%. Relative weight
+change is consistent but not by itself decisive: `W_out` 0.146, `W` 0.124, `W_in` 0.113,
+`bias` 0.052.
+
+**This explains everything above.** Exposure writes the object into the linear map from `h`
+to the prediction, leaving `h`'s spatial tuning geometry alone — hence a clear pixel-space
+effect, clear object-directed behaviour, and rate maps frozen at r ≈ 0.98.
+
+Three caveats that matter:
+- The shares do **not** sum to 100% (94+15, 74+30, 82+37), so the halves are partly
+  redundant; `W_out` was trained jointly with the dynamics and this is not a clean
+  decomposition.
+- The transplant works partly *because* `h` barely moved. "The readout carries it" and "the
+  dynamics did not change" are two views of one fact, not independent confirmations.
+- n=1 seed per location; injected noise was zeroed for determinism, unlike the OMT eval path.
+
+**Consequence for the plan.** If the object memory is readout-localised, the trace should
+decay on the timescale of `W_out` being overwritten, not of place-field remapping. That
+changes what `tasks/otc/` should measure: the primary readout becomes predicted-green at the
+old object location over the removal phase, with the rate maps as the control that should
+stay flat. Searching for allocentric object-trace *place fields* looks like the wrong target
+in this architecture.
+
 **2026-07-30 (d)** — Relaunched on Mila post-`86f31be` (jobs 10252642 / 10252658 / 10252659,
 3 seeds each, `--time=2:00:00`). Seed 1 of each landed: **16 checkpoints** per run
 (0, 200, …, 2800, 2992), which is what the whole design needed. Replayed all 46 checkpoints
