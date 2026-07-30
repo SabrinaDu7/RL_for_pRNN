@@ -19,8 +19,7 @@ from curious_george import make_env
 DEVICE = torch.device("cuda")
 RL_STORAGE = get_env_var("RL_STORAGE")
 
-# All task output lives under the single storage root: $RL_STORAGE/omt/<run>/
-OMT_SUBDIR = "omt"
+# All task output lives under the single storage root: $RL_STORAGE/<run_name>/
 TIME = time.strftime("%m%d-%H%M")
 
 # ===== Helper functions =====
@@ -101,7 +100,7 @@ def main(args: DictConfig):
         agent_type=agent_type,
         env_orig=env_orig,
         env_novel=env_novel,
-        save_path=get_model_dir(f"{OMT_SUBDIR}/{run_name}"),
+        save_path=get_model_dir(run_name),
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,
@@ -110,7 +109,7 @@ def main(args: DictConfig):
     
     omt.trainNovelObject(
         num_trajs=args.tasks.training.num_trajs,
-        saving_interval=args.tasks.training.saving_interval,
+        saving_interval_trajs=args.tasks.training.saving_interval_trajs,
         analysis_interval=args.tasks.training.analysis_interval,
         lr_trials=args.tasks.training.lr_trials,
         lrgroups=args.tasks.training.lrgroups,

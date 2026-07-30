@@ -96,14 +96,14 @@ SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null' EXIT
 
 # ------------------------------------------------------------------- run ---
-# saving_interval=1000000 disables intermediate saves; trainNovelObject still
-# writes the final checkpoint at (num_batches-1)*trajs_per_batch, which is the
-# one the hidden-state analysis consumes.
+# Checkpoints every tasks.training.saving_interval_trajs trajectories (200 by
+# default), plus a final save at (num_batches-1)*trajs_per_batch. The whole
+# series is what the hidden-state analysis reads, so do NOT disable it here -
+# an earlier version passed saving_interval=1000000 and kept only first+last.
 for SEED in $(seq "$SEED_START" "$SEED_END"); do
     echo "=== seed $SEED  obj_loc $OBJ_LOC  $(date '+%H:%M:%S') ==="
     uv run just omt-start-rand \
         tasks.new_obj_loc=$OBJ_LOC \
-        tasks.training.saving_interval=1000000 \
         logging.wandb_project=$OMT_WANDB_PROJECT \
         exp.seed=$SEED
 done

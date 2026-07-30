@@ -152,7 +152,7 @@ class ObjectMemoryTask:
         lr_trials: int,
         lrgroups: list,  # [0, 1, 2]
         num_trajs: int,  # num of trajectories to train on in novel env
-        saving_interval: int,  # num batches between saves
+        saving_interval_trajs: int,  # num TRAJECTORIES between checkpoint saves
         analysis_interval: int,  # num batches between analysis events
         device,
     ):
@@ -171,6 +171,14 @@ class ObjectMemoryTask:
         num_batches = num_trajs // self.trajs_per_batch
         # e.g., 1000 trajs / 8 trajs per batch = 125 batches; each batch is one
         # collect_experiences of trajs_per_batch * seqdur steps (= rl.frames)
+
+        # train_phase counts saves in BATCHES; the config expresses the interval
+        # in trajectories so it stays 200 regardless of rl.trajs_per_batch.
+        saving_interval = max(1, saving_interval_trajs // self.trajs_per_batch)
+        print(
+            f"Saving checkpoints every {saving_interval} batches "
+            f"(= {saving_interval * self.trajs_per_batch} trajectories)"
+        )
 
         def on_save(index: int) -> None:
             save_pN_and_acmodel(self.pN_post, self.algo.acmodel, self.save_path, index * self.trajs_per_batch)

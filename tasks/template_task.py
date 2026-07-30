@@ -50,7 +50,7 @@ class MyTask:
             num_batches=num_batches,
             trajs_per_batch=self.args.rl.trajs_per_batch,
             seqdur=self.args.predNet.seqdur,
-            saving_interval=999,
+            saving_interval=999,   # train_phase counts saves in BATCHES
             analysis_interval=999,
             wandb_log=self.args.logging.wandb_log,
             # on_save=..., on_analysis=...   # task-specific hooks

@@ -108,8 +108,8 @@ checkpoint directory it reads).
 under it:
 
 ```
-$RL_STORAGE/omt/<run_name>/<traj_count>/pN-<traj_count>.pt
-$RL_STORAGE/omt/<run_name>/<traj_count>/status.pt
+$RL_STORAGE/<run_name>/<traj_count>/pN-<traj_count>.pt
+$RL_STORAGE/<run_name>/<traj_count>/status.pt
 ```
 
 with `run_name = "{exp.exp_name}-{cur|rand}-{room_type_green}-{MMDD-HHMMSS}"`,
@@ -119,6 +119,15 @@ landed in the *current working directory* instead — a cluster job that only
 rsynced `$RL_STORAGE` silently lost every OMT checkpoint. Old runs sitting at
 the repo root are from that era.)
 
+**Checkpoint cadence.** `tasks.training.saving_interval_trajs` (default 200)
+is denominated in **trajectories**; `task.py` converts it to the batch count
+`train_phase` actually uses, so the spacing stays 200 even if
+`rl.trajs_per_batch` changes. A final checkpoint is always written at
+`(num_batches - 1) * trajs_per_batch`. A 3000-trajectory run therefore yields
+`0, 200, 400, ..., 2800, 2992`. Do not disable this from a launch script —
+`slurm/omt_task.sh` once passed `saving_interval=1000000` and kept only the
+first and last, which is useless for trajectory-resolved analysis.
+
 Figures are written under the run directory when `figure.py` is called with
 `save=True`; the in-training analysis path calls it with `save=False` and logs
 the figure straight to wandb.
@@ -126,7 +135,7 @@ the figure straight to wandb.
 **Known naming drift (not fixed):** `scripts/analysis_OMT_h.py::get_ckpts`
 hardcodes `omt-cur-dot-noObs-goal{i}{j}/{step}/pN-{step}.pt`, which is neither
 the name nor the location `main_task.py` produces today. Downstream analysis
-will need that path patched to `$RL_STORAGE/omt/<run_name>/<step>/pN-<step>.pt`.
+will need that path patched to `$RL_STORAGE/<run_name>/<step>/pN-<step>.pt`.
 
 ## Post-refactor status (2026-07-30)
 

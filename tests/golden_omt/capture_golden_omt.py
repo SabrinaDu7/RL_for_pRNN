@@ -58,7 +58,7 @@ OVERRIDES = [
     "rl.trajs_per_batch=2",
     "tasks.testing.trajs=2",
     "tasks.training.num_trajs=4",       # -> 2 train batches
-    "tasks.training.saving_interval=999",
+    "tasks.training.saving_interval_trajs=999999",  # no intermediate saves (saving does not affect numerics)
     "tasks.training.analysis_interval=999",
     "tasks.analysis.traj_fig=false",
     "tasks.analysis.objLearning_fig=false",
@@ -125,7 +125,7 @@ def run_omt_capture() -> dict:
         omt.algo.update_parameters = spy_update
         omt.trainNovelObject(
             num_trajs=args.tasks.training.num_trajs,
-            saving_interval=args.tasks.training.saving_interval,
+            saving_interval_trajs=args.tasks.training.saving_interval_trajs,
             analysis_interval=args.tasks.training.analysis_interval,
             lr_trials=args.tasks.training.lr_trials,
             lrgroups=list(args.tasks.training.lrgroups),
