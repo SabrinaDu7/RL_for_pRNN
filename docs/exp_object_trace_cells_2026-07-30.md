@@ -447,6 +447,47 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
+**2026-07-30 (g)** — Behaviour at n=3, 128 rollouts per point, trajectory 0 vs final
+checkpoint (`outputs/trace/fig_behavior_n3.png`). Percentile of the object location among all
+172 walkable cells:
+
+| object | run | occupancy %ile | in-view %ile | occupancy value |
+|---|---|---|---|---|
+| (7,11) | 165325 | 18.6 → **94.2** | 68.0 → 94.2 | 0.033 → 0.150 |
+| (7,11) | 172405 | 13.4 → **90.7** | 68.6 → 93.0 | 0.035 → 0.122 |
+| (7,11) | 175326 | 62.2 → 46.5 | 99.4 → 68.6 | 0.076 → 0.051 |
+| (14,7) | 165922 | 87.8 → 94.2 | 40.1 → 79.1 | 0.114 → 0.173 |
+| (14,7) | 172845 | 85.5 → **9.9** | 36.0 → 32.0 | 0.099 → 0.014 |
+| (14,7) | 175805 | 34.9 → **2.9** | 7.6 → 29.7 | 0.045 → 0.012 |
+| (7,2) | 165916 | 25.0 → 31.4 | 23.3 → **77.9** | 0.026 → 0.043 |
+| (7,2) | 173016 | 22.7 → 58.7 | 9.9 → **66.9** | 0.023 → 0.071 |
+| (7,2) | 180402 | 4.7 → **78.5** | 4.7 → **90.1** | 0.005 → 0.098 |
+
+Per location, mean change in occupancy percentile: (7,11) **+45.7**, (7,2) **+38.7**,
+(14,7) **−33.7**. Across all 9 runs, occupancy percentile rises in 6/9 (mean +16.9) and
+in-view percentile in 7/9 (mean +30.4).
+
+**Three conclusions, and the middle one is the one that matters for the averaging question.**
+
+1. **The behaviour is real but seed-dependent, not universal.** (7,2) is the cleanest: 3/3
+   seeds rise on both measures, from low baselines (occupancy percentile 4.7–25.0 at traj 0),
+   and in-view rises by +65.7 percentile points on average. (7,11) rises hard in 2/3 seeds
+   (+76, +77) and *falls* in the third (−16).
+2. **(14,7) is confirmed as a geometry artifact.** Its baseline occupancy percentile averages
+   **69** before exposure, and across seeds the object location gets *less* visited over
+   training (−33.7 mean, with two seeds collapsing to the 9.9th and 2.9th percentile). An
+   analysis that pools occupancy across seeds and locations would show a bump at (14,7) that
+   is baseline geometry, not object attraction — and would miss that the change there is
+   negative. This is the concrete answer to "is the averaged clustering real": partly, but it
+   is diluted and partly manufactured by locations like this one.
+3. **In-view time is the better readout than occupancy**, as predicted from the object being a
+   non-blocking, see-through-walls-visible floor tile: it rises in 7/9 vs 6/9, with a larger
+   mean change, and for (7,2) it rises in 3/3 while occupancy is nearly flat in one of them.
+
+Caveat: still one number per (run, checkpoint) with no error bar within a run; the
+percentile swings observed earlier across adjacent checkpoints mean these endpoint
+comparisons carry real uncertainty.
+
 **2026-07-30 (f)** — All three Mila jobs COMPLETED 0:0: 3 seeds x 3 locations, 16 checkpoints
 each (144 total, 701 MB). **The readout result replicates at n=3 across all 9 runs.**
 
