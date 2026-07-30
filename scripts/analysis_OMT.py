@@ -242,13 +242,15 @@ def collect_eval_trajectories(
             if config.include_render and all_renders is not None and render:
                 all_renders[n] = np.stack(render, axis=0)
 
-        # Phase 2: Batched pRNN prediction
-        # predict(batched=True) input prep is fixed on the LevensteinLab
-        # sdu/rl-integration branch (4-D (1, L, X, B) layout).
+        # Phase 2: Batched pRNN prediction.
+        # predict(batched=True) takes 3-D (B, L, X) and permutes internally to
+        # (1, L, X, B); passing 4-D raises in clip_mask. Verified against the
+        # serial path on 2026-07-30: with the injected noise disabled the two
+        # agree to 6e-6.
         with torch.no_grad():
             obs_pred, obs_next, h_t = pN.predict(
-                all_obs.unsqueeze(1),  # (B, 1, T, obs_size)
-                all_act.unsqueeze(1),  # (B, 1, T, act_size)
+                all_obs,  # (B, T + 1, obs_size)
+                all_act,  # (B, T, act_size)
                 batched=True,
                 randInit=True,         # handles init_state internally
             )

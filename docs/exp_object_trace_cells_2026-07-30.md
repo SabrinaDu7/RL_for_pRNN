@@ -417,7 +417,40 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
 
 ## 8. Log
 
-**2026-07-30** — Design settled. Findings §2.1–2.7 established. Two enabling fixes committed:
+**2026-07-30 (b)** — Step 1 done: probe + rate-map pipeline built and validated on the local
+`main_train` checkpoint. Results and revisions:
+
+- **`predict(batched=True)` is CORRECT on this pin** — the §7 risk is resolved, but not as
+  expected. It takes **3-D `(B, L, X)`** and does the permute to `(1, L, X, B)` itself.
+  With injected noise disabled, batched matches serial to **6e-6**.
+  `scripts/analysis_OMT.py` was passing **4-D**, which raises in `clip_mask` — a real bug in
+  the code the plan proposed reusing, now fixed. `tests/test_batched_wm_forward.py`'s
+  2026-07-14 verdict ("predict(batched=True) IS broken, keep avoiding it") was stale and has
+  been revised with tests.
+- **The determinism threat was injected noise, not `randInit`.** `predict` draws fresh noise
+  every call from `trainNoiseMeanStd = (0, 0.05)`; two identical calls differ by up to
+  **0.39** in `h`. Dropout is separate and already off in `eval()`. `replay_checkpoint`
+  seeds torch immediately before each forward, so every checkpoint sees the same realisation.
+  **Determinism gate passes**: replaying one checkpoint twice is bitwise identical.
+- **Probe built**: 688 trajectories × 256 steps, 38 s, 117 MB, at
+  `outputs/trace/probe_lroom_noobj/`. Replay is **2.8 s per checkpoint**.
+- **Coverage**: 162,368 pooled samples, ~828 per bin, and **172/196 bins valid** — exactly
+  the walkable-cell count, so the occupancy mask reproduces the L cut-out on its own.
+- **Null is correctly calibrated but does not discriminate.** False-positive rate of the
+  95th-percentile threshold measured on held-out shuffles: **0.058** (target 0.05). But the
+  null SI is ~0.006 against a real median of 0.759, so **499/500 units pass** (the 500th is
+  silent), and split-half r has median **0.995**. In this system essentially every non-silent
+  unit carries spatial information. Reporting "499/500 spatially tuned cells" would be
+  technically true and useless — the discriminating quantity is SI *magnitude* and field
+  localisation, not a significance threshold. Keep the null as a calibration check, rank by SI.
+- Figures: `outputs/trace/fig_tuned_units_main_train.png` (top 32 by SI, occupancy-masked)
+  and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
+  are wall-band/border cells rather than point fields.
+
+**Blocked on:** the multi-column trace figure needs a checkpoint *series*. Only one
+`main_train` checkpoint exists locally. Waiting on the Mila scp (§5).
+
+**2026-07-30 (a)** — Design settled. Findings §2.1–2.7 established. Two enabling fixes committed:
 `38e3732` (checkpoint interop: canonical filename + `resolve_prnn_ckpt` + separated optimizer
 keys + legacy guard, 9 new tests) and `c8fea19` (dead `resetOptimizer`/`continueTraining`
 config removed). Gate at 123 passed / 0 failed / 7 deselected. No experimental code written yet.
