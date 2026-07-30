@@ -447,6 +447,35 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
+**2026-07-30 (f)** — All three Mila jobs COMPLETED 0:0: 3 seeds x 3 locations, 16 checkpoints
+each (144 total, 701 MB). **The readout result replicates at n=3 across all 9 runs.**
+
+| object | run | full | readout-only | dynamics-only | share |
+|---|---|---:|---:|---:|---:|
+| (7,11) | 165325 | +0.0936 | +0.0974 | +0.0071 | 104% |
+| (7,11) | 172405 | +0.0735 | +0.0968 | −0.0067 | 132% |
+| (7,11) | 175326 | +0.0681 | +0.0974 | −0.0121 | 143% |
+| (14,7) | 165922 | +0.0941 | +0.0699 | +0.0282 | 74% |
+| (14,7) | 172845 | +0.0789 | +0.0627 | +0.0199 | 79% |
+| (14,7) | 175805 | +0.0425 | +0.0493 | +0.0027 | 116% |
+| (7,2) | 165916 | +0.0662 | +0.0506 | +0.0224 | 76% |
+| (7,2) | 173016 | +0.0708 | +0.0634 | +0.0171 | 90% |
+| (7,2) | 180402 | +0.0714 | +0.0575 | +0.0189 | 81% |
+
+```
+full effect    +0.0732 +/- 0.0146
+readout-only   +0.0717 +/- 0.0190
+dynamics-only  +0.0108 +/- 0.0131   (negative in 2 runs)
+readout > dynamics in 9/9 runs      (sign test p ~ 0.002)
+```
+
+**OPEN ANOMALY, unexplained:** four runs exceed 100% — the readout-only chimaera produces a
+*larger* object effect than the fully trained net, and all three (7,11) seeds do this. That
+means the trained recurrent dynamics partially *counteract* the object signal the readout
+carries. Candidate explanation not yet tested: a gain mismatch, i.e. transplanting `W_out`
+onto dynamics whose `h` magnitude differs. Diagnose by comparing ||h|| and the un-contrasted
+mean predicted green between base and trained nets before treating the >100% as meaningful.
+
 **2026-07-30 (e)** — Resolved the dissociation. Two results.
 
 **1. The behaviour is real in a single run — but one of the three locations is an artifact.**
