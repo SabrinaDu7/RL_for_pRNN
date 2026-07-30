@@ -2,7 +2,7 @@
 #SBATCH --job-name=OMT_cur_start_rand
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
 #SBATCH --error=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.err
-#SBATCH --time=25:00:00
+#SBATCH --time=1:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
