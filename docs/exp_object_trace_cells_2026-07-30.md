@@ -447,6 +447,56 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
+**2026-07-30 (d)** — Relaunched on Mila post-`86f31be` (jobs 10252642 / 10252658 / 10252659,
+3 seeds each, `--time=2:00:00`). Seed 1 of each landed: **16 checkpoints** per run
+(0, 200, …, 2800, 2992), which is what the whole design needed. Replayed all 46 checkpoints
+in one pass. Seeds 2–3 still running.
+
+**The exposure phase barely changes the spatial code.** Median per-unit map correlation
+against the pre-exposure baseline, over 172 valid bins:
+
+| trajs | (7,11) | (14,7) | (7,2) |
+|---:|---:|---:|---:|
+| 0 | 0.841 | 0.910 | 0.916 |
+| 200 | 0.882 | 0.977 | 0.941 |
+| 400 | 0.980 | 0.981 | 0.979 |
+| 1000 | 0.948 | 0.982 | 0.976 |
+| 2000 | 0.975 | 0.974 | 0.982 |
+| 2800 | 0.980 | 0.960 | 0.957 |
+
+So there is an early transient over the first ~200–400 trajectories, then the maps sit at
+r ≈ 0.98 for the remaining 2400+. This **corrects the "global drift" reading** in log (c):
+the maps are not drifting much at all. What log (c) picked up was a handful of individual
+units changing, selected precisely because they changed.
+
+The early dip is worth a look on its own — `trainNovelObject` multiplies the pRNN learning
+rate by `tasks.training.lr_trials` (default 2) for the exposure phase and restores it after
+(`tasks/omt/task.py`). A transient at exactly that point is consistent with the LR boost, but
+that is **inferred from the timing, not traced**; the no-object control arm would settle it.
+
+**Still no object-location field.** Within-run null (percentile of the object location among
+all 172 walkable cells, per checkpoint), `outputs/trace/fig_exposure_timecourse.png`:
+
+| object | mean pop-mean pct | mean top-25 pct | ever sustained >95? |
+|---|---:|---:|---|
+| (7,11) | 51.5 | ~48 | no |
+| (14,7) | 57.5 | **80.9** | touches 95 at 4 of 16, never sustained |
+| (7,2) | 71.6 | 59.9 | no |
+
+The traces oscillate hard — (14,7) swings from percentile 4.1 at traj 1200 to 98.8 at
+traj 2400. Since the probe is a fixed deterministic replay, that swing is real weight change,
+not measurement noise; but an "effect" that appears and vanishes between checkpoints 200
+trajectories apart is not a trace.
+
+**The (14,7) elevation is not object-driven.** Its top-25 percentile is already **86.6 at
+trajectory 0** — i.e. after 8 trajectories, before exposure could plausibly cause anything.
+Whatever elevates that location is a property of the location or the baseline network, not
+of the object. This is the control observation that kills the most tempting positive reading.
+
+The map timeline (`fig_exposure_timeline_14_7.png`) shows the same thing visually: `#22`,
+`#348`, `#369`, `#162` are essentially frozen across all nine columns, and nothing appears
+at the `+`.
+
 **2026-07-30 (c)** — Pulled the three cluster runs and ran the object-following test.
 
 **All three Mila OMT runs are pre-`86f31be`** — they have the `omt/` path level, `pN-<n>.pt`
