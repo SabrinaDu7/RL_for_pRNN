@@ -19,11 +19,12 @@
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 
 # ---------------------------------------------------------------- knobs ----
-# Override at submit time, e.g.
-#   sbatch --job-name=OMT_cur_obj_14_7 slurm/omt_task.sh
-#   sbatch --job-name=OMT_cur_obj_7_2 \
-#          --export=ALL,OBJ_LOC='[7,2]',SEED_START=5300,SEED_END=5320 \
-#          slurm/omt_task.sh
+# Override by setting them in the SUBMITTING shell (sbatch propagates the
+# environment via its default --export=ALL), e.g.
+#   OBJ_LOC='[7,2]' SEED_START=5300 SEED_END=5320 \
+#     sbatch --job-name=OMT_cur_obj_7_2 slurm/omt_task.sh
+# Do NOT pass OBJ_LOC inside --export=ALL,OBJ_LOC=[7,2]: sbatch splits that
+# list on commas, so the hydra list literal gets torn in half.
 # Keep the seed ranges disjoint across locations so wandb runs stay separable.
 OBJ_LOC="${OBJ_LOC:-[14,7]}"
 SEED_START="${SEED_START:-5200}"
