@@ -447,8 +447,53 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
-**Blocked on:** the multi-column trace figure needs a checkpoint *series*. Only one
-`main_train` checkpoint exists locally. Waiting on the Mila scp (§5).
+**2026-07-30 (c)** — Pulled the three cluster runs and ran the object-following test.
+
+**All three Mila OMT runs are pre-`86f31be`** — they have the `omt/` path level, `pN-<n>.pt`
+filenames, and only steps `0` and `2992`. No checkpoint series exists anywhere. Confirmed
+the local baseline is byte-identical (sha256 `c1e43a6b…`) to the `CUR_CKPT_DIR` those runs
+seeded from, so the pre-exposure column is exact. Also noted: `train_phase` calls
+`on_save(index)` **after** the update, so the folder named `0` has already seen 8
+trajectories — it is a near-baseline, not a baseline.
+
+That still gives **3 object locations × (pre, post)**, which is the decisive
+"does tuning follow the object" contrast. Result:
+
+**Negative. No object-location-specific change in the allocentric rate maps.**
+
+Δ object-modulation (post − pre), population mean over 500 units:
+
+| exposed at | eval (7,11) | eval (14,7) | eval (7,2) |
+|---|---:|---:|---:|
+| (7,11) | 0.0045 | 0.0201 | 0.0188 |
+| (14,7) | −0.0052 | 0.0131 | 0.0175 |
+| (7,2)  | 0.0723 | 0.0465 | 0.0453 |
+
+Diagonal mean **0.021** vs off-diagonal **0.028** — the wrong way round. The `(7,2)` row is
+elevated everywhere, i.e. a global drift, not a local effect.
+
+The within-run null (Δ-modulation at all 172 walkable cells, percentile rank of the run's own
+object location) agrees, across every aggregation — population mean, 95th percentile, max, and
+mean of the top 25 units. Own-location percentiles land between **10.5 and 79.1**; a real
+effect would sit above 95. Units selected by Δ-modulation turn out to be units whose maps
+changed *generally* (`outputs/trace/fig_trace_3loc.png`), not at the object.
+
+**This is not yet evidence against trace cells.** Caveats, in order of importance:
+
+1. Only 2 timepoints, 3000 trajectories apart. Continued training drifts the whole
+   representation; a localised effect can be buried. Dense checkpoints are the fix and do not
+   exist yet.
+2. n = 1 seed per location, no no-object control run available locally.
+3. **The pixel-space metric DID show learning in this exact run** (Goal Modulation +0.050,
+   Goal − Ctrl +0.029 at traj 208, §2.3). So the object *is* encoded — just not as an
+   allocentric rate-map change. That dissociation is itself a result, and it points straight
+   at the object-relative frame (§3.4), which has **not been tested yet**. Doing that is the
+   cheapest next experiment: the map machinery already exists, only the binning coordinate
+   changes.
+4. Modulation radius fixed at 2.0 bins, untuned.
+
+**Blocked on:** a dense checkpoint series for the actual trace timeline — which needs
+`tasks/otc/` and a re-run, not an scp.
 
 **2026-07-30 (a)** — Design settled. Findings §2.1–2.7 established. Two enabling fixes committed:
 `38e3732` (checkpoint interop: canonical filename + `resolve_prnn_ckpt` + separated optimizer
