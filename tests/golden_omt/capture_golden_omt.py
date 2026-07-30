@@ -1,7 +1,8 @@
 """Golden fixture for the Object Memory Task (pre-refactor oracle).
 
-Runs the REAL task code end-to-end with the real .env checkpoints, CPU,
-pinned seed, wandb off, figures disabled via config (not code):
+Runs the REAL task code end-to-end with a PINNED checkpoint (GOLDEN_CKPT_DIR
+below - not the ambient CUR_CKPT_DIR), CPU, pinned seed, wandb off, figures
+disabled via config (not code):
 construction -> trainNovelObject (2 batches, incl. lr_trials scaling and the
 analysis-interval eval that fires at batch 0) -> getTestTrial(2) ->
 quantifyObjectLearning.
@@ -14,6 +15,7 @@ RNG consumption order). Also encodes the env wiring guard: training uses
 env_novel (object present), eval rollouts use env_orig (object absent).
 """
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -22,7 +24,7 @@ import torch
 from hydra import compose, initialize_config_dir
 
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
-from curious_george import AgentInputType, AgentType, get_ckpt_env_vars, make_env
+from curious_george import AgentInputType, AgentType, make_env
 
 try:  # refactored layout
     from tasks.omt.task import ObjectMemoryTask
@@ -32,6 +34,17 @@ except ImportError:  # pre-refactor layout
 DEVICE = torch.device("cpu")
 REPO = Path(__file__).resolve().parents[2]
 OUT = str(REPO / "tests" / "golden_omt" / "golden_omt_v0.pt")
+
+# The bitwise gate is only meaningful against the checkpoint the fixture was
+# captured from, so PIN it here instead of inheriting the ambient CUR_CKPT_DIR
+# (which tracks whatever run you are currently working with, and legitimately
+# changes). Overridable only to re-capture the fixture on purpose.
+GOLDEN_CKPT_DIR = Path(
+    os.environ.get(
+        "GOLDEN_OMT_CKPT_DIR",
+        str(REPO / "outputs" / "ckpts" / "pRNN_lroom_cur_noObs_26-02-15-17-33-11"),
+    )
+)
 
 OVERRIDES = [
     # golden_omt_v0.pt was captured under legacy alignment at B=1; pin both so
@@ -64,7 +77,14 @@ def run_omt_capture() -> dict:
     with initialize_config_dir(config_dir=str(REPO / "Configs"), version_base=None):
         args = compose(config_name="main", overrides=OVERRIDES)
 
-    prnn_ckpt, ac_ckpt = get_ckpt_env_vars(AgentType.AC)
+    prnn_ckpt = str(GOLDEN_CKPT_DIR / "predictiveNet_state.pt")
+    ac_ckpt = str(GOLDEN_CKPT_DIR / "status.pt")
+    for path in (prnn_ckpt, ac_ckpt):
+        assert Path(path).is_file(), (
+            f"golden fixture checkpoint missing: {path}. The bitwise gate is "
+            "pinned to the run that captured golden_omt_v0.pt; set "
+            "GOLDEN_OMT_CKPT_DIR only to re-capture on purpose."
+        )
 
     env_orig = make_env(env_key=MinigridEnvNames.LRoom, input_type=AgentInputType.H_PO.value,
                         act_enc=ActionEncodingsEnum.SpeedHD.value)

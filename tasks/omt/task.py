@@ -7,6 +7,8 @@ predicts the object where it used to be, relative to the untrained control
 copy. Do not swap the two envs.
 """
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -72,7 +74,12 @@ class ObjectMemoryTask:
         )
 
         self.args = args
-        self.save_path = save_path
+        # save_path is the run's output DIRECTORY (absolute, under
+        # $RL_STORAGE/omt/); run_name is its bare leaf, used for figure titles
+        # and filenames so those never contain path separators.
+        self.save_path = str(save_path)
+        self.run_name = Path(self.save_path).name
+        self.save_root = str(Path(self.save_path).parent)
         self.wandb_log = args.logging.wandb_log
 
         # Analysis knobs
@@ -210,12 +217,12 @@ class ObjectMemoryTask:
         if objectLearning is not None and testTrial is not None and self.wandb_log:
             obj_learn_fig = figure_object_learning(
                 env_name=self.env_orig,
-                run_name=self.save_path,
+                run_name=self.run_name,
                 traj_num=traj_count,
                 save_folder=self.save_path,
                 objectLearning=objectLearning,
                 testTrial=testTrial,
-                rl_storage=".",
+                rl_storage=self.save_root,  # so rl_storage/run_name == save_path
                 config=self.args,
                 pN=self.pN_post,
                 show=False,

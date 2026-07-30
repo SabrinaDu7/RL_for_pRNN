@@ -1,7 +1,17 @@
 """Bitwise gate for the OMT refactor: re-run the task end-to-end and compare
 every tensor against the pre-refactor fixture golden_omt_v0.pt.
 
-Requires the .env checkpoints (like tests/test_ckpts.py). Runtime ~1 min.
+Scope: this answers "given the SAME checkpoint and seed, is the math still
+bit-identical after a refactor?" - it is NOT a check that some new checkpoint
+works well on OMT. Hence capture_golden_omt.py pins its checkpoint rather than
+reading CUR_CKPT_DIR. (test_env_wiring_guard and
+test_control_net_untouched_by_training are the two checkpoint-agnostic
+invariants here and hold for any checkpoint.)
+
+TODO: add a separate bound-based test (finite outputs, pN_post diverges from
+pN_control, non-degenerate curious_rewards) that DOES run on CUR_CKPT_DIR.
+
+Runtime ~1 min.
 """
 
 from pathlib import Path

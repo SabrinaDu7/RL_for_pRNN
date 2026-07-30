@@ -12,14 +12,15 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.omt.task import ObjectMemoryTask
-from curious_george import get_ckpt_env_vars, get_env_var, AgentType, AgentInputType
+from curious_george import get_ckpt_env_vars, get_env_var, get_model_dir, AgentType, AgentInputType
 from curious_george import make_env
- 
+
 # ===== Constants =====
 DEVICE = torch.device("cuda")
 RL_STORAGE = get_env_var("RL_STORAGE")
 
-RESULTS_SAVE_FOLDER = "results"
+# All task output lives under the single storage root: $RL_STORAGE/omt/<run>/
+OMT_SUBDIR = "omt"
 TIME = time.strftime("%m%d-%H%M")
 
 # ===== Helper functions =====
@@ -100,7 +101,7 @@ def main(args: DictConfig):
         agent_type=agent_type,
         env_orig=env_orig,
         env_novel=env_novel,
-        save_path=f"{run_name}",
+        save_path=get_model_dir(f"{OMT_SUBDIR}/{run_name}"),
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,
