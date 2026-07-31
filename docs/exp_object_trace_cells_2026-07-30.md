@@ -447,6 +447,60 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
+**2026-07-30 (h)** — Traced the mechanism from readout to behaviour. Two retractions and a
+resolution.
+
+**The policy does not read the prediction.** `ActorCriticAgent.getObservations` feeds
+`acmodel(obs, SR=SR)` where `SR = predict_single(...)`, i.e. the hidden state
+(`curious_george/rl/collect/agent.py:33-40, 74-101`); `ACModelSR.forward` concatenates it with
+a one-hot HD (`curious_george/models.py:129-148`). `obs_pred` reaches behaviour only via the
+curiosity reward, which is per-step prediction MSE
+(`curious_george/rl/update/rewards.py:28-50`). So:
+
+```
+W_out -> obs_pred -> prediction MSE -> curiosity reward -> PPO -> policy
+h ------------------------------------------------------------------^  (policy INPUT, unchanged)
+```
+
+**RETRACTED: "policy lags the world model."** Binning MSE by agent position
+(`scripts/trace_reward_map.py`) showed error at the object cell peaking at traj 200
+(1.42x room median) then falling to the 7th percentile by traj 2992 while occupancy climbed
+to the 94th — which looked like a lag. It replicated at **0 of the other 2 locations**:
+(14,7) sits below the room median from traj 0 onward, and (7,2) — the location with the
+*strongest* behaviour — never exceeds it.
+
+**RESOLUTION: the reward is generated at VIEWING positions, not at the object cell.** Binning
+by agent position smears it. Conditioning on visibility instead
+(`scripts/trace_reward_inview.py`), MSE ratio in-view/not-in-view, minus the same for
+`ctrl_locs`:
+
+| trajs | (7,11) | (14,7) | (7,2) |
+|---:|---:|---:|---:|
+| 0 | +0.443 | −0.096 | +0.230 |
+| 200 | **+0.739** | +0.008 | +0.234 |
+| 600 | +0.378 | +0.121 | **+0.577** |
+| 1400 | +0.451 | +0.028 | +0.349 |
+| 2400 | +0.214 | +0.149 | +0.501 |
+| 2992 | +0.007 | −0.026 | +0.283 |
+
+**3/3 correspondence with behaviour**: (7,11) and (7,2) carry a sustained object-driven error
+signal and show real behavioural attraction (2/3 and 3/3 seeds); (14,7) carries **no** error
+signal and shows **no** attraction — its apparent effect was baseline geometry throughout.
+
+**The error never resolves.** It stays elevated for all 3000 trajectories at both real
+locations. There is no lag to explain: the readout learns the object only partially, residual
+error persists, curiosity keeps paying out, behaviour persists. The confirmed chain is
+
+```
+object in view -> sustained elevated prediction error -> curiosity reward -> sustained approach
+```
+
+with the place code untouched at every step.
+
+Caveat: MSE measured on a random-action probe; the training reward is on-policy. Cross-cell
+and in/out-of-view *rankings* should carry over, but the experience distribution differs.
+n=1 run per location for the reward analyses.
+
 **2026-07-30 (g)** — Behaviour at n=3, 128 rollouts per point, trajectory 0 vs final
 checkpoint (`outputs/trace/fig_behavior_n3.png`). Percentile of the object location among all
 172 walkable cells:
