@@ -447,6 +447,62 @@ giving a two-point curve. That is what the pilot is for; cadence is set after it
   and `outputs/trace/fig_occupancy.png`. Fields are clean and localised; a visible minority
   are wall-band/border cells rather than point fields.
 
+**2026-07-30 (i)** — Object-vector frame tested (negative), the >100% anomaly explained, and
+the removal mechanism verified.
+
+**1. No object-vector coding either.** Binning `h` by the object's position in the agent's
+7x7 view (`scripts/trace_objvector_test.py`), median SI change from baseline, object minus
+control locations: **+0.0205 (7,11), +0.0063 (14,7), +0.0022 (7,2)**. The object's own
+view-frame SI is unchanged (+0.0005, +0.0001, −0.0174), and every landmark — object and
+controls alike — drifts down slightly. Note baseline view-frame SI is already 0.24–0.52,
+which is not object coding but the trivial consequence of view-frame position being a
+deterministic function of allocentric position and head direction; the control columns are
+what removes it.
+
+**Three reference frames, three nulls.** Allocentric place maps (r ≈ 0.98), object-location
+modulation, and now object-vector tuning. The hidden state does not change.
+
+**2. The >100% readout share is a GAIN MISMATCH — and it partly confounded the headline.**
+
+```
+||h||  baseline 11.195   trained 10.15-10.25   ratio ~0.91
+||W_out||                                      ratio ~1.02
+```
+
+Trained nets run ~9% smaller hidden activity with a slightly larger readout, so a raw
+`W_out` transplant onto baseline dynamics OVER-drives the prediction and the reverse
+transplant UNDER-drives it. **Both errors push toward "the readout carries it"**, which is
+the conclusion drawn from them. RETRACTS the speculation in log (f) that the trained
+dynamics counteract the object signal.
+
+Rescaling `W_out` by the measured `||h||` ratio (`scripts/trace_readout_gaincorrected.py`):
+
+| | uncorrected | gain-corrected |
+|---|---:|---:|
+| full | +0.0732 ± 0.0146 | +0.0732 ± 0.0146 |
+| readout-only | +0.0717 ± 0.0190 | **+0.0625 ± 0.0130** |
+| dynamics-only | +0.0108 ± 0.0131 | **+0.0157 ± 0.0104** |
+| readout > dynamics | 9/9 | **9/9** |
+| ratio | 6.6x | **4.0x** |
+
+Mean readout share 98% -> **~87%**. Direction and 9/9 consistency survive; the magnitude was
+overstated by ~12 points. Three runs still exceed 100%, so the correction does not absorb
+everything — residual unexplained.
+
+**3. Removal mechanism verified (for `tasks/otc/`).** Phase B removes the object IN PLACE
+(`base_env(env).new_obj_pos = None`, then `reset()`) rather than swapping env objects. This
+is safe because the object is a non-blocking floor tile, so the walkable mask and algo
+geometry (`loc_mask`, `loc_stats`, `subroom_size`) are unchanged. Confirmed empirically:
+
+- grid fingerprint flips `170b5eec24237cf3` -> `6f48cd7fbcae481d`, matching a fresh
+  object-absent env
+- grid encoding byte-identical to a fresh object-absent env
+- **observation bank identical** — the real risk, since `BankedRGBPartialObsWrapper` caches
+  per grid layout; it re-keys inside `reset()` from the live fingerprint
+  (`curious_george/envs/obs_bank.py:64-86`), so the mutation is picked up
+
+This avoids any algo surgery: phase A and B share the same env objects and wrappers.
+
 **2026-07-30 (h)** — Traced the mechanism from readout to behaviour. Two retractions and a
 resolution.
 

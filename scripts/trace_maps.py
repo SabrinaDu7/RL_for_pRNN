@@ -21,6 +21,62 @@ MIN_OCCUPANCY = 20      # samples per bin below which a bin is not estimated
 MIN_ACTIVE_SAMPLES = 200  # timesteps with h > 0 below which a unit is silent
 
 
+def bin_maps(
+    *,
+    h: Float[np.ndarray, "N H"],
+    bin_index: np.ndarray,
+    n_bins: int,
+    shape: tuple[int, int],
+    min_occupancy: int = MIN_OCCUPANCY,
+) -> tuple[
+    Float[np.ndarray, "H ny nx"], Float[np.ndarray, "ny nx"], Bool[np.ndarray, "ny nx"]
+]:
+    """Mean activity per bin from precomputed flat bin indices.
+
+    The shared core of occupancy_and_maps (spatial frame) and view_frame_maps
+    (object-relative frame) - the only difference between the two is what the
+    bin index means.
+    """
+    occupancy = np.bincount(bin_index, minlength=n_bins).astype(np.float64)
+    onehot = sparse.csr_matrix(
+        (np.ones(len(bin_index)), (bin_index, np.arange(len(bin_index)))),
+        shape=(n_bins, len(bin_index)),
+    )
+    totals = (onehot @ h).T
+    valid = occupancy >= min_occupancy
+    with np.errstate(invalid="ignore", divide="ignore"):
+        maps = totals / occupancy[None, :]
+    maps[:, ~valid] = np.nan
+    return maps.reshape(-1, *shape), occupancy.reshape(shape), valid.reshape(shape)
+
+
+def view_frame_maps(
+    *,
+    h: Float[np.ndarray, "N H"],
+    vx: np.ndarray,
+    vy: np.ndarray,
+    view_size: int = 7,
+    min_occupancy: int = MIN_OCCUPANCY,
+) -> tuple[
+    Float[np.ndarray, "H v v"], Float[np.ndarray, "v v"], Bool[np.ndarray, "v v"]
+]:
+    """Tuning to a landmark's position in the agent's egocentric view.
+
+    This is the object-vector frame: instead of "where is the agent in the
+    room", the bin is "where is the object relative to the agent". Only
+    timesteps with the landmark inside the view contribute - the caller must
+    pass the already-filtered rows.
+    """
+    assert h.shape[0] == vx.shape[0] == vy.shape[0], "h, vx, vy must align"
+    return bin_maps(
+        h=h,
+        bin_index=(vy * view_size + vx).astype(np.int64),
+        n_bins=view_size * view_size,
+        shape=(view_size, view_size),
+        min_occupancy=min_occupancy,
+    )
+
+
 def occupancy_and_maps(
     *,
     h: Float[np.ndarray, "N H"],
