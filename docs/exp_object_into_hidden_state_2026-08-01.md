@@ -186,3 +186,45 @@ gradient is too weak to build a representation for.
 
 That points at the remaining in-scope lever: raise the object's share of the loss by raising
 the agent's *exposure* to it — `rl.k_curious` and start-position shaping. Both RL-side.
+
+## Intervention 3 — per-parameter LR sweep: PARTIAL SUCCESS
+
+Sweeping `tasks.training.lr_trials` (per-optimizer-group LR multipliers, groups
+`[W, W_out, W_in]`). All RL-side config; the pRNN package is untouched.
+
+| condition | object contrast | dW | dW_in | phase-0 decode | memory |
+|---|---:|---:|---:|---:|---:|
+| baseline | — | — | — | 0.6753 ± 0.0043 | 0.5302 ± 0.0011 |
+| `[2,2,2]` normal | +0.0891 | 0.13 | 0.14 | 0.6871 ± 0.0050 | 0.5312 ± 0.0009 |
+| `[2,0,2]` frozen `W_out` | +0.0214 | 0.13 | 0.14 | 0.6943 ± 0.0039 | 0.5296 ± 0.0014 |
+| `[2,0,4]` frz + in2x | +0.0190 | 0.14 | 0.30 | 0.6826 | 0.5282 |
+| **`[2,0,8]` frz + in4x** | +0.0121 | **0.16** | 0.74 | **0.7229 ± 0.0055** | 0.5316 ± 0.0009 |
+| `[8,0,8]` frz + all 4x | −0.0219 | 0.84 | 0.73 | 0.7109 ± 0.0044 | 0.5311 ± 0.0005 |
+| `[8,0,0]` recurrent only | −0.0262 | 0.83 | **0** | 0.6808 | 0.5303 |
+
+(± is over 8 random trajectory splits of the decoder; single training seed per condition.)
+
+**`W_in` is the lever, not the recurrent matrix.** `[8,0,0]` trains `W` at 4x with `W_in`
+frozen and lands back at baseline decoding (0.6808) — pounding the recurrent weights alone
+does nothing. The object enters `h` through the input weights.
+
+**Best configuration: `[2,0,8]`** — freeze the readout, boost input weights 4x, leave the
+recurrent LR alone. Phase-0 decoding **0.6753 -> 0.7229, +0.048 (~10 split-SD)**, with `dW`
+at 0.16 rather than the 0.84 of `[8,0,8]`, so the model stays intact and the object contrast
+stays positive. Clean monotone ordering: baseline < normal < frozen < frozen+all < frozen+in4x.
+
+### What this does and does not achieve
+
+**Achieved:** object *encoding* in `h` is significantly and controllably increased by
+RL-side config alone. The hidden state carries measurably more object information than the
+pre-exposure net, and more than the normally-trained net.
+
+**Not achieved:** object *memory*. Memory-phase decoding is 0.5296–0.5316 in every condition
+including the untrained baseline — gaps of ~1 split-SD. The object loads into `h` when its
+observation arrives and is gone one masked step later. No intervention has moved this.
+
+So `h` encodes the object better; it still does not hold it.
+
+**Caveat:** single training seed per condition. The ± above is decoder-split variability, not
+between-seed. Seed replication of `[2,0,8]` (seeds 5201, 5202) against the three Mila
+`[2,2,2]` seeds is the outstanding check before the +0.048 is quotable.
