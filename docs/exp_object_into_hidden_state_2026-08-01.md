@@ -348,3 +348,57 @@ the gain between "random position helps" and "`[2,0,8]` helps".
 **Mechanism:** `W_in` is the lever. `[8,0,0]` trains the recurrent matrix at 4x with `W_in`
 frozen and returns to baseline. Freezing `W_out` forces the network to use the input pathway
 rather than the cheaper readout; scaling `W_in` is what then loads `h`.
+
+## Attribution: the two interventions do DIFFERENT things (final, n=3)
+
+| group | ph0 | ph1 | ph2 | ph3 | ph4 | ph5 | n |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 0.6776 | 0.5784 | 0.5371 | 0.5210 | 0.5135 | 0.5071 | 1 |
+| `[2,2,2]` fixedpos | 0.6902±0.001 | 0.5824±0.005 | 0.5394±0.001 | 0.5238±0.001 | 0.5130±0.001 | 0.5076±0.002 | 3 |
+| `[2,0,8]` fixedpos | **0.7214±0.001** | **0.5943±0.001** | **0.5465±0.003** | 0.5252±0.001 | 0.5145±0.002 | 0.5098±0.001 | 3 |
+| `[2,0,8]` RANDPOS | 0.7344 | 0.5969 | 0.5438 | 0.5287 | 0.5159 | 0.5114 | 1 |
+| `[2,2,2]` RANDPOS | 0.6938±0.004 | 0.5864±0.003 | 0.5436±0.004 | **0.5283±0.004** | **0.5182±0.004** | **0.5118±0.005** | 3 |
+
+**`[2,0,8]` drives ENCODING — established.** ph0 0.6902 -> 0.7214 (+0.031, ~30 SD),
+ph1 0.5824 -> 0.5943 (+0.012, ~2.4 SD). Tight error bars, n=3, perfect seed separation.
+Random position alone barely moves ph0 (0.6938).
+
+**Random position drives LATE MEMORY — suggestive, NOT established.** ph5 above-chance
+0.76 -> 1.18 (+55%), ph4 1.30 -> 1.82 (+40%), ph3 2.38 -> 2.83 (+19%). But at n=3 the SD is
+0.004-0.005 against differences of 0.004-0.005 — about 1 SD. **The +142% I first reported was
+a single seed at the high end of its distribution.**
+
+## FINAL STATUS
+
+**Achieved:** `tasks.training.lr_trials=[2,0,8]` (freeze the readout, boost `W_in` 4x) puts
+measurably more object information into `h` — instantaneously (+0.031 at ph0) and one masked
+step later (+0.012 at ph1), replicated at n=3 with non-overlapping error bars, with no change
+to the pRNN package.
+
+**Mechanism:** `W_in` is the lever. `[8,0,0]` (recurrent at 4x, `W_in` frozen) returns to
+baseline. Freezing `W_out` removes the cheap storage site; scaling `W_in` loads `h`.
+
+**Cost:** object contrast +0.026 vs +0.089 for normal training. This trades prediction
+accuracy for hidden-state representation.
+
+**Not established:** persistent memory. The trace still decays to near-chance by ph4-ph5 in
+every condition. Randomising the object's position is the most promising lever for it and is
+mechanistically the right idea — with the location unpredictable, the position estimate can
+no longer reconstruct the object — but at n=3 the effect is ~1 SD. It needs more seeds before
+anyone relies on it.
+
+## Errors made and corrected in this document
+
+1. "Frozen peaks at 64% of normal" — read off wandb's 8-trajectory metric already flagged as
+   too noisy. Retracted; 400 trajectories is too short, the effect emerges after ~800.
+2. Two `h`-metrics (`||dh||` in-view ratio, object-presence perturbation) built before
+   reasoning about what they isolate; both measure the object driving `h` through `W_in`,
+   which happens in every net including untrained ones.
+3. **Pooling the five masked phases**, which averaged a real ph1 effect with near-chance
+   ph3-ph5 and produced a flat ~0.530 across ten conditions. I twice told the user the memory
+   half was structurally impossible on the strength of that number. Third pooling error in
+   this project.
+4. "+142% memory improvement" from a single seed; n=3 gives +55% at ~1 SD.
+
+**Standing lesson:** split by the variable the mechanism runs on before concluding a null, and
+never quote an effect size from n=1.
