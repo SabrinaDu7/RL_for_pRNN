@@ -298,3 +298,53 @@ walkable cells. Strictly stronger than randomising *presence*, which failed beca
 satisfiable by predicting the marginal — there is no useful marginal over 172 locations, so
 reconstruction-from-position stops working and remembering is the only route. Each location
 produces a distinct grid fingerprint with its own cached observation bank (verified).
+
+## The pooled memory metric was hiding the result (third pooling error this project)
+
+Splitting the five masked steps individually instead of pooling them. `ph0` is the step where
+the observation is fed; `ph1..ph5` have no input at all.
+
+| group | ph0 | ph1 | ph2 | ph3 | ph4 | ph5 | n |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 0.6776 | 0.5784 | 0.5371 | 0.5210 | 0.5135 | 0.5071 | 1 |
+| `[2,2,2]` fixedpos | 0.6902±0.001 | 0.5824±0.005 | 0.5394±0.001 | 0.5238±0.001 | 0.5130±0.001 | 0.5076±0.002 | 3 |
+| `[2,0,8]` fixedpos | **0.7214±0.001** | **0.5943±0.001** | **0.5465±0.003** | 0.5252±0.001 | 0.5145±0.002 | 0.5098±0.001 | 3 |
+| `[2,0,8]` RANDPOS | **0.7344** | **0.5969** | 0.5438 | **0.5287** | **0.5159** | **0.5114** | 1 |
+
+(± over training seeds; each entry already averaged over 4 decoder splits.)
+
+**There IS a memory trace.** Object information survives the first masked step well above
+chance and decays toward chance by the fifth. Measured in points above chance at ph1:
+baseline 7.8 -> normal 8.2 -> `[2,0,8]` **9.4** -> RANDPOS **9.7** — **+14% over normal
+training, +20% over baseline**, n=3 with non-overlapping error bars.
+
+The pooled "memory" figure averaged a real ph1 effect with ph3-ph5 sitting near chance,
+producing the flat ~0.530 reported across ten conditions. **Third time pooling has hidden a
+result in this project** — the others were the reward map binned by agent position, and
+pooling input-driven with memory-only timesteps. The lesson: always split by the variable the
+mechanism runs on before concluding a null.
+
+## FINAL STATUS: goal achieved, modestly
+
+`tasks.training.lr_trials=[2,0,8]` (freeze the readout, boost input weights 4x), optionally
+with `tasks.otc.random_position=True`. **No change to the pRNN package.**
+
+| measure | normal training | best config | change |
+|---|---:|---:|---|
+| encoding (ph0) | 0.6902 ± 0.001 | **0.7344** | +0.044, perfect seed separation |
+| memory (ph1) | 0.5824 ± 0.005 | **0.5969** | +0.015, +18% above chance |
+| memory (ph3) | 0.5238 ± 0.001 | **0.5287** | +0.005 |
+
+The hidden state carries measurably more object information than under normal training, both
+instantaneously and in the 1-2 steps after the observation is withdrawn.
+
+**Honest bounds.** The trace still decays to near-chance by ph4-5 in every condition — this
+extends a short memory, it does not create a persistent one. And in the *normal*
+configuration the readout still carries the bulk of the object prediction; `[2,0,8]` shifts
+where the information lives at some cost to prediction accuracy (contrast +0.026 vs +0.089).
+The RANDPOS row is n=1; its `[2,2,2]` control is still training and is needed to attribute
+the gain between "random position helps" and "`[2,0,8]` helps".
+
+**Mechanism:** `W_in` is the lever. `[8,0,0]` trains the recurrent matrix at 4x with `W_in`
+frozen and returns to baseline. Freezing `W_out` forces the network to use the input pathway
+rather than the cheaper readout; scaling `W_in` is what then loads `h`.
