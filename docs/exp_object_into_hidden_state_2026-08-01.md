@@ -87,3 +87,65 @@ underlying cause is untouched: the object is still redundant with position. The 
 intervention should attack that — vary the object's presence across episodes so position
 alone stops predicting it and `h` must integrate evidence over time. That is an RL/collection
 change, still within scope.
+
+## Intervention 2 — stochastic object presence (`tasks/otc/`)
+
+Each of the 8 training envs independently gets the object with probability
+`presence_prob`, re-rolled every batch, so position stops predicting the object. Toggling
+verified: grid fingerprints alternate cleanly between the two known layouts
+(`170b5eec24237cf3` / `6f48cd7fbcae481d`) with no stale observation bank.
+
+### Result: it makes things WORSE
+
+Object contrast on the 200-trajectory probe, mean of the last 5 checkpoints, 3000-trajectory
+runs, seed 5200, object (7,11):
+
+| condition | contrast | dW | dW_out |
+|---|---:|---:|---:|
+| p=1.0, `W_out` free | **+0.0891 ± 0.0090** | 0.131 | 0.151 |
+| p=1.0, `W_out` FROZEN | +0.0214 ± 0.0112 | 0.133 | **0** |
+| p=0.5, `W_out` free | +0.0301 ± 0.0066 | 0.141 | 0.117 |
+| p=0.5, `W_out` FROZEN | +0.0053 ± 0.0058 | 0.144 | **0** |
+
+Randomising presence cuts the effect from +0.089 to +0.030; with the readout also frozen it
+is +0.0053 ± 0.0058, indistinguishable from zero.
+
+**Why, in hindsight:** with p=0.5 the optimal prediction is the *marginal probability* of
+green at that location. The net never has to infer presence from history — predicting ~50%
+is right on average. Breaking the redundancy removed information without creating any
+pressure to replace it with inference.
+
+### Positive decoding test: null across the board
+
+Linear probe from `h` to object presence, trained and tested on disjoint trajectory splits,
+restricted to in-view timesteps:
+
+| net | held-out accuracy |
+|---|---:|
+| baseline (never saw the object) | 0.5443 |
+| p=1.0 `W_out` free | 0.5479 |
+| p=1.0 `W_out` FROZEN | 0.5457 |
+| p=0.5 `W_out` free | 0.5460 |
+| p=0.5 `W_out` FROZEN | 0.5483 |
+
+Every net sits at ~0.545 — including the baseline that never saw the object. That 4.5 points
+above chance is the object driving `h` through `W_in`; **no amount of exposure, in any
+condition, improves on it.**
+
+## Status: goal NOT achieved
+
+Five measures across four conditions. `h` responds to the object as an *input* (4.3x in-view
+perturbation, present in the untrained net), and exposure neither strengthens nor restructures
+that response.
+
+**Structural diagnosis.** The object is only ever relevant to prediction while it is in view —
+at which point it is directly available in the current observation. There is almost no window
+in which the network must *hold* it. Freezing `W_out` removes the cheap storage site but
+creates no demand for memory; randomising presence removes the redundancy but is satisfiable
+by predicting the marginal. Both interventions attack the symptom.
+
+**What would create the demand** is making the object predictive of something not currently
+observable: occlusion (a blocking object whose far side must be remembered), or an object
+whose position varies within an episode so the current view constrains a future one. Both are
+environment changes, not RL changes — and a blocking object is the same change flagged on
+2026-07-31 as a PI decision, since it also invalidates the existing baselines.
