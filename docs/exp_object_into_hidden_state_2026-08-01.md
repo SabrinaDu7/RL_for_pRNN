@@ -149,3 +149,40 @@ observable: occlusion (a blocking object whose far side must be remembered), or 
 whose position varies within an episode so the current view constrains a future one. Both are
 environment changes, not RL changes — and a blocking object is the same change flagged on
 2026-07-31 as a PI decision, since it also invalidates the existing baselines.
+
+## The measurement was wrong, and fixing it localises the failure
+
+`thRNN_5win` is a `MaskedRNN` with **`inMask = [True, False x5]`** (verified on the loaded
+net): the observation reaches the network only **1 timestep in 6**, while `outMask` is
+all-True so it must predict the observation at every step. Phases 1-5 are driven by actions
+and recurrence alone — pure memory. So the architecture already imposes a strong memory
+demand, and my earlier decoding test was pooling input-driven with memory-only timesteps,
+which are completely different claims.
+
+Split by phase (`scripts/trace_presence_decoder.py`), held-out accuracy, chance 0.5:
+
+| net | phase 0 (input fed) | phases 1-5 (MEMORY) |
+|---|---:|---:|
+| baseline (never saw it) | 0.6787 | 0.5307 |
+| p=1.0 free | 0.6838 | 0.5305 |
+| p=1.0 FROZEN | **0.6941** | 0.5274 |
+| p=0.5 free | 0.6873 | 0.5305 |
+| p=0.5 FROZEN | 0.6852 | 0.5310 |
+
+**The object is readable from `h` while the observation is fed (0.68-0.69) and is gone one
+masked step later (0.53).** It survives ~zero of the 5-step memory window, and the
+memory-phase number is identical to the untrained baseline in every condition.
+
+The only hidden-state measure any intervention has moved: frozen `W_out` raises phase-0
+decoding 0.679 -> 0.694. Small, n=1, but it is the sole positive signal so far.
+
+**Why the network does not remember.** During masked steps it reconstructs "green at (7,11)"
+from its *position estimate*, maintained from actions, plus a fixed readout mapping. It needs
+a position memory, not an object memory — the redundancy again, now precisely localised.
+
+Even under p=0.5, where remembering genuinely would cut loss (predicting 0.5 costs MSE 0.25
+against a 0/1 truth), the object is **1 of 49 view cells, ~2% of the prediction loss**. The
+gradient is too weak to build a representation for.
+
+That points at the remaining in-scope lever: raise the object's share of the loss by raising
+the agent's *exposure* to it — `rl.k_curious` and start-position shaping. Both RL-side.
