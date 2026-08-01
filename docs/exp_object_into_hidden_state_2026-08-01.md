@@ -264,3 +264,37 @@ acquire one.
 
 Whether the goal is met depends on which reading was intended. "The hidden state contains the
 object representation" is true in the encoding sense and false in the persistence sense.
+
+## Intervention 4 — noise is NOT the limiter (inference-time test, no retraining)
+
+Replaying with `trainNoiseMeanStd=(0,0)`:
+
+| net | phase-0 on/off | memory on/off |
+|---|---|---|
+| baseline | 0.6787 / 0.6971 | 0.5307 / **0.5302** |
+| `[2,2,2]` normal | 0.6838 / 0.7081 | 0.5305 / **0.5334** |
+| `[2,0,8]` | 0.7128 / **0.7331** | 0.5314 / **0.5355** |
+
+Removing noise entirely raises phase-0 ~2 points everywhere and leaves memory at ~0.53.
+**The memory is not being erased — it was never written.** Rules out the last
+"present but degraded" explanation.
+
+## Intervention 5 — `rl.k_curious` (raise the object's share of the loss): FAILS
+
+| condition | contrast | phase-0 | memory |
+|---|---:|---:|---:|
+| `[2,0,8]` k=1 (ref) | +0.0258 | 0.7128 | 0.5314 |
+| `[2,0,8]` k=5 | +0.0136 | 0.7078 | 0.5319 |
+| `[2,0,8]` k=20 | **−0.1045** | 0.6787 | 0.5280 |
+
+k=5 marginally worse; k=20 catastrophic — contrast strongly negative, phase-0 back to exactly
+the baseline. Cranking curiosity destabilises training instead of concentrating exposure.
+Memory unchanged.
+
+## Intervention 6 — random object POSITION (running)
+
+`tasks.otc.random_position=True` re-samples the object's cell every batch from the 172
+walkable cells. Strictly stronger than randomising *presence*, which failed because it was
+satisfiable by predicting the marginal — there is no useful marginal over 172 locations, so
+reconstruction-from-position stops working and remembering is the only route. Each location
+produces a distinct grid fingerprint with its own cached observation bank (verified).

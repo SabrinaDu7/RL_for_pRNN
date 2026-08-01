@@ -45,13 +45,25 @@ class ObjectTraceTask:
         prnn_ckpt: str,
         acmodel_status_ckpt: str,
         obj_pos: list[int],
+        random_position: bool = False,
     ):
         self.obj_pos = list(obj_pos)
+        self.random_position = random_position
         self.args = args
         self.save_path = str(save_path)
         self.wandb_log = args.logging.wandb_log
         self.seqdur = args.predNet.seqdur
         self.trajs_per_batch = args.rl.trajs_per_batch
+
+        if random_position:
+            from scripts.analysis_OMT import (
+                get_walkable_mask, get_walkable_minigrid_positions,
+            )
+            self._walkable = [
+                tuple(p.tolist())
+                for p in get_walkable_minigrid_positions(get_walkable_mask(env_eval))
+            ]
+            print(f"random object position over {len(self._walkable)} walkable cells")
 
         self.comps = setup_task(
             args,
@@ -67,7 +79,13 @@ class ObjectTraceTask:
 
     # ------------------------------------------------------------------ #
 
-    def _set_object(self, env, present: bool) -> None:
+    def _sample_position(self, rng: np.random.Generator):
+        """A walkable cell for the object, or the fixed one when not randomising."""
+        if not self.random_position:
+            return tuple(self.obj_pos)
+        return tuple(self._walkable[rng.integers(len(self._walkable))])
+
+    def _set_object(self, env, present: bool, pos=None) -> None:
         """Toggle the object on one env; the next reset regenerates the grid.
 
         Safe because the object is a non-blocking floor tile: the walkable mask
@@ -77,7 +95,7 @@ class ObjectTraceTask:
         (curious_george/envs/obs_bank.py).
         """
         u = base_env(env)
-        u.new_obj_pos = tuple(self.obj_pos) if present else None
+        u.new_obj_pos = tuple(pos if pos is not None else self.obj_pos) if present else None
         u.new_obj_color = "green" if present else None
         env.reset()
 
@@ -85,7 +103,7 @@ class ObjectTraceTask:
         """Independently toggle each training env; return how many got the object."""
         flags = rng.random(len(self.comps.envs_train)) < presence_prob
         for env, present in zip(self.comps.envs_train, flags):
-            self._set_object(env, bool(present))
+            self._set_object(env, bool(present), pos=self._sample_position(rng))
         return int(flags.sum())
 
     # ------------------------------------------------------------------ #

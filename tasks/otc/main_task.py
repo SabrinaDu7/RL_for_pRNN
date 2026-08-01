@@ -34,7 +34,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def main(args: DictConfig):
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
     date = datetime.datetime.now().strftime("%m%d-%H%M%S")
-    run_name = f"{args.exp.exp_name}-otc-p{args.tasks.otc.presence_prob}-{date}"
+    rp = "randpos" if args.tasks.otc.random_position else "fixedpos"
+    run_name = f"{args.exp.exp_name}-otc-p{args.tasks.otc.presence_prob}-{rp}-{date}"
 
     if args.logging.wandb_log:
         wandb.init(entity=args.logging.wandb_entity, project=args.logging.wandb_project,
@@ -73,6 +74,7 @@ def main(args: DictConfig):
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         obj_pos=obj_pos,
+        random_position=args.tasks.otc.random_position,
     )
     task.train(
         num_trajs=args.tasks.training.num_trajs,
