@@ -228,3 +228,39 @@ So `h` encodes the object better; it still does not hold it.
 **Caveat:** single training seed per condition. The ± above is decoder-split variability, not
 between-seed. Seed replication of `[2,0,8]` (seeds 5201, 5202) against the three Mila
 `[2,2,2]` seeds is the outstanding check before the +0.048 is quotable.
+
+### Seed replication (n=3 vs n=3): the encoding result holds
+
+Phase-0 presence decoding from `h`, final checkpoint, three training seeds each:
+
+| condition | 5200 | 5201 | 5202 | mean |
+|---|---:|---:|---:|---:|
+| baseline | — | — | — | 0.6787 |
+| `[2,2,2]` normal (Mila) | 0.6838 | 0.6866 | 0.6845 | **0.6850 ± 0.0012** |
+| `[2,0,8]` frz + in4x | 0.7128 | 0.7160 | 0.7186 | **0.7158 ± 0.0024** |
+
+**Perfect separation** — the worst `[2,0,8]` seed (0.7128) beats the best normal seed
+(0.6866). **+0.031 over normal training, +0.037 over the pre-exposure baseline**, between-seed
+SD ~0.002.
+
+Memory phase: `[2,0,8]` 0.5319 ± 0.0013 vs normal 0.5299 ± 0.0004. Separated in all three
+seeds but the magnitude is +0.002 against a chance floor of 0.500 — 3.2 points above chance
+instead of 3.0. **Not a meaningful improvement; the object still does not persist.**
+
+## Summary of the goal
+
+**ACHIEVED — object encoding in `h`.** `tasks.training.lr_trials=[2,0,8]` (freeze the readout,
+boost input weights 4x) raises linear decodability of object presence from the hidden state
+from 0.685 to 0.716, replicated across three seeds with perfect separation, no change to the
+pRNN package and no change to the environment. The mechanism is specific: `W_in` is the
+lever, and freezing it (`[8,0,0]`) returns decoding to baseline however hard the recurrent
+matrix trains.
+
+**NOT ACHIEVED — object memory in `h`.** Across nine conditions, memory-phase decoding sits at
+0.530 ± 0.002 including the untrained baseline. During masked steps the network reconstructs
+the object from its *position estimate* plus a fixed readout mapping; it needs a position
+memory, not an object memory, and a stationary object in a fixed room gives it no reason to
+acquire one.
+
+Whether the goal is met depends on which reading was intended. "The hidden state contains the
+object representation" is true in the encoding sense and false in the persistence sense.
