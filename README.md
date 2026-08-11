@@ -1,7 +1,10 @@
 # RL for pRNN
 
-This project is focused on modelling rat exploratory behavior in the Novel Object Recognition (NOR) paradigm, leveraging curiosity as an intrinsic reward signal for RL.
+This project is focused on modelling rat exploratory behavior, leveraging curiosity as an intrinsic reward signal for RL. We use a learned policy instead of a fixed one to feed environmental observations
+to the pRNN. The agent only uses the hidden state of the pRNN to make decisions within an episode.
 An overview of the code layout and training flow is found at the end of the README.
+
+To get started, run `uv run pypatree` to see the directory structure.
 
 ## Project Setup
 
@@ -9,7 +12,10 @@ This project is managed using [`uv`](https://docs.astral.sh/uv/).
 See [workspace documentation](https://docs.astral.sh/uv/concepts/projects/workspaces).
 A `justfile` is defined to automate common tasks like running files with [`just`](https://github.com/casey/just).
 
-This project utilizes a custom [minigrid](https://github.com/SabrinaDu7/minigrid) package and a custom [pRNN](https://github.com/SabrinaDu7/pRNN) package. Please have both of these packages in the same directory as RL_for_pRNN.
+This project utilizes a custom [minigrid](https://github.com/SabrinaDu7/minigrid) package and a custom
+[pRNN](https://github.com/LevensteinLab/pRNN) package. Both are pinned in `pyproject.toml`
+(`[tool.uv.sources]`) and resolved to exact commits in `uv.lock`; `uv sync` is the source of truth for
+which revision you are running.
 
 ```bash
 # Clone the pRNN and minigrid repos beforehand.
@@ -17,27 +23,29 @@ git clone https://github.com/SabrinaDu7/RL_for_pRNN.git
 cd RL_for_pRNN/
 
 # Create and activate venv
-uv venv --python 3.10.15
-source .venv/bin/activate
-
-# Download dependencies from pyproject.toml
 uv sync
+source .venv/bin/activate
 ```
 
 Then, set the environment variables in ```.env``` (checkpoint paths, wandb
 entity/project, and `RL_STORAGE` — the single source of truth for where run
-outputs land; it points at the repo-local `./storage` by default).
+outputs land; it points at the repo-local `./outputs` by default).
 
-## Running training
+Training in this repo logs to wandb. Ensure that you run `wandb login` and
+set the correct entity and project in `.env`.
 
-The entry point is ```main_train.py``` (```trainRL_Adel.py``` is a deprecated
-shim to the same thing). Construction, the loop, and wandb logging live in
+## Training Runs
+
+### Training from scratch
+
+A training run from scratch is started with ```main_train.py``` (```trainRL_Adel.py``` is deprecated). Construction, the loop, and wandb logging live in
 ```curious_george/training/{setup,loop,logging}.py```. Configs use
-[Hydra](https://hydra.cc/docs/intro/): `Configs/Conf1_Adel.yaml` composes
-swappable groups, and any key can be overridden from the CLI:
+[Hydra](https://hydra.cc/docs/intro/): `Configs/main.yaml` composes swappable
+groups, and any key can be overridden from the CLI. Run `uv run main_train.py --cfg job`
+to print the fully composed config — that, not this file, is where the defaults live.
 
 ```bash
-# default run (PPO, curiosity reward, legacy alignment)
+# default run: the groups listed under `defaults:` in Configs/main.yaml
 uv run main_train.py
 
 # override single keys
@@ -45,10 +53,10 @@ uv run main_train.py rl.steps=10000 logging.save_interval=0
 
 # swap whole components (Configs/<group>/*.yaml)
 uv run main_train.py algo=a2c                      # loss function (rl.loss)
-uv run main_train.py rewards=curious_next_obs      # corrected t+1 curiosity alignment
+uv run main_train.py rewards=curious                # curiosity reward alignment variant
 uv run main_train.py world_model=thrnn5win_prevact # pRNN arch + matching action encoding
 uv run main_train.py env=fourrooms model=plain_ac  # environment / AC architecture
-uv run main_train.py exp.num_envs=4                # parallel rollout collection (B=1 default)
+uv run main_train.py exp.num_envs=4                # parallel rollout collection
 ```
 
 Possible inputs the agent can receive (config group `model=`):
@@ -58,51 +66,30 @@ Possible inputs the agent can receive (config group `model=`):
 - h: the hidden state of the pRNN
 - h+PO: the hidden state of the pRNN and a partial observation
 
-## Object Memory Task
+**HOWEVER, we almost always only use h.**
+
+### Training for a task (from scratch or checkpoint)
+
+To run additional analyses, we may change the task/environment that
+the pRNN-agent interacts with and trains in. For example, to train
+on the Object Memory Task, which involves the introduction of a 
+novel object if a familiar environment (ie we train from a checkpoint):
 
 ```bash
-uv run tasks/ObjectMemoryTask/run_task.py
+uv run tasks/omt/main_task.py
 ```
 
-## Setup on Mila's cluster
+`justfile` holds the canonical invocations (`just omt-start-rand` and friends).
+`tasks/README.md` documents how a task loads its checkpoints, what each one
+freezes, and where its outputs land.
 
-On the login node:
+## Hardware: Mila's cluster
 
-1. Clone the repo.
-2. Create a virtual environment in your desired directory. (Ex: ```uv venv —python 3.10 ~/venvs/venv-pRNN```)
-3. Activate and sync the venv: ```source ~/venvs/venv-pRNN/bin/activate``` then ```uv sync --active```
-4. Venv is ready to be used on compute nodes. You can deactivate it for now: ```deactivate```
+This repo can be run locally (GPU or CPU) or on Mila's cluster. On the cluster,
+you can use slurm scripts listed in `slurm/` to get started.
 
-When using ```salloc/srun``` or ```sbatch```, you must activate the venv on the compute node
-and use the option ```--active``` to use the active venv. Example run command:
 
-```bash
-uv run --active main_train.py rl.steps=10000
-```
-
-# Overview of the code
-
-```
-main_train.py                hydra entry: setup -> loop
-curious_george/
-  training/                  setup.py (build everything), loop.py, logging.py (wandb)
-  rl/algo.py                 ONE PredictivePPOAlgo for B>=1 envs
-  rl/collect/                rollout loop, diagnostics, agent, obs preprocessing
-  rl/update/                 losses (ppo_clip/a2c registry), updater, GAE,
-                             curiosity rewards (+ reward_alignment), pRNN training
-  world_model/               PRNNAdapter + SR trackers (the only prnn seam),
-                             on_device/eval_mode context managers
-  evaluation/                sRSA + SWdist (spatial.py), on-policy analysis
-  envs/                      make_env + wrapper accessors
-  models.py                  ACModel, ACModelSR
-  utils/                     enums, checkpoints, env vars, DEVICE/seed
-  storage.py                 run-output paths + checkpoint factories
-tasks/ObjectMemoryTask/      NOR task: train near novel object, quantify learning
-tests/golden/                bitwise behavior oracle + cross-version harnesses
-docs/                        refactor notes/baseline/progress, experiment logs
-```
-
-## Training flow
+## Training (from scratch) flow
 
 ```
 main_train.py
@@ -133,7 +120,12 @@ main_train.py
 
 ## Behavior guarantees
 
-The refactor is pinned by `tests/golden/golden_v0.pt` — a bitwise oracle of
-the pre-refactor training path. `uv run pytest` runs the suite;
-`docs/refactor_notes.md` documents the temporal-alignment contract, device
-policy, and batched-mode constraints.
+`uv run pytest` is the gate. `docs/refactor_notes.md` documents the
+temporal-alignment contract, device policy, and batched-mode constraints.
+
+⚠️ **The training golden fixture is not enforced.** `tests/golden/` holds
+`golden_v0.pt` (pre-migration stack) and `golden_v1.pt` (current stack), written
+by `capture_golden.py` and compared by the standalone `compare_io.py` — but
+neither is a `test_*.py`, so pytest never collects them and no run of the suite
+reads either fixture. The training path is currently gated only by the ordinary
+unit tests. The OMT path *is* gated, by `tests/golden_omt/test_golden_omt.py`.
