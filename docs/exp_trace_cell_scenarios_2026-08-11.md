@@ -234,7 +234,49 @@ the exposure runs. This does not confound the metric, which is a within-lineage 
 comparison — but the shorter baseline **must be checked for a usable place code** before any
 C result is trusted.
 
-**Results:** _(pending)_
+### Results — the first positive signal, but underpowered at n=3
+
+**Gate first: does the shortened occluded baseline have a usable place code?** Yes.
+31,199 trajectories (vs 79,679 for the original non-occluded baseline):
+
+| | occluded baseline (31k) | original baseline (80k) |
+|---|---|---|
+| SI median / max | 0.690 / 2.069 | 0.759 / 2.541 |
+| silent units | 1/500 | 1/500 |
+| valid bins | 172/196 | 172/196 |
+
+Slightly weaker as expected from a third of the training, but clearly a place code.
+
+**Metric re-validated on the occluded probe** (a new probe had to be built — the existing one
+is non-occluded): negative control **0.0421, p = 0.819**; positive control 100% recall from
+amplitude 0.01.
+
+**Result — object at (14,7), 3 seeds:**
+
+| seed | frac object cells | p_binom | map corr vs baseline |
+|---|---:|---:|---:|
+| 5200 | 0.0561 | 0.293 | 0.9762 |
+| 5201 | **0.1423** | **<0.001** | 0.9698 |
+| 5202 | **0.0982** | **<0.001** | 0.9656 |
+| **mean** | **0.0989 ± 0.0352** | | |
+
+**Location control — the effect is specific to the object's cell:**
+
+| | **(14,7)** | (12,7) | (13,5) | (7,11) | (7,2) | (3,3) | (2,5) | (4,7) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| mean frac | **0.0989** | 0.0441 | 0.0387 | 0.0307 | 0.0261 | 0.0301 | 0.0347 | 0.0354 |
+
+Object location **0.0989** vs **0.0343** over seven controls — **excess +0.0646**, about 3×,
+against a measured negative control of 0.0421. The second-highest cell is (12,7), the
+neighbouring occluded cell, which is what a spatially localised effect should look like.
+
+**But: paired t across seeds gives p = 0.109.** Three seeds is not enough. Five more were
+launched (n=8) — see §7.
+
+This is the first condition in the whole project to produce a location-specific increase in
+receptive-field strength at the object. Given the history here — `(14,7)` was previously a
+pure drift artifact, and a "+142%" result once evaporated at n=10 — **it should not be called
+a result until the seeds land.**
 
 ---
 
