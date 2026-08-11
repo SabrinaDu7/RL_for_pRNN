@@ -440,13 +440,13 @@ class OnPolicyAnalysis:
         adv_map = np.zeros((4, self.algo.env.width - 2, self.algo.env.height - 2))
         for t in range(self.timesteps):
             adv_map[
-                self.algo.obss[t]["direction"],
+                self.algo.directions[t],
                 self.algo.locs[t][0] - 1,
                 self.algo.locs[t][1] - 1,
             ] += self.algo.advantages[t].cpu().numpy()
 
             instances_map[
-                self.algo.obss[t]["direction"],
+                self.algo.directions[t],
                 self.algo.locs[t][0] - 1,
                 self.algo.locs[t][1] - 1,
             ] += 1
@@ -463,13 +463,13 @@ class OnPolicyAnalysis:
         delta_map = np.zeros((4, self.algo.env.width - 2, self.algo.env.height - 2))
         for t in range(self.timesteps):
             delta_map[
-                self.algo.obss[t]["direction"],
+                self.algo.directions[t],
                 self.algo.locs[t][0] - 1,
                 self.algo.locs[t][1] - 1,
             ] += self.deltas[t]
 
             instances_map[
-                self.algo.obss[t]["direction"],
+                self.algo.directions[t],
                 self.algo.locs[t][0] - 1,
                 self.algo.locs[t][1] - 1,
             ] += 1
@@ -486,13 +486,13 @@ class OnPolicyAnalysis:
         values_map = np.zeros((4, self.algo.env.width - 2, self.algo.env.height - 2))
         for t in range(self.timesteps):
             values_map[
-                self.algo.obss[t]["direction"],
+                self.algo.directions[t],
                 self.algo.locs[t][0] - 1,
                 self.algo.locs[t][1] - 1,
             ] += self.algo.values[t].cpu().numpy()
 
             instances_map[
-                self.algo.obss[t]["direction"],
+                self.algo.directions[t],
                 self.algo.locs[t][0] - 1,
                 self.algo.locs[t][1] - 1,
             ] += 1
@@ -571,7 +571,7 @@ def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="plasma") -
 
     occ = np.zeros((4, algo.env.width - 2, algo.env.height - 2))
     for t in range(timesteps):
-        hd = algo.obss[t]["direction"]
+        hd = algo.directions[t]
         x, y = algo.locs[t][0] - 1, algo.locs[t][1] - 1
         occ[hd, x, y] += 1
 

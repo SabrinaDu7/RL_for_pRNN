@@ -80,6 +80,10 @@ class ACModel(nn.Module, torch_ac.ACModel):
             embedding = x
 
         x = self.actor(embedding)
+        # The explicit log_softmax is redundant - Categorical normalizes logits
+        # itself - but removing it changes float rounding in the policy log-probs,
+        # which perturbs actor gradients by ~6e-8 and breaks the bitwise oracle in
+        # tests/golden_omt/. Kept deliberately; the cost is one softmax over (B, 4).
         dist = Categorical(logits=F.log_softmax(x, dim=1))
 
         x = self.critic(embedding)
@@ -154,10 +158,13 @@ class ACModelSR(ACModel):
                 embedding = SR
 
         x = self.actor(embedding)
+        # The explicit log_softmax is redundant - Categorical normalizes logits
+        # itself - but removing it changes float rounding in the policy log-probs,
+        # which perturbs actor gradients by ~6e-8 and breaks the bitwise oracle in
+        # tests/golden_omt/. Kept deliberately; the cost is one softmax over (B, 4).
         dist = Categorical(logits=F.log_softmax(x, dim=1))
 
         x = self.critic(embedding)
         value = x.squeeze(1)
 
         return dist, value
-

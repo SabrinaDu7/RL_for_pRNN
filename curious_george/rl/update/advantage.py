@@ -1,62 +1,56 @@
-"""Rollout buffer utilities.
+"""Device-resident generalized advantage estimation."""
 
-For now this holds the GAE computation as a pure in-place function over the
-algo's preallocated [T] tensors. The RolloutBuffer class generalizing these
-to [T, B] arrives with parallel-env support (refactor plan Phase 5).
-"""
-
-import numpy as np
 import torch
 
 
+@torch.no_grad()
 def compute_gae(
     *,
-    advantages: torch.Tensor,
     rewards: torch.Tensor,
     int_rewards: torch.Tensor,
     curious_rewards: torch.Tensor,
     values: torch.Tensor,
     masks: torch.Tensor,
-    final_next_value: torch.Tensor,
-    final_mask,
-    num_frames: int,
+    final_next_values: torch.Tensor,
+    final_masks,
     discount: float,
     gae_lambda: float,
     k_int: float,
     k_curious: float,
-) -> None:
-    """n-step TD generalized advantage estimates, written into `advantages`.
+) -> torch.Tensor:
+    """Return GAE for rollout tensors shaped ``(T, ...)``.
 
-    Index conventions preserved from the original loop: masks[i] is the mask
-    recorded BEFORE step i's transition, so next_mask for step i is
-    masks[i+1] (or the live post-rollout mask for the last step).
+    ``masks[t]`` describes the state before transition ``t``, so transition
+    ``t`` uses ``masks[t + 1]`` (and ``final_masks`` at the rollout tail).
 
-    The recurrence runs in float32 numpy (identical IEEE ops / op order to the
-    historical per-element tensor loop; masks are exactly 0/1 so the one
-    reassociated multiply is exact) - per-element indexing of device tensors
-    in a Python loop was a measured hotspot.
+    The reverse recurrence ``adv[t] = delta[t] + decay[t] * adv[t + 1]`` is run
+    SEQUENTIALLY, on device. It is associative, so a Hillis-Steele prefix scan
+    would evaluate it in ``ceil(log2(T))`` stages instead of ``T`` - but that
+    reassociates the float32 sum and perturbs the result by ~6e-8, which is
+    below one ULP yet enough to break the bitwise oracle in
+    tests/golden_omt/. The scan was measured at ~1 ms/update against a
+    ~1.3 s update (docs/throughput_investigation_2026-07-23.md), so the
+    sequential form costs ~0.1% of wall-clock and keeps that gate meaningful.
+
+    Everything stays on device either way; the sequential loop launches T
+    small kernels but never synchronizes to the host.
     """
-    rewards_np = rewards.detach().cpu().numpy()
-    int_np = int_rewards.detach().cpu().numpy()
-    cur_np = curious_rewards.detach().cpu().numpy()
-    values_np = values.detach().cpu().numpy()
-    masks_np = masks.detach().cpu().numpy()
+    final_values = torch.as_tensor(
+        final_next_values, dtype=values.dtype, device=values.device
+    )
+    final_mask_tensor = torch.as_tensor(
+        final_masks, dtype=masks.dtype, device=masks.device
+    )
+    next_values = torch.cat((values[1:], final_values.unsqueeze(0)), dim=0)
+    next_masks = torch.cat((masks[1:], final_mask_tensor.unsqueeze(0)), dim=0)
 
-    next_values = np.empty_like(values_np)
-    next_values[:-1] = values_np[1:]
-    next_values[-1] = float(final_next_value)
-    next_masks = np.empty_like(masks_np)
-    next_masks[:-1] = masks_np[1:]
-    next_masks[-1] = final_mask
+    reward = rewards + k_int * int_rewards + k_curious * curious_rewards
+    deltas = reward + discount * next_values * next_masks - values
 
-    reward_term = rewards_np + k_int * int_np + k_curious * cur_np
-    deltas = reward_term + np.float32(discount) * next_values * next_masks - values_np
-
-    decay = np.float32(discount * gae_lambda) * next_masks
-    adv = np.empty_like(deltas)
-    next_adv = np.float32(0.0)
-    for i in range(num_frames - 1, -1, -1):
-        next_adv = deltas[i] + decay[i] * next_adv
-        adv[i] = next_adv
-
-    advantages.copy_(torch.from_numpy(adv).to(advantages.device))
+    decay = discount * gae_lambda * next_masks
+    advantages = torch.empty_like(deltas)
+    running = torch.zeros_like(deltas[0])
+    for t in range(deltas.shape[0] - 1, -1, -1):
+        running = deltas[t] + decay[t] * running
+        advantages[t] = running
+    return advantages

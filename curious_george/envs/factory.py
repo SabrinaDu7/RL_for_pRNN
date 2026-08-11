@@ -5,14 +5,29 @@ import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.core import ObservationWrapper, Wrapper
 from gymnasium.wrappers.record_video import RecordVideo
-from minigrid.wrappers import *
-
-warnings.filterwarnings("ignore", category=UserWarning)
+from minigrid.wrappers import (
+    ActionBonus,
+    DictObservationSpaceWrapper,
+    DirectionObsWrapper,
+    FlatObsWrapper,
+    FullyObsWrapper,
+    ImgObsWrapper,
+    OneHotPartialObsWrapper,
+    ReseedWrapper,
+    RGBImgObsWrapper,
+    RGBImgPartialObsWrapper,
+    RGBImgPartialObsWrapper_HD,
+    StateBonus,
+    SymbolicObsWrapper,
+    ViewSizeWrapper,
+)
 
 from prnn.utils import ActionEncodingsEnum, MinigridEnvNames
 from prnn.utils.Shell import FaramaMinigridShell
 
 from curious_george.utils.enums import AgentInputType
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 wrappers = {
     "ReseedWrapper": ReseedWrapper,
@@ -63,6 +78,7 @@ def make_env(
     render_mode="rgb_array",
     act_enc: str | None = None,
     see_through_walls: bool | None = None,
+    table_env: bool = False,
     **kwargs,  # e.g., subroom_size and open_all_paths for FourRooms, size for LRoom
 ):
     assert input_type in AgentInputType
@@ -91,9 +107,17 @@ def make_env(
         # Same RGB partial obs as RGBImgPartialObsWrapper_HD (byte-equal,
         # tests/test_obs_bank.py) but served from the precomputed bank in
         # data/obs_bank/ instead of a per-step get_frame render.
-        from curious_george.envs.obs_bank import BankedRGBPartialObsWrapper
+        from curious_george.envs.obs_bank import (
+            BankedRGBPartialObsWrapper,
+            TableDrivenRGBPartialObsWrapper,
+        )
 
-        env = BankedRGBPartialObsWrapper(env, tile_size=1)
+        wrapper_cls = (
+            TableDrivenRGBPartialObsWrapper
+            if table_env
+            else BankedRGBPartialObsWrapper
+        )
+        env = wrapper_cls(env, tile_size=1)
 
     else:
         # For the cases without any visual input

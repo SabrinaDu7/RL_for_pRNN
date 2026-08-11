@@ -29,7 +29,6 @@ from curious_george.rl.collect.collector import (
     RolloutConfig,
     collect_rollout,
     get_dist_travelled,
-    init_collector_state,
 )
 from curious_george.rl.collect.diagnostics import LocationStats
 from curious_george.rl.update.losses import LOSSES
@@ -122,13 +121,17 @@ class PredictivePPOAlgo:
         loss="ppo_clip",
         batched_wm=False,  # appended last: positional callers exist (tests)
         cuda_graph=False,
+        batched_curiosity=False,
+        adam_betas=(0.9, 0.999),
     ):
         # env may be a single shell, a list of shells (parallel collection),
-        # or an AsyncShellPool (process-parallel collection)
-        from curious_george.envs.vector import AsyncShellPool
+        # or a batched shell pool (process-parallel or device-resident)
+        from curious_george.envs.vector import AsyncShellPool, DeviceTableShellPool
 
         self.is_async = isinstance(env, AsyncShellPool)
-        if self.is_async:
+        self.is_device_env = isinstance(env, DeviceTableShellPool)
+        self.is_pool = self.is_async or self.is_device_env
+        if self.is_pool:
             self.envs = env
             self.env = env.eval_shell  # shell services (encodeAction, grid, ...)
         else:
@@ -171,7 +174,13 @@ class PredictivePPOAlgo:
                 assert T % prnn_seqdur == 0, "per-env T must divide by prnn_seqdur"
 
         self.adapter = (
-            PRNNAdapter(self.pN, self.device, pastSR, cuda_graph=cuda_graph)
+            PRNNAdapter(
+                self.pN,
+                self.device,
+                pastSR,
+                cuda_graph=cuda_graph,
+                batched_curiosity=batched_curiosity,
+            )
             if self.pN
             else None
         )
@@ -180,7 +189,9 @@ class PredictivePPOAlgo:
         if hasattr(self.env, "loc_mask"):
             self.loc_mask = self.env.loc_mask
         else:
-            self.loc_mask = [x == None or x.can_overlap() for x in self.env.grid.grid]
+            self.loc_mask = [
+                x is None or x.can_overlap() for x in self.env.grid.grid
+            ]
 
         assert self.acmodel.recurrent or self.recurrence == 1
         assert self.num_frames % self.recurrence == 0
@@ -193,7 +204,7 @@ class PredictivePPOAlgo:
         # Rollout machinery (env resets + initial SR happen here, in the
         # same order as the historical constructor: reset then init_SR)
         self.tracker = None
-        if self.is_async:
+        if self.is_pool:
             self._first_obs, first_locs = self.envs.reset_all()
             loc_b = [loc for loc in first_locs]
         else:
@@ -221,11 +232,20 @@ class PredictivePPOAlgo:
         self.batch_size = batch_size
         assert self.batch_size % self.recurrence == 0
 
-        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
+        if len(adam_betas) != 2 or not (
+            0 <= adam_betas[0] < 1 and 0 <= adam_betas[1] < 1
+        ):
+            raise ValueError(f"Adam betas must be two values in [0, 1), got {adam_betas}")
+        self.optimizer = torch.optim.Adam(
+            self.acmodel.parameters(),
+            lr,
+            betas=tuple(adam_betas),
+            eps=adam_eps,
+        )
         self.batch_num = 0
 
         # analysis code reads these off the algo after each collect
-        self.obss: list = []
+        self.directions = np.empty(0, dtype=np.int64)
         self.locs: list = []
         self.subroom_ids: list = []
         self.last_joint_dist = None
@@ -267,7 +287,7 @@ class PredictivePPOAlgo:
         )
 
         # expose the rollout on the algo for analysis/tasks that read attributes
-        self.obss = result.obss
+        self.directions = result.directions
         self.locs = result.locs
         self.subroom_ids = result.subroom_ids
         self.actions = result.actions
@@ -311,7 +331,7 @@ class PredictivePPOAlgo:
             update_params=update_params,
         )
 
-        if self.train_pN:
+        if self.train_pN and update_params:
             self.adapter.to(self.device)
             train_world_model_on_episodes(
                 self.adapter, exps, done_indices, last_observations,

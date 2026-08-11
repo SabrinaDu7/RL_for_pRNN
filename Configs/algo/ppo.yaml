@@ -7,6 +7,7 @@ trajs_per_batch: 8
 trajs_total: 80000
 discount: 0.98
 lr: 3e-4
+optim_betas: [0.9, 0.999]
 gae_lambda: 0.95 # Lambda in GAE (1 = no gae)
 entropy_coef: 0.0
 value_loss_coef: 1

@@ -6,6 +6,7 @@ defaults:
     - algo: ppo # -> rl.*       (Configs/algo/)
     - rewards: curious_next_obs # -> rl.*       (Configs/rewards/)
     - tasks: omt
+    - optional performance: null # e.g. performance=ultra; explicit because it changes optimizer batching semantics
     - override hydra/hydra_logging: disabled
     - override hydra/job_logging: disabled
 
