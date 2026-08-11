@@ -240,6 +240,96 @@ def plot() -> None:
               + f" {con.mean():>+9.4f}")
 
 
+def maps() -> None:
+    """Spatial tuning of the units the object decoder actually reads.
+
+    Rows are the units with the largest |decoder weight| at ph0 in the
+    `[2,0,8]` net — i.e. the units carrying object information. Columns are
+    training configurations. One colour scale per row, so a row can be read as
+    "how does this unit's place field differ between configs".
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from hydra import initialize_config_dir, compose
+    from sklearn.linear_model import LogisticRegression
+    from prnn.utils import ActionEncodingsEnum, AgentInputType, MinigridEnvNames
+
+    from curious_george import get_pN, make_env
+    from scripts.trace_probe import load_probe, replay_checkpoint
+    from scripts import trace_maps as tm, trace_figure as tf
+    from tasks.omt.metrics import get_view_coords_batch
+
+    COLS = {
+        "pre-exposure": BASE_CKPT,
+        "[2,2,2] normal": "outputs/mila_omt_dense/omt-cur-dot-0730-165325",
+        "[2,0,8] frz+in4x": "outputs/otcFrzIn8-cur-dot-0801-120212",
+        "[2,2,2] RANDPOS": "glob:outputs/otcRandPosNorm-*",
+    }
+    with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
+        args = compose(config_name="main")
+    env = make_env(env_key=MinigridEnvNames.LRoom, input_type=AgentInputType.H_PO.value,
+                   act_enc=ActionEncodingsEnum.SpeedHD.value, seed=0)
+    pa = load_probe(OUT / "probe_lroom_noobj")
+    po = load_probe(OUT / f"probe_lroom_obj{LOC[0]}_{LOC[1]}")
+    pos_flat = pa.agent_pos[:, ONSET:pa.n_steps, :].astype(np.float64).reshape(-1, 2)
+
+    maps_by_col, hidden = {}, {}
+    for label, spec in COLS.items():
+        ck = _resolve(spec)[0]
+        pN = get_pN(args=args, env=env, device="cpu", pRNN_ckpt=ck)
+        h = replay_checkpoint(pN=pN, probe=pa)[:, ONSET:, :].numpy()
+        hidden[label] = h
+        maps_by_col[label] = tm.occupancy_and_maps(
+            h=h.reshape(-1, HID), pos=pos_flat, env=env)[0]
+
+    # which units does the ph0 object decoder read in the [2,0,8] net?
+    key = "[2,0,8] frz+in4x"
+    pN = get_pN(args=args, env=env, device="cpu", pRNN_ckpt=_resolve(COLS[key])[0])
+    ho = replay_checkpoint(pN=pN, probe=po)[:, ONSET:, :].numpy()
+    ha = hidden[key]
+    B, T, _ = ha.shape
+    vx, vy = get_view_coords_batch(
+        LOC[0], LOC[1],
+        pa.agent_pos[:, ONSET:ONSET + T, :].reshape(-1, 2),
+        pa.agent_dir[:, ONSET:ONSET + T].reshape(-1))
+    m = (((vx >= 0) & (vx < 7) & (vy >= 0) & (vy < 7)).reshape(B, T)
+         & (((np.arange(T) + ONSET) % PERIOD == 0)[None, :]))
+    X = np.concatenate([ha[m], ho[m]])
+    y = np.r_[np.zeros(int(m.sum())), np.ones(int(m.sum()))]
+    coef = LogisticRegression(max_iter=2000, C=0.05).fit(X, y).coef_[0]
+    units = np.argsort(-np.abs(coef))[:8]
+    print("top object-decoder units:", units.tolist())
+    print("their |weights|:", np.round(np.abs(coef[units]), 3).tolist())
+
+    fig = tf.trace_panel(
+        maps_by_checkpoint=[maps_by_col[c] for c in COLS],
+        labels=list(COLS), units=units, obj_xy=LOC,
+        title="Spatial tuning of the units the object decoder reads.\n"
+              "White + marks the object location (7,11). One colour scale per row.")
+    fig.savefig(OUT / "fig_otc_maps.png", dpi=150, bbox_inches="tight")
+    print("wrote fig_otc_maps.png")
+
+    # difference maps: [2,0,8] minus normal, same units
+    fig, axes = plt.subplots(2, len(units) // 2, figsize=(1.6 * len(units) // 2 * 2, 4.4),
+                             squeeze=False)
+    d = maps_by_col[key] - maps_by_col["[2,2,2] normal"]
+    for ax, u in zip(axes.ravel(), units):
+        v = np.nanmax(np.abs(d[u])) or 1.0
+        cm = plt.get_cmap("RdBu_r").copy()
+        cm.set_bad(alpha=0.0)
+        ax.imshow(np.ma.masked_invalid(d[u]), cmap=cm, vmin=-v, vmax=v,
+                  interpolation="nearest")
+        ax.plot(LOC[0] - 1, LOC[1] - 1, "k+", ms=7, mew=1.4)
+        ax.set_title(f"#{u}", fontsize=8)
+        ax.set_xticks([]); ax.set_yticks([])
+    fig.suptitle("Rate-map difference: [2,0,8] minus normal training  (red = higher under [2,0,8])",
+                 fontsize=10)
+    fig.tight_layout()
+    fig.savefig(OUT / "fig_otc_maps_diff.png", dpi=150, bbox_inches="tight")
+    print("wrote fig_otc_maps_diff.png")
+
+
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "collect"
-    (collect if mode == "collect" else plot)()
+    {"collect": collect, "plot": plot, "maps": maps}[mode]()
