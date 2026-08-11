@@ -145,15 +145,24 @@ class ObjectTraceTask:
         """
         per_phase = num_trajs // max(len(sequence), 1)
         for phase, loc in enumerate(sequence):
-            self.obj_pos = list(loc)
-            print(f"=== displacement phase {phase}: object -> {tuple(loc)} "
+            # an empty entry means NO OBJECT for that phase - the removal phase,
+            # without which a location that gains a field is never tested after
+            # the object leaves, and "trace" cannot be distinguished from
+            # "currently present".
+            absent = not loc
+            if not absent:
+                self.obj_pos = list(loc)
+            tag = "REMOVED" if absent else str(tuple(loc))
+            print(f"=== displacement phase {phase}: object -> {tag} "
                   f"({per_phase} trajectories) ===", flush=True)
             if self.wandb_log:
                 wandb.log({"Train/displacement_phase": phase,
-                           "Train/obj_x": loc[0], "Train/obj_y": loc[1]})
+                           "Train/obj_present": 0 if absent else 1,
+                           "Train/obj_x": -1 if absent else loc[0],
+                           "Train/obj_y": -1 if absent else loc[1]})
             self.train(
                 num_trajs=per_phase,
-                presence_prob=1.0,
+                presence_prob=0.0 if absent else 1.0,
                 saving_interval_trajs=saving_interval_trajs,
                 lr_trials=lr_trials,
                 lrgroups=lrgroups,
