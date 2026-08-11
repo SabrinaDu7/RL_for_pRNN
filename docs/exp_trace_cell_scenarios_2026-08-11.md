@@ -161,7 +161,34 @@ closest available lever without modifying the pRNN.
 see `compaction.md`. Justified by A being decisively null at n=3 and by D being the weaker
 lever; seeds get added only if the screen shows anything.
 
-**Results:** _(pending)_
+### Results — NULL, but the lever did not do what the scenario requires
+
+| condition | frac object cells | p_binom | dW | dW_in |
+|---|---:|---:|---:|---:|
+| wd ×20, `[2,0,8]` | 0.0140 | 1.000 | 0.181 | 0.397 |
+| wd ×100, `[2,0,8]` | 0.0240 | 0.999 | 0.464 | 0.804 |
+| ref: no wd change | 0.0401 | 0.871 | 0.165 | 0.742 |
+
+Null 0.05; negative control 0.0601. No object cells. But the diagnostic matters more than the
+score:
+
+| condition | map corr vs baseline | frac units silent | mean \|h\| |
+|---|---:|---:|---:|
+| baseline | 1.0000 | 0.002 | 0.2469 |
+| wd ×20 | **0.7349** | 0.002 | 0.2124 |
+| wd ×100 | **0.7395** | 0.002 | 0.1702 |
+| ref | 0.9741 | 0.002 | 0.2353 |
+
+**`dW` *grows* with weight decay** (0.165 → 0.181 → 0.464), the place code collapses from
+r = 0.97 to r = 0.73, mean activity falls, and the silent-unit fraction does not move at all.
+L2 decay pulls every weight toward zero — a large change *away* from the trained solution —
+rather than concentrating the change where it helps.
+
+**So D is not a clean negative: it is an untestable hypothesis with the available lever.**
+"Sparsity pressure on `h`" needs an L1 penalty or an activity regulariser on the hidden state.
+`predNet.sparsity` (`f`) is init-only (`norm.ppf(f)` sets the bias at construction) so it
+cannot be applied to a loaded checkpoint, and adding an L1 term means changing the pRNN, which
+this work is constrained not to do. **The sparsity hypothesis remains open.**
 
 ---
 
