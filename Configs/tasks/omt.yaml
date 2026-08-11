@@ -29,3 +29,5 @@ analysis:
 otc:
     presence_prob: 0.5 # P(a given training env has the object) - re-rolled each batch. 1.0 == the OMT exposure
     random_position: False # re-sample the object's cell every batch, so position stops predicting WHERE it is
+    colors: ["green"] # Scenario A: >1 colour = object IDENTITY re-rolled per episode at a fixed location
+    wd_trials: null # Scenario D: per-group weight-decay multiplier during exposure (null = leave alone)

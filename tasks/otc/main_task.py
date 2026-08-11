@@ -35,6 +35,8 @@ def main(args: DictConfig):
     agent_type = AgentType.RANDOM if args.exp.random_action_agent else AgentType.AC
     date = datetime.datetime.now().strftime("%m%d-%H%M%S")
     rp = "randpos" if args.tasks.otc.random_position else "fixedpos"
+    nc = len(args.tasks.otc.colors)
+    rp = f"{rp}-c{nc}"
     run_name = f"{args.exp.exp_name}-otc-p{args.tasks.otc.presence_prob}-{rp}-{date}"
 
     if args.logging.wandb_log:
@@ -75,6 +77,7 @@ def main(args: DictConfig):
         acmodel_status_ckpt=ac_ckpt,
         obj_pos=obj_pos,
         random_position=args.tasks.otc.random_position,
+        colors=list(args.tasks.otc.colors),
     )
     task.train(
         num_trajs=args.tasks.training.num_trajs,
@@ -82,6 +85,7 @@ def main(args: DictConfig):
         saving_interval_trajs=args.tasks.training.saving_interval_trajs,
         lr_trials=args.tasks.training.lr_trials,
         lrgroups=args.tasks.training.lrgroups,
+        wd_trials=args.tasks.otc.wd_trials,
         seed=args.exp.seed,
     )
 

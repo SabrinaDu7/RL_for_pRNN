@@ -46,9 +46,14 @@ class ObjectTraceTask:
         acmodel_status_ckpt: str,
         obj_pos: list[int],
         random_position: bool = False,
+        colors: list[str] | None = None,
     ):
         self.obj_pos = list(obj_pos)
         self.random_position = random_position
+        # Scenario A: object identity varies per episode at a FIXED location.
+        # Position then tells the net "something is here" but not "which" - the
+        # only route to predicting the colour is remembering having seen it.
+        self.colors = list(colors) if colors else ["green"]
         self.args = args
         self.save_path = str(save_path)
         self.wandb_log = args.logging.wandb_log
@@ -85,7 +90,11 @@ class ObjectTraceTask:
             return tuple(self.obj_pos)
         return tuple(self._walkable[rng.integers(len(self._walkable))])
 
-    def _set_object(self, env, present: bool, pos=None) -> None:
+    def _sample_color(self, rng: np.random.Generator) -> str:
+        """Object colour for one episode (Scenario A); constant if one colour."""
+        return self.colors[int(rng.integers(len(self.colors)))]
+
+    def _set_object(self, env, present: bool, pos=None, color: str | None = None) -> None:
         """Toggle the object on one env; the next reset regenerates the grid.
 
         Safe because the object is a non-blocking floor tile: the walkable mask
@@ -96,14 +105,15 @@ class ObjectTraceTask:
         """
         u = base_env(env)
         u.new_obj_pos = tuple(pos if pos is not None else self.obj_pos) if present else None
-        u.new_obj_color = "green" if present else None
+        u.new_obj_color = (color or self.colors[0]) if present else None
         env.reset()
 
     def _randomise_objects(self, rng: np.random.Generator, presence_prob: float) -> int:
         """Independently toggle each training env; return how many got the object."""
         flags = rng.random(len(self.comps.envs_train)) < presence_prob
         for env, present in zip(self.comps.envs_train, flags):
-            self._set_object(env, bool(present), pos=self._sample_position(rng))
+            self._set_object(env, bool(present), pos=self._sample_position(rng),
+                             color=self._sample_color(rng))
         return int(flags.sum())
 
     # ------------------------------------------------------------------ #
@@ -116,6 +126,7 @@ class ObjectTraceTask:
         saving_interval_trajs: int,
         lr_trials,
         lrgroups: list,
+        wd_trials=None,
         seed: int = 0,
     ) -> None:
         """Exposure phase with the object present in a random subset of envs.
@@ -126,12 +137,27 @@ class ObjectTraceTask:
         num_batches = num_trajs // self.trajs_per_batch
         save_every = max(1, saving_interval_trajs // self.trajs_per_batch)
 
-        oldlr = []
+        oldlr, oldwd = [], []
         if isinstance(lr_trials, int):
             lr_trials = [lr_trials for _ in lrgroups]
+        # Scenario D: per-group weight-decay scaling. `predNet.sparsity` (f) is
+        # init-only (norm.ppf(f) sets the bias at construction), so it cannot be
+        # changed on a loaded checkpoint; weight decay is the available lever for
+        # pressuring the exposure-phase weight change to be small/localised
+        # rather than spread over the whole recurrent matrix.
+        if wd_trials is not None and isinstance(wd_trials, (int, float)):
+            wd_trials = [wd_trials for _ in lrgroups]
         for lidx, g in enumerate(lrgroups):
             oldlr.append(self.comps.pN.optimizer.param_groups[g]["lr"])
             self.comps.pN.optimizer.param_groups[g]["lr"] = oldlr[lidx] * lr_trials[lidx]
+            oldwd.append(self.comps.pN.optimizer.param_groups[g].get("weight_decay", 0.0))
+            if wd_trials is not None:
+                self.comps.pN.optimizer.param_groups[g]["weight_decay"] = (
+                    oldwd[lidx] * wd_trials[lidx])
+        if wd_trials is not None:
+            print("weight_decay per group: "
+                  + ", ".join(f"g{g}={self.comps.pN.optimizer.param_groups[g]['weight_decay']:.2e}"
+                              for g in lrgroups))
         print(
             f"presence_prob={presence_prob}  batches={num_batches}  "
             f"save every {save_every} batches (= {save_every * self.trajs_per_batch} trajs)"
@@ -157,6 +183,7 @@ class ObjectTraceTask:
         self._save((num_batches - 1) * self.trajs_per_batch)
         for lidx, g in enumerate(lrgroups):
             self.comps.pN.optimizer.param_groups[g]["lr"] = oldlr[lidx]
+            self.comps.pN.optimizer.param_groups[g]["weight_decay"] = oldwd[lidx]
 
     def _save(self, count: int) -> None:
         save_pN_and_acmodel(
