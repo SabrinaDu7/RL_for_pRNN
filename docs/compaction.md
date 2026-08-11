@@ -119,6 +119,24 @@ fresh ~4 h `main_train` baseline. **Run locally** — no Mila OTP available over
 
 ---
 
+## Overnight plan and its timing constraint (2026-08-11 ~00:40)
+
+Measured rate: **0.52 s/trajectory** (3000 trajs = 26 min on the RTX 4060).
+
+The existing baseline is **79,679 trajectories** — reproducing it under occlusion would take
+**11.6 h**, which does not fit before morning. So:
+
+- Scenario **D was cut from 6 runs to 2** (one seed per weight-decay strength) as a go/no-go
+  screen. Justified because A was decisively null at n=3 and D is a weak lever (L2, not L1).
+  Seeds get added only if the screen shows anything.
+- The occluded baseline then gets the rest of the night — roughly 6.5 h ≈ **45k trajectories**,
+  about half the original baseline's training.
+
+**Why the shorter baseline does not invalidate C:** the trace metric is a *within-lineage*
+pre-vs-post comparison (occluded baseline → occluded exposure), so absolute training length
+does not confound it. What must be checked is that the shorter baseline has a usable place
+code at all — run the spatial-tuning analysis on it before trusting any C result.
+
 ## Key files
 
 | path | what |
