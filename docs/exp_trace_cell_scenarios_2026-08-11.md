@@ -304,7 +304,56 @@ highest regardless. This is `location_control_matrix` applied within the occlude
 
 ---
 
-## 6. Standing methodological cautions
+## 6. Sequential displacement — the Tsao/Moser paradigm
+
+**Design.** `(7,11) → (7,2) → (4,7) → REMOVED`, 1000 trajectories per phase, checkpoints at
+every phase boundary, **n=8 seeds run in parallel on Mila**. (14,7) is deliberately excluded —
+it has produced spurious effects in three independent analyses.
+
+Must be **across** episodes, not within: the pRNN state resets every `seqdur=256` steps, so a
+cross-phase trace can only live in the weights — which is also where the biological
+across-trial trace lives.
+
+Checkpoint provenance is asserted in-job: `slurm/otc_seq.sh` pins `CUR_CKPT_DIR` and fails on
+a sha256 mismatch against `c1e43a6b…`, the exact baseline every earlier result used. (Mila's
+`.env` carries a *relative* path that resolves inside `$SLURM_TMPDIR` and does not exist
+there — the first launch of these 8 jobs would have crashed on it.)
+
+### Result — complete null
+
+```
+                   (7,11)          (7,2)          (4,7)
+ph0 obj(7,11)   0.0283±0.015   0.0446±0.019   0.0346±0.016
+ph1 obj(7,2)    0.0243±0.008   0.0386±0.020   0.0338±0.017
+ph2 obj(4,7)    0.0230±0.008   0.0378±0.011   0.0441±0.012
+ph3 REMOVED     0.0276±0.007   0.0371±0.015   0.0316±0.017
+```
+
+**Nothing forms during exposure.** Each location during its own phase: 0.0283 / 0.0386 /
+0.0441 — all *below* the 0.05 null, (7,11) significantly so (t=−3.81, p=0.0066). With no
+field forming there is nothing to trace, which settles the question by itself.
+
+**No trace.** During-minus-after: +0.0033 (p=0.61), +0.0011 (p=0.89), +0.0125 (p=0.23).
+
+**No leakage.** (4,7) before the object arrives 0.0342 vs during 0.0441, **p=0.14**. The
+shared-readout generalisation inferred earlier from the contaminated (14,7) row does **not**
+appear on a clean cell; that claim is withdrawn.
+
+### What the visualisation shows
+
+`scripts/seq_figures.py` produces three panels. The interpretable one is the **object-centred**
+prediction map: the green change averaged over every in-view timestep, with each 7×7 patch
+rolled so the object's view cell sits at the centre. An object-locked effect appears at the
+centre; viewpoint-specific noise averages away.
+
+On the *old* 3-phase run it showed a tight centred bump that decayed after the object left —
+i.e. a real trace in the **readout**. Two of those three rows were clean; the (14,7) row was
+not, and the leakage read off it is retracted per the n=8 result above.
+
+The `fields` panel shows units **do** reorganise their receptive fields substantially across
+phases — but not at the object. That is the null made visible.
+
+## 7. Standing methodological cautions
 
 Carried from the earlier work; all were paid for at least once.
 
