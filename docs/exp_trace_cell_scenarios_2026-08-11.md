@@ -353,6 +353,35 @@ not, and the leakage read off it is retracted per the n=8 result above.
 The `fields` panel shows units **do** reorganise their receptive fields substantially across
 phases — but not at the object. That is the null made visible.
 
+### The readout side — transfer, not trace (n=8)
+
+Green change at the object's own view cell, averaged over every in-view timestep with each
+7x7 patch rolled so the object sits at the centre (`scripts/seq_figures.py`, `predcentred`):
+
+```
+phase              (7,11)           (7,2)           (4,7)
+ph0 obj(7,11)   +0.0192±0.029   +0.0449±0.024   +0.0520±0.029
+ph1 obj(7,2)    +0.0051±0.017   +0.0490±0.011   +0.0270±0.010
+ph2 obj(4,7)    -0.0096±0.022   +0.0209±0.009   +0.0445±0.008
+ph3 REMOVED     -0.0151±0.018   +0.0183±0.009   +0.0205±0.009
+```
+
+**It does not persist.** During its own phase vs after the object leaves:
+(7,2) 0.0490 → 0.0196, drop 0.0295, **p=0.0007**; (4,7) 0.0445 → 0.0205, drop 0.0239,
+**p=0.0043**; (7,11) 0.0192 → −0.0066, p=0.081. **Transfer, not trace.**
+
+**And the readout generalises almost completely across locations.** (4,7) before the object
+ever arrives: **+0.0395 ± 0.011 (t=9.57, p<1e-4)**, against +0.0445 while it is there — so
+**~89% of the apparent object signal at a location comes from exposure somewhere else.**
+
+`W_out` has one row per view cell applied to every hidden state, so it learns "boost green at
+this object-centred view offset", not "there is an object at (4,7)". That is the mechanism
+behind the whole project: nothing location-specific has to be learned, so the hidden state
+never changes, while the pixel-space metric always finds something.
+
+Note this leakage is in the **readout**; the hidden-state leakage test was null (p=0.14).
+Two different measurements of two different things — do not conflate them.
+
 ## 7. Standing methodological cautions
 
 Carried from the earlier work; all were paid for at least once.

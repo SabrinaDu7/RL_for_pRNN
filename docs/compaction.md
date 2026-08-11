@@ -1,180 +1,155 @@
-# Compaction handoff — object / trace-cell work
+# Handoff — object / trace-cell work in the pRNN
 
-**Read this first after a compaction.** Written 2026-08-11. Branch:
-`sdu/object-into-hidden-state` (pushed). Everything below is committed.
-
----
-
-## The overall goal
-
-Make **object-trace cells** appear in the pRNN hidden state `h`: units with a place field at
-the location where a novel object was, of the kind in `docs/trace-cells-spatial-tuning.png`.
-**They do not currently appear.** Two completed investigations explain why; a third
-(scenarios A/D/C) is in progress.
-
-## Current standing instruction (the active goal)
-
-1. ✅ **Establish a clear metric for trace/object-cell coding.** Done —
-   `scripts/trace_metric.py`, validated (see below).
-2. 🔄 **Test scenario A, then D.** A is running; D is next.
-3. ⏳ **If both fail, launch scenario C**, which needs a fresh ~4 h `main_train` baseline.
-   Run it on the **local GPU** — Mila needs an OTP the user cannot supply overnight.
-4. Document methods + results extensively in `docs/` and wandb as we go.
-
-The user checks back in the morning.
+**Read this first.** Written 2026-08-11. Branch `sdu/object-into-hidden-state` (pushed).
+Everything below is committed. Full detail in
+`exp_object_trace_cells_2026-07-30.md`, `exp_object_into_hidden_state_2026-08-01.md`,
+`exp_trace_cell_scenarios_2026-08-11.md`; index in `README_object_experiments.md`.
 
 ---
 
-## What is already established (do not re-derive)
+## 1. The goal, and the answer so far
 
-### Finding 1 — object memory is decoder-localised, not in the dynamics
-Transplanting `W_out` alone from a trained net onto untrained dynamics reproduces the object
-effect; the reverse does not. Gain-corrected: readout **+0.0625 ± 0.0130** vs dynamics
-**+0.0157 ± 0.0104**, 9/9 runs, ratio 4.0×.
-*Doc:* `exp_object_trace_cells_2026-07-30.md` §4.1.
+Produce **object-trace cells** in the pRNN hidden state `h` — units with a place field where a
+novel object used to be (`docs/trace-cells-spatial-tuning.png`, Tsao/Moser 2013).
 
-### Finding 2 — the place code does not change under exposure
-Median per-unit rate-map correlation to pre-exposure baseline: **r ≈ 0.98** across 3000
-trajectories, all three object locations. Null in **three reference frames**: allocentric maps,
-object-location modulation, object-vector (egocentric view frame).
+**They do not appear, and we now know why.**
 
-### Finding 3 — why: redundancy
-The object's location is a deterministic function of the agent's position, and `h` is already
-a place code. So adjusting a linear readout is the cheaper gradient direction — `h` is
-*redundant* with the object, not ignorant of it. **This is the root cause of everything.**
+### The mechanism (this is the key result)
 
-### Finding 4 — RL-side interventions raise encoding but not memory
-`tasks.training.lr_trials=[2,0,8]` (freeze `W_out`, scale `W_in` 4×) raises linear
-decodability of object presence from `h`: **0.6947 → 0.7214**, t=14.4, p<1e-5 (n=3 vs 10).
-`W_in` is the lever — `[8,0,0]` (recurrent at 4×, `W_in` frozen) returns to baseline.
-**But memory is unchanged**: information decays ~2× per masked step, near chance within three,
-in all 13 conditions tested. *Doc:* `exp_object_into_hidden_state_2026-08-01.md`.
-
-### Finding 5 — architecture fact that dictates all analysis
-`thRNN_5win` has **`inMask = [True, False×5]`**: the observation reaches the net only **1
-timestep in 6**, while it must predict at *every* step. So ph0 = input-driven encoding,
-ph1–ph5 = memory. **Never pool them** — doing so hid a real effect for ten conditions.
-
-### Finding 6 — environment constraints
-Object is a **`FloorBright` floor tile**: non-blocking (identical trajectories with/without,
-only 16.2% of timesteps differ in observation), `see_through_walls=True`, action space
-`Discrete(4)` with **no interaction primitive**. It is a coloured patch of floor with no
-behavioural consequence.
-
----
-
-## THE METRIC (deliverable 1, complete)
-
-`scripts/trace_metric.py`. For unit `u` and cell `c`:
-
-    field_gain g(u,c) = mean rate in a radius-2 disc at c  /  unit's mean rate over valid bins
-    trace score dg(u,c) = g_post(u,c) - g_pre(u,c)
-
-**Within-unit null:** `dg` is computed at all 172 walkable cells; the unit's score is the
-object cell's percentile in its own distribution. A unit is an **object cell** if that
-percentile > 95. Population statistic = binomial test of frac > 0.05.
-
-**Location-control matrix** (`location_control_matrix`) is the decisive test — the within-unit
-null cannot see drift shared across units at one location:
-
-    excess(L) = frac(L | object at L) - mean over M != L of frac(L | object at M)
-
-**Validation, both required alongside any result:**
-- **negative** (odd vs even probe trajectories, same net): frac = **0.0601**, p = 0.174 ✓
-- **positive** (inject Gaussian bump into 10% of units): **100% recall at amplitude 0.01**,
-  i.e. 1% of a unit's mean rate. Very sensitive.
-
-**Result on existing data — no object cells anywhere:**
+The object is written into `W_out`, the linear prediction head — **and almost
+position-independently**. Measured at n=8 on the sequential-displacement runs:
 
 ```
-                          scored at:
-run with object at:   (7,11)    (14,7)     (7,2)
-        (7,11)        0.0321    0.0902    0.0200
-        (14,7)        0.0140    0.1002    0.0501
-         (7,2)        0.0581    0.0721    0.0341
-excess:               -0.004    +0.019    -0.001
+green change at (4,7)'s own view cell, BEFORE the object ever goes there:  +0.0395 ± 0.011  (t=9.57, p<1e-4)
+green change at (4,7)'s own view cell, WHILE the object is there:          +0.0445 ± 0.008
 ```
 
-Column (14,7) is high regardless of where the object was → **drift, not coding**. The metric
-correctly removes the (14,7) artifact that fooled an earlier analysis.
+**~89% of the apparent "object signal" at a location is generalisation from exposure
+elsewhere.** `W_out` has ONE row per view cell, applied to every hidden state, so it learns
+"boost green at this object-centred view offset" rather than "there is an object at (4,7)".
+
+Consequences, and they explain every result in the project:
+- nothing location-specific needs to be learned → **every hidden-state metric is null**
+- the readout does change → **the pixel-space metric always found something**
+- the readout signal **tracks the present object and collapses when it moves** (transfer, not
+  trace): (7,2) 0.0490 → 0.0196 after departure (p=0.0007); (4,7) 0.0445 → 0.0205 (p=0.0043)
+
+### Supporting facts
+
+- Object memory is decoder-localised: readout +0.0625 vs dynamics +0.0157 gain-corrected, 9/9 runs.
+- The place code is unchanged by exposure: median per-unit map correlation **r ≈ 0.98**.
+- Null in **three** reference frames: allocentric maps, object-location modulation, object-vector.
+- The object is ~**27%** of the in-view per-step reward (NOT ~2% — that earlier claim was wrong;
+  its pixel error is ~40× the average pixel's).
+- Behaviour is driven purely by the **reward**: the policy's input is `h`, which never changes.
+  In-view timesteps pay ~1.8× the reward of other timesteps.
+- The net never learns the object well: predicts **0.56** against a target of **0.99** after
+  3000 trajectories, so in-view error stays elevated indefinitely and the reward keeps paying.
 
 ---
 
-## Scenarios
+## 2. Everything tried, and its verdict
 
-**A — object IDENTITY varies, location fixed** *(running now)*.
-4 colours (`green/blue/purple/yellow`) re-rolled per episode at (7,11). Position says
-"something is here" but not "which"; only memory says which. Implemented as
-`tasks.otc.colors=[...]` in `tasks/otc/`. Runs: `A_norm` (`lr_trials=[2,2,2]`) and `A_frz`
-(`[2,0,8]`), 3 seeds each, 3000 trajectories, ~26 min per run.
-
-**D — sparsity pressure on `h`** *(next)*. NOTE: `predNet.sparsity` (`f`) is **init-only**
-(`norm.ppf(f)` for bias init), so it cannot be changed on a loaded checkpoint. The available
-lever is **per-param-group weight decay**, scaled during exposure exactly like `lr_trials`.
-Needs a `wd_trials` addition to `tasks/otc/task.py::train`.
-
-**C — occlusion** *(only if A and D fail)*. Blocking `Ball`/`Box` **and**
-`see_through_walls=False`, so the object genuinely leaves view and must be held. Requires a
-fresh ~4 h `main_train` baseline. **Run locally** — no Mila OTP available overnight.
-
----
-
-## Overnight plan and its timing constraint (2026-08-11 ~00:40)
-
-Measured rate: **0.52 s/trajectory** (3000 trajs = 26 min on the RTX 4060).
-
-The existing baseline is **79,679 trajectories** — reproducing it under occlusion would take
-**11.6 h**, which does not fit before morning. So:
-
-- Scenario **D was cut from 6 runs to 2** (one seed per weight-decay strength) as a go/no-go
-  screen. Justified because A was decisively null at n=3 and D is a weak lever (L2, not L1).
-  Seeds get added only if the screen shows anything.
-- The occluded baseline then gets the rest of the night — roughly 6.5 h ≈ **45k trajectories**,
-  about half the original baseline's training.
-
-**Why the shorter baseline does not invalidate C:** the trace metric is a *within-lineage*
-pre-vs-post comparison (occluded baseline → occluded exposure), so absolute training length
-does not confound it. What must be checked is that the shorter baseline has a usable place
-code at all — run the spatial-tuning analysis on it before trusting any C result.
-
-## Key files
-
-| path | what |
+| experiment | verdict |
 |---|---|
-| `docs/README_object_experiments.md` | index: which doc answers what, where each method lives |
-| `docs/exp_object_trace_cells_2026-07-30.md` | investigation 1 (characterisation) |
-| `docs/exp_object_into_hidden_state_2026-08-01.md` | investigation 2 (interventions) |
-| `scripts/trace_metric.py` | **the metric** + validation |
-| `scripts/trace_probe.py` | fixed probe: collect once, replay per checkpoint |
-| `scripts/trace_maps.py` | occupancy-masked rate maps, SI, nulls |
-| `scripts/trace_presence_decoder.py` | presence decoding from `h`, **split by mask phase** |
-| `scripts/otc_figures.py` | `collect` / `plot` / `maps` |
-| `scripts/trace_cell_figures.py` | regenerates the six trace-cell figures |
-| `tasks/otc/` | stochastic presence / random position / random colour |
-
-Caches in `outputs/trace/`; all figures regenerate without retraining.
+| standard OMT exposure | object → `W_out`, `h` unchanged |
+| `lr_trials=[2,0,8]` (freeze readout, `W_in`×4) | **only positive on `h`**: encoding 0.6947 → 0.7214, p<1e-5, n=3. Memory unchanged. |
+| A — object identity varies (4 colours) | null, n=3 |
+| D — weight-decay sparsity pressure | **untestable**: L2 shrinks all weights, place code collapses r 0.97→0.73. Sparsity hypothesis still open. |
+| random object position (i.i.d. per batch) | null, n=10 |
+| `k_curious` = 5, 20 | null |
+| C — occlusion | **FALSE POSITIVE.** Looked strong (excess +0.0563, p=0.001, 8/8 seeds, graded) but the peak does **not** follow the object: moving it to (12,7) leaves (14,7) highest (0.0835 vs 0.0441). |
+| sequential displacement, 4-phase + REMOVED | **null**, n=8. Nothing forms during exposure at all (0.028–0.044, below the 0.05 chance rate). |
+| symmetric room | **NOT BUILT — top recommendation** |
+| multi-environment pretraining | **NOT BUILT** |
 
 ---
 
-## Recurring failure mode — read before analysing anything
+## 3. The metric, and the rules for using it
 
-**Pooling.** Three separate times, averaging across the variable the mechanism runs on turned
-a real effect into a flat null:
-1. curiosity-reward map binned by *agent position* rather than conditioned on object visibility
-2. pooling input-driven with memory-only timesteps
-3. pooling the five input-mask phases
+`scripts/trace_metric.py`.
 
-The third caused a "structurally impossible" conclusion reported to the user **twice** before
-being caught. **Split by the mechanism's variable first.**
+```
+field_gain g(u,c) = mean rate in a radius-2 disc at c / unit's mean rate   (scale-free)
+trace score dg(u,c) = g_post - g_pre
+```
 
-Other standing lessons: never quote an effect size from n=1 (a "+142%" result became
-non-significant at n=10); check a job has *finished* before reading `max(steps)` (reading step
-0 of a running job produced a fabricated "catastrophic" result); treat implausibly exact
-agreement between two measurements as a bug signal.
+Unit score = the object cell's **percentile among all 172 walkable cells** (within-unit null);
+object cell if > 95; population test = binomial vs 0.05.
+
+**Validation (report with every result):** negative control (odd vs even probe trajectories)
+**0.0601, p=0.174**; positive control **100% recall at a field 1% of mean rate in 10% of units**.
+That sensitivity is what makes each null a bound rather than a shrug.
+
+### Two rules any successor must follow
+
+1. **The peak must move with the object.** `location_control_matrix` — score every candidate
+   location under every run. The within-unit null CANNOT see drift shared across units, which
+   is what produced the false-positive scenario C.
+2. **Never use (14,7) as an object location in LRoom.** It has produced spurious effects in
+   three independent analyses and reads elevated even before the object arrives.
 
 ---
 
-## Gate
+## 4. Recommended next step
 
-`uv run pytest` → **126 passed, 0 failed, 7 deselected**. Unchanged all session; keep it there.
-Compute so far: ~11 h local RTX 4060, no cluster jobs.
+**Build the symmetric room.** Every failure has the same shape: the object is *predicted* but
+never *needed*. The L-room has a triangle, plus, x and asymmetric walls, so the agent localises
+perfectly without the object — its position never has to enter the state estimate, only the
+output. Make the room symmetric so the object is the **only** disambiguating cue, and the agent
+cannot know where it is without encoding where the object is. That is the one untested design
+where a trace cell is mechanistically *required* rather than merely permitted.
+
+Second: **multi-environment pretraining**. `h`'s rigidity (r ≈ 0.98) may be because one room
+admits a fixed lookup; real place cells remap because they must. Both need a new `main_train`
+baseline (~11.6 h for a full one at the measured 0.52 s/traj; a 3.5 h / 31k-trajectory baseline
+was verified to still have a good place code — SI median 0.690 vs 0.759).
+
+---
+
+## 5. Operational notes
+
+- **Checkpoint provenance.** Mila's `.env` sets `CUR_CKPT_DIR` to a RELATIVE path that resolves
+  inside `$SLURM_TMPDIR` and does not exist there. `slurm/otc_seq.sh` now pins it and asserts
+  sha256 `c1e43a6b…` — the baseline every result used. Do the same in any new slurm script.
+- **Run-name collisions.** Run dirs are timestamped to the second; parallel slurm jobs collide.
+  rsync with the job-ID parent directory, not the run dir.
+- **Occlusion.** `Ball`/`Box` do NOT occlude (`see_behind()` is True); only
+  `see_through_walls=False` does. The obs bank is keyed on `grid.encode()`, which does not
+  capture occlusion — an `-occl` fingerprint suffix was added or it would serve non-occluded
+  observations to an occluded env.
+- **Mila needs an OTP** for ssh; the user supplies it.
+
+---
+
+## 6. Recurring failure modes (each cost a retracted claim)
+
+1. **Pooling.** Three times — the reward map binned by agent position, input-driven vs
+   memory-only timesteps, and the five input-mask phases — averaging across the variable the
+   mechanism runs on turned a real effect into a flat null. The third produced a
+   "structurally impossible" conclusion reported **twice** before being caught.
+2. **n=1 effect sizes.** A "+142%" result became non-significant at n=10.
+3. **Reading a running job.** `max(steps)` picked step 0 of an unfinished run and produced a
+   fabricated "catastrophic" result.
+4. **Implausibly exact agreement is a bug signal** — two measurements matching to four decimals
+   meant I had loaded the same checkpoint twice.
+5. **Confusing readout and hidden-state measurements.** They answer different questions; the
+   readout generalises across locations, the hidden state does not change at all.
+
+---
+
+## 7. Architecture facts that dictate any analysis
+
+- `thRNN_5win` is a `MaskedRNN` with **`inMask = [True, False×5]`**: the observation reaches the
+  net only **1 timestep in 6**, while it must predict at every step. ph0 = input-driven,
+  ph1–ph5 = memory. **Never pool them.**
+- `h` is **(1, T, 500)**, not (5, T, 500) — `MaskedRNN` never sets `self.k`, so every
+  `torch.mean(h, dim=0)` in the tree is a no-op.
+- `predict(batched=True)` takes **3-D (B, L, X)** and is correct on the current pin; it injects
+  fresh noise every call, so replays must seed or zero `trainNoiseMeanStd`.
+- `outlayer = Linear(500→147, no bias) → Sigmoid`; the 147 outputs are 7×7×3 **pixel
+  intensities**, not classifications.
+- The object is a non-blocking `FloorBright` tile; `see_through_walls=True`; action space
+  `Discrete(4)` with **no interaction primitive**.
+
+Gate: `uv run pytest` → **126 passed, 0 failed, 7 deselected**. Keep it there.
