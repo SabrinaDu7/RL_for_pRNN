@@ -36,8 +36,20 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
     # -- bank management ---------------------------------------------------
 
     def _grid_fingerprint(self) -> str:
+        """Fingerprint of everything that changes the rendered observation.
+
+        grid.encode() alone is NOT enough: `see_through_walls` decides whether
+        gen_obs_grid runs process_vis, so two envs with the same grid but
+        different occlusion produce different observations. Without this the
+        bank would serve non-occluded observations for an occluded env.
+        The suffix is only appended when occlusion is ON, so every bank cached
+        before this change (all see_through_walls=True) keeps its filename.
+        """
         grid = self.unwrapped.grid
-        return hashlib.sha1(grid.encode().tobytes()).hexdigest()[:16]
+        fp = hashlib.sha1(grid.encode().tobytes()).hexdigest()[:16]
+        if not getattr(self.unwrapped, "see_through_walls", True):
+            fp += "-occl"
+        return fp
 
     def _bank_path(self, fingerprint: str) -> Path:
         env_id = (self.unwrapped.spec.id if self.unwrapped.spec else "env").replace("/", "_")

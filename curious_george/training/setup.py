@@ -99,6 +99,7 @@ def setup_env(cfg, seed_offset: int = 0):
         agent_start_pos=None,
         agent_start_dir=None,
         agent_start_room=start_room,  # Only applicable for FourRooms env
+        see_through_walls=cfg.exp.get("see_through_walls", None),
     )
 
 

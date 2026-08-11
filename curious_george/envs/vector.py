@@ -78,8 +78,14 @@ def _make_worker_thunk(cfg, seed_offset: int):
         agent_start_room=start_room,
     )
 
+    see_through = cfg.exp.get("see_through_walls", None)
+
     def thunk():
         env = gym.make(env_key, **kwargs)
+        if see_through is not None:
+            # must match factory.make_env, else async workers would train
+            # WITHOUT occlusion while the eval shell has it
+            env.unwrapped.see_through_walls = see_through
         if input_type == "Visual_FO":
             env = FullyObsWrapper(env)
         elif "pRNN" in input_type or "PO" in input_type:

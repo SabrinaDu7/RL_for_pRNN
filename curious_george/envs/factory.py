@@ -62,6 +62,7 @@ def make_env(
     wrapper=None,
     render_mode="rgb_array",
     act_enc: str | None = None,
+    see_through_walls: bool | None = None,
     **kwargs,  # e.g., subroom_size and open_all_paths for FourRooms, size for LRoom
 ):
     assert input_type in AgentInputType
@@ -75,6 +76,12 @@ def make_env(
         render_mode=render_mode,
         **kwargs,
     )
+
+    if see_through_walls is not None:
+        # LEnv hardcodes see_through_walls=True into super().__init__, and
+        # gen_obs_grid reads the attribute at observation time, so setting it
+        # post-construction is sufficient and avoids touching the env class.
+        env.unwrapped.see_through_walls = see_through_walls
 
     if input_type == "Visual_FO":
         # Not RGB one here because we want RL agent to have as much info as possible
