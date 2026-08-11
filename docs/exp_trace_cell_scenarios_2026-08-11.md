@@ -156,7 +156,10 @@ This is an L2 prior, not L1, so it pressures the change to be *small* rather tha
 That distinction is real and limits how much this scenario can be expected to do; it is the
 closest available lever without modifying the pRNN.
 
-**Runs.** `wd_trials=[20,0,20]` and `[100,0,100]` on top of `lr_trials=[2,0,8]`, 3 seeds each.
+**Runs.** `wd_trials=[20,0,20]` and `[100,0,100]` on top of `lr_trials=[2,0,8]`.
+**Reduced to n=1 per strength (a go/no-go screen)** because of the overnight time budget —
+see `compaction.md`. Justified by A being decisively null at n=3 and by D being the weaker
+lever; seeds get added only if the screen shows anything.
 
 **Results:** _(pending)_
 
@@ -170,8 +173,39 @@ in the input) or reconstructible from position. A **blocking** `Ball`/`Box` with
 `see_through_walls=False` makes the object genuinely leave view, so holding it is the only way
 to predict what is behind the wall.
 
-**Cost.** Changes the base environment, so it needs a fresh `main_train` baseline (~4 h). To be
-run on the **local GPU** — Mila requires an OTP that is not available overnight.
+**Two implementation findings that shaped the design.**
+
+1. **A blocking object does not occlude.** `Ball` and `Box` have `can_overlap() = False` but
+   `see_behind() = True`, and `gen_obs_grid` only runs `process_vis` when
+   `see_through_walls` is False. So occlusion has to come from the room's own wall, which is
+   why C needs its own baseline.
+2. **The observation bank would have silently corrupted C.** It was keyed on `grid.encode()`
+   alone, which does not capture occlusion — it would have served non-occluded observations
+   for an occluded env. The fingerprint now gains an `-occl` suffix when occlusion is on,
+   appended only in that case so all previously cached banks keep their filenames.
+
+**Choosing the object cell — and a bug caught before launch.** C was initially armed with
+(13,10), which is **inside the wall block and not walkable**. Replaced after measuring, for
+each candidate, how often the object itself is hidden by the wall:
+
+| cell | viewpoints seeing it, no occlusion | with occlusion | hidden |
+|---|---:|---:|---:|
+| (12,7) | 171 | 149 | 12.9% |
+| (13,7) | 150 | 128 | 14.7% |
+| **(14,7)** | **129** | **107** | **17.1%** |
+| (13,5) | 144 | 136 | 5.6% |
+| (7,11) | 178 | 168 | 5.6% |
+| (12,3), (7,2), (3,3) | 150 | 150 | 0.0% |
+
+C uses **(14,7)**. Note the honest limit: even the best cell is hidden only **17%** of the
+time it would otherwise be seen. The L-room has a single interior wall, so it cannot hide much
+— this bounds how strong a memory demand C can create in this environment.
+
+**Baseline.** Measured 0.52 s/trajectory, so the original 79,679-trajectory baseline would
+take 11.6 h. The occluded baseline is capped at 3.5 h (~24k trajectories) to leave room for
+the exposure runs. This does not confound the metric, which is a within-lineage pre-vs-post
+comparison — but the shorter baseline **must be checked for a usable place code** before any
+C result is trusted.
 
 **Results:** _(pending)_
 
