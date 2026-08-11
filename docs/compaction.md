@@ -10,7 +10,7 @@ Everything below is committed. Full detail in
 ## 1. The goal, and the answer so far
 
 Produce **object-trace cells** in the pRNN hidden state `h` — units with a place field where a
-novel object used to be (`docs/trace-cells-spatial-tuning.png`, Tsao/Moser 2013).
+novel object used to be (`docs/ref-trace-cells.png`, Tsao/Moser 2013).
 
 **They do not appear, and we now know why.**
 
