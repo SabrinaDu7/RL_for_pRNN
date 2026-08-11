@@ -270,13 +270,37 @@ Object location **0.0989** vs **0.0343** over seven controls — **excess +0.064
 against a measured negative control of 0.0421. The second-highest cell is (12,7), the
 neighbouring occluded cell, which is what a spatially localised effect should look like.
 
-**But: paired t across seeds gives p = 0.109.** Three seeds is not enough. Five more were
-launched (n=8) — see §7.
+### Result at n=8 — SIGNIFICANT, and spatially graded
 
-This is the first condition in the whole project to produce a location-specific increase in
-receptive-field strength at the object. Given the history here — `(14,7)` was previously a
-pure drift artifact, and a "+142%" result once evaporated at n=10 — **it should not be called
-a result until the seeds land.**
+| | **(14,7)** | (12,7) | (13,5) | (7,11) | (7,2) | (3,3) | (2,5) | (4,7) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| mean frac (n=8) | **0.0892** | 0.0433 | 0.0463 | 0.0248 | 0.0293 | 0.0293 | 0.0293 | 0.0276 |
+
+```
+object location            0.0892
+mean of 7 controls         0.0329
+EXCESS                    +0.0563
+paired t across seeds      t = 5.55,  p = 0.001
+(14,7) is the highest column in 8 of 8 seeds  -> (1/8)^8 ~ 6e-8 by chance
+```
+
+**The effect is spatially graded**: 0.089 at the object, ~0.045 at the two cells about 2 bins
+away, ~0.028 at the five distant cells — which sits at the measured negative control (0.0421)
+and below nominal chance (0.05). That gradient is the shape a genuine place-field-like effect
+should have, and no previous condition in this project produced one.
+
+![scenario C gradient](../outputs/trace/fig_scenarioC_gradient.png)
+
+### The remaining confound, and the control for it
+
+(12,7) and (13,5) sit in the **same occluded region** as (14,7), so the gradient could reflect
+"the occluded region changes more" rather than "the object's location changes more". This is
+the same trap that produced the spurious (14,7) result in the non-occluded analysis, so it
+must be closed before the effect is claimed.
+
+**Control queued:** occluded exposure with the object at **(12,7)** instead, 3 seeds. If the
+effect is object-driven the peak must move to (12,7); if it is regional drift, (14,7) stays
+highest regardless. This is `location_control_matrix` applied within the occluded env.
 
 ---
 

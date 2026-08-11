@@ -118,6 +118,50 @@ class ObjectTraceTask:
 
     # ------------------------------------------------------------------ #
 
+    def train_sequence(
+        self,
+        *,
+        sequence: list,
+        num_trajs: int,
+        saving_interval_trajs: int,
+        lr_trials,
+        lrgroups: list,
+        wd_trials=None,
+        seed: int = 0,
+    ) -> None:
+        """Sequential displacement: expose at each location in turn.
+
+        This is the faithful analogue of Tsao/Moser's "places where objects had
+        been located on PREVIOUS TRIALS". The pRNN state resets every seqdur
+        steps, so a trace spanning phases can only live in the weights - which
+        is what the biological across-trial/across-day trace is too.
+
+        A checkpoint is written at every phase boundary, tagged with the phase
+        index, so tuning at EVERY location in the sequence can be scored after
+        each displacement. That is what separates:
+          accumulate - fields persist at A after the object moves to B
+          transfer   - field follows the object (object-vector-like)
+          overwrite  - old field is destroyed
+        """
+        per_phase = num_trajs // max(len(sequence), 1)
+        for phase, loc in enumerate(sequence):
+            self.obj_pos = list(loc)
+            print(f"=== displacement phase {phase}: object -> {tuple(loc)} "
+                  f"({per_phase} trajectories) ===", flush=True)
+            if self.wandb_log:
+                wandb.log({"Train/displacement_phase": phase,
+                           "Train/obj_x": loc[0], "Train/obj_y": loc[1]})
+            self.train(
+                num_trajs=per_phase,
+                presence_prob=1.0,
+                saving_interval_trajs=saving_interval_trajs,
+                lr_trials=lr_trials,
+                lrgroups=lrgroups,
+                wd_trials=wd_trials,
+                seed=seed + 1000 * phase,
+                save_prefix=f"phase{phase}_",
+            )
+
     def train(
         self,
         *,
@@ -128,6 +172,7 @@ class ObjectTraceTask:
         lrgroups: list,
         wd_trials=None,
         seed: int = 0,
+        save_prefix: str = "",
     ) -> None:
         """Exposure phase with the object present in a random subset of envs.
 
@@ -178,18 +223,18 @@ class ObjectTraceTask:
                 wandb_log=self.wandb_log,
             )
             if index % save_every == 0:
-                self._save(index * self.trajs_per_batch)
+                self._save(index * self.trajs_per_batch, prefix=save_prefix)
 
-        self._save((num_batches - 1) * self.trajs_per_batch)
+        self._save((num_batches - 1) * self.trajs_per_batch, prefix=save_prefix)
         for lidx, g in enumerate(lrgroups):
             self.comps.pN.optimizer.param_groups[g]["lr"] = oldlr[lidx]
             self.comps.pN.optimizer.param_groups[g]["weight_decay"] = oldwd[lidx]
 
-    def _save(self, count: int) -> None:
+    def _save(self, count: int, prefix: str = "") -> None:
         save_pN_and_acmodel(
             self.comps.pN,
             self.comps.algo.acmodel,
             self.save_path,
-            count,
+            f"{prefix}{count}" if prefix else count,
             ac_optimizer=self.comps.algo.optimizer,
         )

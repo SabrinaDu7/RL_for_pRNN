@@ -56,6 +56,7 @@ def main(args: DictConfig):
             input_type=AgentInputType.H_PO.value,
             act_enc=ActionEncodingsEnum.SpeedHD.value,
             seed=seed,
+            see_through_walls=args.exp.get("see_through_walls", None),
         )
 
     num_envs = args.exp.get("num_envs", 1)
@@ -79,7 +80,19 @@ def main(args: DictConfig):
         random_position=args.tasks.otc.random_position,
         colors=list(args.tasks.otc.colors),
     )
-    task.train(
+    seq = args.tasks.otc.get("sequence", None)
+    if seq:
+        task.train_sequence(
+            sequence=[list(x) for x in seq],
+            num_trajs=args.tasks.training.num_trajs,
+            saving_interval_trajs=args.tasks.training.saving_interval_trajs,
+            lr_trials=args.tasks.training.lr_trials,
+            lrgroups=args.tasks.training.lrgroups,
+            wd_trials=args.tasks.otc.wd_trials,
+            seed=args.exp.seed,
+        )
+    else:
+      task.train(
         num_trajs=args.tasks.training.num_trajs,
         presence_prob=args.tasks.otc.presence_prob,
         saving_interval_trajs=args.tasks.training.saving_interval_trajs,
