@@ -22,6 +22,18 @@ mkdir -p $RL_STORAGE
 cd $HOME/experiments; cp -r RL_for_pRNN $SLURM_TMPDIR/; cd $SLURM_TMPDIR/RL_for_pRNN
 rm -rf .venv; uv venv .venv; source .venv/bin/activate; uv sync
 wandb login $WANDB_API_KEY 2>/dev/null
+
+# Pin the exposure checkpoint EXPLICITLY. .env carries a RELATIVE path that
+# resolves inside $SLURM_TMPDIR and does not exist there, so relying on it
+# silently changes (or crashes) the provenance. Every result in this project
+# started from this exact file; the hash is asserted so it cannot drift.
+export CUR_CKPT_DIR="$SCRATCH/pRNN/RL_for_pRNN_10178850/pRNN_curious_26-07-23-10-06-25"
+EXPECT=c1e43a6bc38893de086b6b53445f71c514d7c84d7341cf65927dd09648f48f25
+GOT=$(sha256sum $CUR_CKPT_DIR/predictiveNet_state.pt | cut -d" " -f1)
+if [ "$GOT" != "$EXPECT" ]; then
+  echo "FATAL: baseline checkpoint hash mismatch"; echo "  expected $EXPECT"; echo "  got      $GOT"; exit 1
+fi
+echo "baseline checkpoint verified: $CUR_CKPT_DIR ($GOT)"
 DEST_DIR="$SCRATCH/pRNN/$JOB_ID"; mkdir -p $DEST_DIR
 uv run tasks/otc/main_task.py \
   exp.exp_name=SEQ4 exp.seed=$SEED "tasks.otc.sequence=$SEQ" \
