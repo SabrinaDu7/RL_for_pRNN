@@ -60,8 +60,8 @@ Consequences, and they explain every result in the project:
 | `k_curious` = 5, 20 | null |
 | C — occlusion | **FALSE POSITIVE.** Looked strong (excess +0.0563, p=0.001, 8/8 seeds, graded) but the peak does **not** follow the object: moving it to (12,7) leaves (14,7) highest (0.0835 vs 0.0441). |
 | sequential displacement, 4-phase + REMOVED | **null**, n=8. Nothing forms during exposure at all (0.028–0.044, below the 0.05 chance rate). |
-| symmetric room | **NOT BUILT — top recommendation** |
-| multi-environment pretraining | **NOT BUILT** |
+| symmetric room (Moser sequence, from scratch) | **null**, 2026-08-12. Object cells never above chance (best 6.4%, p=0.09); trace cells null once tested against the right null. **The room did not bind**: quadrant decodes from `h` at ~84% *with and without* the object (delta ~0.000), so position arrives by trajectory history, not vision. Details in `sab_context/goal_2026-08-12.md` |
+| multi-environment pretraining | **NOT BUILT — now the top recommendation, see §4** |
 
 ---
 
@@ -92,6 +92,10 @@ That sensitivity is what makes each null a bound rather than a shrug.
 ---
 
 ## 4. Recommended next step
+
+**SUPERSEDED 2026-08-12 — the symmetric room was built and is null.** Keep reading for why the
+reasoning was right and the assumption was wrong; the replacement recommendation is at the end
+of this section.
 
 **Build the symmetric room.** Every failure has the same shape: the object is *predicted* but
 never *needed*. The L-room has a triangle, plus, x and asymmetric walls, so the agent localises
@@ -133,7 +137,14 @@ was verified to still have a good place code — SI median 0.690 vs 0.759).
    fabricated "catastrophic" result.
 4. **Implausibly exact agreement is a bug signal** — two measurements matching to four decimals
    meant I had loaded the same checkpoint twice.
-5. **Confusing readout and hidden-state measurements.** They answer different questions; the
+5. **A null that grows with the number of chances.** The trace criterion is a cumulative OR
+   over every previously-used object position, so the number of chances to score a hit grows
+   with session index. Tested against a flat 5% it produced 17.0% at p<1e-4 and looked like the
+   result the whole project was after; against the correct `1-0.95^n`, and against an empirical
+   null run on positions the object never occupied, every count was BELOW chance. **Whenever a
+   criterion is an OR over a growing set, the null grows too — build it empirically from control
+   locations rather than assuming the per-test rate.**
+6. **Confusing readout and hidden-state measurements.** They answer different questions; the
    readout generalises across locations, the hidden state does not change at all.
 
 ---
@@ -153,3 +164,54 @@ was verified to still have a good place code — SI median 0.690 vs 0.759).
   `Discrete(4)` with **no interaction primitive**.
 
 Gate: `uv run pytest` → **126 passed, 0 failed, 7 deselected**. Keep it there.
+
+---
+
+## 8. Replacement recommendation (2026-08-12), after the symmetric room came back null
+
+The symmetric-room reasoning was right about the *shape* of the problem and wrong about the
+escape route. Removing visual landmarks did not make the object necessary, because the network
+localises by **trajectory history / path integration** instead: quadrant decodes at ~84% from
+`h` with the object absent, and the object adds nothing (delta ~0.000 at every session,
+trajectory-level CV). The arena really is observation-symmetric — checked directly, six
+(cell, heading) pairs against their 90-degree rotations, `max|obs diff| = 0`.
+
+So there are now **two** demonstrated escape routes, and every design so far has closed at most
+one:
+
+| room | how the net localises without the object |
+|---|---|
+| L-room | geometry — an L-shaped wall plus a triangle, plus, x |
+| square room | trajectory history — dead reckoning from the start of the episode |
+
+### What to try next, in order
+
+1. **Multi-environment training.** This is the one manipulation that attacks the history route
+   *without* new machinery. The same integrated trajectory maps to a different absolute
+   position in a different room, so dead reckoning alone cannot resolve position — the net has
+   to identify *which room it is in* from what it sees, which is exactly the pressure to bind a
+   visual feature to a place. It was already the standing second recommendation; the quadrant
+   decode is now a mechanistic argument for it rather than an analogy to remapping.
+
+2. **Break path integration directly**: teleport the agent mid-episode, and/or randomise the
+   initial hidden state per trajectory. Cheap pre-check before building anything — re-run
+   `scripts/moser_decode_quadrant.py` with the start cell randomised and hidden from the
+   decoder. If accuracy collapses toward 0.25, history is confirmed as the route.
+
+3. **Combine (1) or (2) with `lr_trials=[2,0,8]`** (freeze the readout). That is the only
+   manipulation that has ever moved `h` (encoding 0.6947 -> 0.7214, p<1e-5, n=3) and it has
+   never been combined with a room where the object is actually needed. Freezing `W_out`
+   removes the absorbing route; the room removes the localisation route. Both halves of the
+   mechanism, closed at once.
+
+4. **Make the object task-relevant.** Nothing in the current objective requires knowing where
+   the object is — curiosity pays for *visiting*, and the net never learns the object anyway
+   (predicts 0.56 against a target of 0.99), so the bounty is permanent and never forces a
+   representational change.
+
+### One framing question worth raising before more GPU
+
+Tsao/Moser's LEC cells show *little* spatial modulation in an empty field. These pRNN units have
+mean SI ~0.9 — they are strongly spatial, i.e. place-cell-like. We may be looking for LEC
+phenomenology in an architecture closer to MEC/hippocampus, in which case the target itself,
+not the room, is what needs rethinking.
