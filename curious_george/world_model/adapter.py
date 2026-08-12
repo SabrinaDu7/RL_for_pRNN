@@ -639,7 +639,11 @@ class PRNNAdapter:
 
         obs = obs.to(self.device)
         act = act.to(self.device)
-        _, _, _ = self.pN.trainStep(obs, act)
+        # return_stats=False: trainStep's sparsity/meanrate diagnostics cost a
+        # full reduction over h plus two GPU->CPU syncs per gradient step, and
+        # they do not enter the loss unless the homeostat is on. Nothing here
+        # reads them.
+        self.pN.trainStep(obs, act, return_stats=False)
         self.pN.numTrainingEpochs += 1
 
     def train_on_episodes_batched(self, exps, done_indices: list[int], last_observations: list) -> None:
@@ -680,7 +684,7 @@ class PRNNAdapter:
             # whole GPU for a branch that never changed the tensor.
 
         with timer("update/wm/train_step"):
-            _, _, _ = self.pN.trainStep(obs_b, act_b, batched=True)
+            self.pN.trainStep(obs_b, act_b, batched=True, return_stats=False)
         self.pN.numTrainingEpochs += 1
 
 

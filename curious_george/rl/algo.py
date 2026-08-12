@@ -366,7 +366,7 @@ class PredictivePPOAlgo:
 
             # Train
             obs, act = obs.to(self.device), act.to(self.device)
-            _, _, _ = self.pN.trainStep(obs, act)
+            self.pN.trainStep(obs, act, return_stats=False)
             self.pN.numTrainingEpochs += 1
 
             # Collect location info
