@@ -215,3 +215,44 @@ Tsao/Moser's LEC cells show *little* spatial modulation in an empty field. These
 mean SI ~0.9 — they are strongly spatial, i.e. place-cell-like. We may be looking for LEC
 phenomenology in an architecture closer to MEC/hippocampus, in which case the target itself,
 not the room, is what needs rethinking.
+
+### ⚠️ The 2026-08-12 symmetric-room null is CONFOUNDED — found 2026-08-12 on review
+
+The policy collapsed partway through that run, and the world model degraded with it.
+
+```
+session        s0     s1     s2     s3     s4     s5     s6     s7
+policy entropy 1.54   1.35   0.94   0.98   0.25   0.31   0.17   0.23     (max ln4 = 1.386)
+loc entropy    6.04   6.58   6.84   6.59   5.15   5.29   4.55   5.11
+pRNN loss      .0133  .0084  .0070  .0069  .0082  .0091  .0091  .0086
+```
+
+Everything turns at **session 4**: the policy goes near-deterministic, the agent stops covering
+the room, and the pRNN loss stops improving and starts rising — within-session it now gets
+WORSE (s4 0.00636 -> 0.00876; s7 0.00818 -> 0.00927).
+
+It is specific to this room, not systemic. The L-room reference holds policy entropy 1.30-1.53
+and loc entropy 6.20-6.62 across **80,000** gradient steps; the 12k verification run likewise.
+The square room collapses by 16,000.
+
+**Why this matters scientifically:** object positions for sessions 4, 5 and 6 are
+(12,3), (3,9), (11,12) — exactly the sessions with collapsed exploration. If the agent rarely
+visited them, no object representation could form there whatever the architecture allows. Those
+sessions' nulls are therefore uninformative, and the trace counts that depend on them inherit
+the problem.
+
+**Likely cause and the cheap fix:** `Configs/algo/ppo.yaml` has `entropy_coef: 0.0`, so nothing
+resists policy collapse. In the L-room the curiosity reward is spatially structured and keeps
+the policy responsive; in a symmetric room the reward landscape is far more degenerate, so PPO
+can drift to a deterministic policy with no gradient pulling it back. Note
+`Configs/performance/ultra.yaml` already sets `entropy_coef: 0.01` — the perf work had reached
+the same conclusion from a different direction.
+
+**Before re-running anything in the symmetric room:** set `rl.entropy_coef > 0` and gate on
+`loc_entropy` staying flat across sessions. That gate is cheap and it is now a precondition,
+not an optional check.
+
+**Separate inconsistency, unresolved:** `policy_entropy` is logged above ln(4)=1.386 in the
+L-room (1.49, 1.53, 1.58), which is impossible for a 4-way categorical in nats. Either the
+metric is not what its name says or it is computed over something other than the action
+distribution. Worth tracing before any conclusion rests on it.
