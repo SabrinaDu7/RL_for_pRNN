@@ -87,6 +87,8 @@ def evaluate_spatial_representation(
     sleep_timesteps: int = 500,
     onset_transient: int = 20,
     active_time_threshold: int = 200,
+    rng: np.random.Generator | None = None,
+    probe_seed: int | None = None,
     wandb_nameext: str = "",
 ) -> dict:
     """Run the spatial eval on CPU and return {"sRSA", "SWdist", "SI"}.
@@ -103,6 +105,17 @@ def evaluate_spatial_representation(
     modules = [pN]
     if hasattr(agent, "acmodel"):
         modules.append(agent.acmodel)
+
+    if probe_seed is not None:
+        # The env owns its OWN Generator (gymnasium `np_random`), which
+        # np.random.seed does not touch - so seeding globally left the start
+        # position free and the eval unreproducible: identical action
+        # sequences, different trajectories. Seeding the env too makes this a
+        # FIXED probe, i.e. checkpoints become comparable to each other rather
+        # than each carrying its own rollout noise.
+        torch.manual_seed(probe_seed)
+        np.random.seed(probe_seed)
+        env.env.reset(seed=probe_seed)
 
     with on_device(modules, "cpu"):
         if trainDecoder:
@@ -153,6 +166,9 @@ def evaluate_spatial_representation(
             sleepstd=sleepstd,
             sleep_timesteps=sleep_timesteps,
             active_time_threshold=active_time_threshold,
+            # None -> prnn's fixed-seed default, so repeated scoring of one
+            # checkpoint agrees; pass a generator to measure subsample noise.
+            rng=rng,
             wandb_nameext=wandb_nameext,
         )
     return {"sRSA": metrics["sRSA"], "SWdist": metrics["SWdist"], "SI": metrics["SI"]}
