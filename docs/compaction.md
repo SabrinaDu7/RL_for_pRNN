@@ -252,7 +252,21 @@ the same conclusion from a different direction.
 `loc_entropy` staying flat across sessions. That gate is cheap and it is now a precondition,
 not an optional check.
 
-**Separate inconsistency, unresolved:** `policy_entropy` is logged above ln(4)=1.386 in the
-L-room (1.49, 1.53, 1.58), which is impossible for a 4-way categorical in nats. Either the
-metric is not what its name says or it is computed over something other than the action
-distribution. Worth tracing before any conclusion rests on it.
+**Units — a correction.** `policy_entropy` is logged in BITS, not nats:
+`losses.py:51` sets `policy_entropy_bits = policy_entropy / ln2` and `updater.py:155`
+accumulates that field. The maximum for four actions is therefore `log2(4) = 2.0`, and the
+L-room's 1.49-1.58 is entirely legal. An earlier note here called those values impossible by
+comparing bits against `ln(4)`; that was a unit error on my part, not a defect in the metric.
+
+In the right units the collapse is sharper, and it is a collapse rather than a starting
+condition:
+
+```
+L-room reference   1.53 bits = 76.5% of maximum
+square room s0     1.54 bits = 77.0% of maximum   <- starts exactly as healthy
+square room s6     0.17 bits =  8.5% of maximum   <- near-deterministic
+```
+
+So the symmetric room does not begin degenerate. It begins indistinguishable from the L-room
+and collapses during training, which points at the optimisation (`entropy_coef: 0.0`) rather
+than at anything intrinsic to a symmetric arena.
