@@ -71,8 +71,8 @@ def collect() -> None:
     from sklearn.linear_model import LogisticRegression
 
     from curious_george import get_pN, make_env
-    from scripts.trace_probe import load_probe, replay_checkpoint
-    from scripts.trace_readout_test import object_contrast, relative_weight_change
+    from scripts.trace.trace_probe import load_probe, replay_checkpoint
+    from scripts.trace.trace_readout_test import object_contrast, relative_weight_change
     from tasks.omt.metrics import get_view_coords_batch
 
     with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
@@ -256,8 +256,8 @@ def maps() -> None:
     from prnn.utils import ActionEncodingsEnum, AgentInputType, MinigridEnvNames
 
     from curious_george import get_pN, make_env
-    from scripts.trace_probe import load_probe, replay_checkpoint
-    from scripts import trace_maps as tm, trace_figure as tf
+    from scripts.trace.trace_probe import load_probe, replay_checkpoint
+    from scripts.trace import trace_maps as tm, trace_figure as tf
     from tasks.omt.metrics import get_view_coords_batch
 
     COLS = {

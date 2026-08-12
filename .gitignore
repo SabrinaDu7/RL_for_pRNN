@@ -15,7 +15,12 @@ omt-*/
 # Claude and outputs
 wandb/*
 outputs/
-docs/*
-!docs/throughput_investigation_2026-07-23.md
+# docs/ is TRACKED (reorganised 2026-08-12 into claude_logs/ legacy/ results/
+# exp_instructions/). Only the personal scratch area stays out.
+docs/sab_context/
+
+# Generated observation banks: rebuilt automatically per (env, object position)
+# by curious_george/envs/obs_bank.py, keyed on a grid fingerprint.
+data/obs_bank/
 storage/*
 tests/perf/results/*.prof

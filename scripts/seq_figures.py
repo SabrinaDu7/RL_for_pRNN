@@ -34,7 +34,7 @@ def _ctx():
     from hydra import initialize_config_dir, compose
     from prnn.utils import ActionEncodingsEnum, AgentInputType, MinigridEnvNames
     from curious_george import make_env
-    from scripts.trace_probe import load_probe
+    from scripts.trace.trace_probe import load_probe
     from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positions
 
     with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
@@ -49,8 +49,8 @@ def _ctx():
 
 def _maps(args, env, probe, ckpt):
     from curious_george import get_pN
-    from scripts.trace_probe import replay_checkpoint
-    from scripts import trace_maps as tm
+    from scripts.trace.trace_probe import replay_checkpoint
+    from scripts.trace import trace_maps as tm
 
     pN = get_pN(args=args, env=env, device="cpu", pRNN_ckpt=ckpt)
     h = replay_checkpoint(pN=pN, probe=probe)[:, ONSET:, :].numpy()
@@ -78,8 +78,8 @@ def _phases(run: Path):
 
 def fields(run: Path, sequence: list, n_units: int = 8) -> None:
     """Rate maps of the most-changed units, one column per phase."""
-    from scripts import trace_figure as tf
-    from scripts.trace_metric import _disc_masks, field_gain
+    from scripts.trace import trace_figure as tf
+    from scripts.trace.trace_metric import _disc_masks, field_gain
 
     args, env, probe, cells = _ctx()
     base = _maps(args, env, probe, BASE_CKPT)

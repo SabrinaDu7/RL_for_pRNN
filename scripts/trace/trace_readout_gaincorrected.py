@@ -15,8 +15,8 @@ import torch
 from hydra import initialize_config_dir, compose
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum, AgentInputType
 from curious_george import make_env, get_pN, resolve_prnn_ckpt
-from scripts.trace_probe import load_probe, replay_checkpoint
-from scripts.trace_readout_test import object_contrast
+from scripts.trace.trace_probe import load_probe, replay_checkpoint
+from scripts.trace.trace_readout_test import object_contrast
 
 RUNS = {(7, 11): ["165325", "172405", "175326"],
         (14, 7): ["165922", "172845", "175805"],

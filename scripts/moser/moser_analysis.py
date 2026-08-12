@@ -68,7 +68,7 @@ def _build_probe(*, pN, env, env_name: str, n_dirs: int, n_steps: int = 256):
     from curious_george import get_agent, AgentType
     from curious_george.world_model.device import eval_mode, on_device
     from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positions
-    from scripts.trace_probe import Probe, PROBE_SEED
+    from scripts.trace.trace_probe import Probe, PROBE_SEED
 
     torch.manual_seed(PROBE_SEED)
     np.random.seed(PROBE_SEED)
@@ -96,7 +96,7 @@ def _build_probe(*, pN, env, env_name: str, n_dirs: int, n_steps: int = 256):
 def session_maps(*, ckpt_dir: str, env_name: str, obj, n_dirs: int = 2):
     """Occupancy-masked rate maps for one session's checkpoint in its own env."""
     from curious_george import get_pN
-    from scripts import trace_maps as tm, trace_probe as tp
+    from scripts.trace import trace_maps as tm, trace_probe as tp
 
     args, env = _setup(env_name, obj)
     pN = get_pN(args=args, env=env, device="cpu",
@@ -113,7 +113,7 @@ def session_maps(*, ckpt_dir: str, env_name: str, obj, n_dirs: int = 2):
 
 
 def analyse(manifest_path: str, n_dirs: int = 2) -> dict:
-    from scripts.trace_metric import _disc_masks, field_gain
+    from scripts.trace.trace_metric import _disc_masks, field_gain
     from scripts.analysis_OMT import get_walkable_mask
 
     sessions = json.loads(Path(manifest_path).read_text())

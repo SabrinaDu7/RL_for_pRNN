@@ -9,7 +9,7 @@ of claims that were retracted along the way.
 | [`exp_object_trace_cells_2026-07-30.md`](exp_object_trace_cells_2026-07-30.md) | Does the pRNN hidden state hold a trace at a removed object's location? | **No** — object memory is decoder-localised (`W_out`), the place code is unchanged (r ≈ 0.98) |
 | [`exp_object_into_hidden_state_2026-08-01.md`](exp_object_into_hidden_state_2026-08-01.md) | Can RL-side changes move the representation into `h`? | **Partly** — `lr_trials=[2,0,8]` raises encoding 0.695 → 0.721; memory unchanged |
 | [`exp_trace_cell_scenarios_2026-08-11.md`](exp_trace_cell_scenarios_2026-08-11.md) | Do object identity (A), weight decay (D) or occlusion (C) force the object into `h`? | **No.** A null n=3; D untestable (L2 collapses the place code r 0.97→0.73); **C was a false positive** — the peak does not follow the object |
-| [`omt_post_refactor_runs.md`](omt_post_refactor_runs.md) | (superseded) runnability of OMT after the migration | kept for the refactor record only |
+| [`omt_post_refactor_runs.md`](../legacy/omt_post_refactor_runs.md) | (superseded) runnability of OMT after the migration | kept for the refactor record only |
 | `sab_context/goal_2026-08-12.md` **(untracked — see note)** | Does a four-fold-symmetric room, run through the Moser session sequence, produce object or trace cells? | **No.** Object cells never above chance (best 6.4%, p=0.09); trace cells null against the correct null. The room did not bind — `h` decodes quadrant at ~84% *with and without* the object |
 
 > ⚠️ `docs/*` is gitignored, so any NEW document here is untracked unless force-added; the

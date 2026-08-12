@@ -20,7 +20,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from scripts.wandb_data import fetch_occupancy_grids, OccupancyData
+from scripts.legacy.wandb_data import fetch_occupancy_grids, OccupancyData
 
 plt.rcParams["figure.dpi"] = 300
 plt.rcParams["savefig.dpi"] = 300

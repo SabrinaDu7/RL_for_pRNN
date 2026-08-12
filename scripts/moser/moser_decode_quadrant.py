@@ -4,8 +4,8 @@ import numpy as np, torch
 sys.path.insert(0, ".")
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold, cross_val_score
-from scripts.moser_analysis import _setup, _build_probe, ONSET
-from scripts import trace_probe as tp
+from scripts.moser.moser_analysis import _setup, _build_probe, ONSET
+from scripts.trace import trace_probe as tp
 from curious_george import get_pN
 
 man = json.load(open("outputs/moser_manifest.json"))

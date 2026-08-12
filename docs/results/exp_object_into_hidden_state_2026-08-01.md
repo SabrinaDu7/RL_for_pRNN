@@ -89,20 +89,20 @@ stale observations survive a toggle (verified).
 
 ## 4. Results
 
-![phases](../outputs/trace/fig_otc_phases.png)
+![phases](../../outputs/trace/fig_otc_phases.png)
 
 **Figure 1.** Object presence decodable from `h` at each mask phase. Right panel is the same
 data above chance on a log axis: decay is close to exponential, ~2× per masked step, reaching
 ~0.01 (accuracy 0.51) by ph5 in every condition. `[2,0,8]` and the RANDPOS conditions sit
 above the rest at ph0-ph1; by ph4-ph5 all conditions have converged near chance.
 
-![encoding](../outputs/trace/fig_otc_encoding.png)
+![encoding](../../outputs/trace/fig_otc_encoding.png)
 
 **Figure 2.** Phase-0 decoding per condition, every training seed plotted, red bar = mean.
 `[2,0,8]`'s three seeds are tightly clustered and fully separated from the 10 fixedpos seeds.
 Conditions with a single point are n=1 and exploratory.
 
-![tradeoff](../outputs/trace/fig_otc_tradeoff.png)
+![tradeoff](../../outputs/trace/fig_otc_tradeoff.png)
 
 **Figure 3.** Left: encoding is bought at the cost of prediction — the conditions with the
 highest ph0 decoding have the *lowest* object contrast. Right: ph0 decoding against

@@ -29,7 +29,7 @@ from scripts.analysis_OMT import (
     get_walkable_mask,
     get_walkable_minigrid_positions as get_walkable_positions,
 )
-from scripts.isomap import make_novel_obj_in_view_label_fn
+from scripts.legacy.isomap import make_novel_obj_in_view_label_fn
 
 
 # ---------------------------------------------------------------------------

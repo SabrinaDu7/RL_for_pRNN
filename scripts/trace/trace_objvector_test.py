@@ -15,8 +15,8 @@ from pathlib import Path
 from hydra import initialize_config_dir, compose
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum, AgentInputType
 from curious_george import make_env, get_pN, resolve_prnn_ckpt
-from scripts.trace_probe import load_probe, replay_checkpoint, PROBE_SEED
-from scripts import trace_maps as tm
+from scripts.trace.trace_probe import load_probe, replay_checkpoint, PROBE_SEED
+from scripts.trace import trace_maps as tm
 from tasks.omt.metrics import get_view_coords_batch
 
 RUNS = {(7, 11): "outputs/mila_omt_dense/omt-cur-dot-0730-165325",

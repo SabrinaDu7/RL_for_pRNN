@@ -27,7 +27,7 @@ from jaxtyping import Float
 from typing import Literal
 import numpy as np
 from pathlib import Path
-from scripts.wandb_data import (
+from scripts.legacy.wandb_data import (
     fetch_occupancy_grids,
     plot_occupancy_average,
     prob_roi,

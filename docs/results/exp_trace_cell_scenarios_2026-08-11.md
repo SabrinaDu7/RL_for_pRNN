@@ -7,7 +7,7 @@ former object's location (`trace-cells-spatial-tuning.png`). Prior work establis
 create the demand that would produce them.
 
 Prerequisites: [`README_object_experiments.md`](README_object_experiments.md) for the index,
-[`compaction.md`](compaction.md) for the condensed state.
+[`compaction.md`](../claude_logs/compaction.md) for the condensed state.
 
 ---
 
@@ -289,7 +289,7 @@ away, ~0.028 at the five distant cells — which sits at the measured negative c
 and below nominal chance (0.05). That gradient is the shape a genuine place-field-like effect
 should have, and no previous condition in this project produced one.
 
-![scenario C gradient](../outputs/trace/fig_scenarioC_gradient.png)
+![scenario C gradient](../../outputs/trace/fig_scenarioC_gradient.png)
 
 ### The remaining confound, and the control for it
 

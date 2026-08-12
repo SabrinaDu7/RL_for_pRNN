@@ -38,7 +38,7 @@ def audit() -> None:
 
     from curious_george import get_pN, make_env
     from curious_george.utils.dev_env import get_ckpt_env_vars
-    from scripts import trace_maps as tm, trace_probe as tp
+    from scripts.trace import trace_maps as tm, trace_probe as tp
 
     with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
         args = compose(config_name="main")

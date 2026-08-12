@@ -22,7 +22,7 @@ from sklearn.linear_model import LogisticRegression
 from prnn.utils import PredictiveNet
 from prnn.utils.Shell import FaramaMinigridShell
 
-from scripts.trace_probe import Probe, replay_checkpoint
+from scripts.trace.trace_probe import Probe, replay_checkpoint
 from tasks.omt.metrics import get_view_coords_batch
 
 MASK_PERIOD = 6  # len(pRNN.inMask) for thRNN_5win

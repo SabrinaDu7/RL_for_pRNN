@@ -34,7 +34,7 @@ from jaxtyping import Float
 from prnn.utils import PredictiveNet
 from prnn.utils.Shell import FaramaMinigridShell
 
-from scripts.trace_probe import Probe
+from scripts.trace.trace_probe import Probe
 from tasks.omt.metrics import get_obs_at_loc_fast
 
 

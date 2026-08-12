@@ -39,7 +39,7 @@ def _env():
 
 def occupancy() -> None:
     """Probe sampling and the derived valid-bin mask."""
-    from scripts import trace_figure as tf
+    from scripts.trace import trace_figure as tf
 
     d = np.load(OUT / "maps_all.npz")
     tf.occupancy_figure(occupancy=d["occ"], valid=d["valid"]).savefig(
@@ -52,7 +52,7 @@ def tuned_units() -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from scripts import trace_maps as tm, trace_figure as tf
+    from scripts.trace import trace_maps as tm, trace_figure as tf
 
     d = np.load(OUT / "maps_all.npz")
     maps, occ = d["baseline"], d["occ"]
@@ -87,7 +87,7 @@ def tuned_units() -> None:
 
 def trace_3loc() -> None:
     """Units most modulated at (7,11), across the three object locations."""
-    from scripts import trace_maps as tm, trace_figure as tf
+    from scripts.trace import trace_maps as tm, trace_figure as tf
 
     env = _env()
     d = np.load(OUT / "maps_all.npz")
@@ -111,7 +111,7 @@ def exposure() -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from scripts import trace_maps as tm, trace_figure as tf
+    from scripts.trace import trace_maps as tm, trace_figure as tf
 
     env = _env()
     d = np.load(OUT / "maps_dense.npz")

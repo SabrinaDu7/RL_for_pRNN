@@ -12,8 +12,8 @@ from pathlib import Path
 from hydra import initialize_config_dir, compose
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum, AgentInputType
 from curious_george import make_env, get_pN, resolve_prnn_ckpt
-from scripts.trace_probe import build_probe, save_probe, load_probe, PROBE_SEED
-from scripts import trace_maps as tm
+from scripts.trace.trace_probe import build_probe, save_probe, load_probe, PROBE_SEED
+from scripts.trace import trace_maps as tm
 from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positions
 
 RUNS = {(14, 7): "outputs/mila_omt_dense/omt-cur-dot-0730-165922",
