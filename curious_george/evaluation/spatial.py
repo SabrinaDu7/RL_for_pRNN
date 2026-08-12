@@ -29,7 +29,7 @@ from prnn.analysis.representationalGeometryAnalysis import (
     representationalGeometryAnalysis as RGA,
 )
 
-from curious_george.world_model.device import on_device
+from curious_george.world_model.device import eval_mode, on_device
 
 
 def compute_sleep_wake_dist(
@@ -117,7 +117,21 @@ def evaluate_spatial_representation(
         np.random.seed(probe_seed)
         env.env.reset(seed=probe_seed)
 
-    with on_device(modules, "cpu"):
+    # eval_mode disables the input dropout (p=predNet.dropp, 0.15). That
+    # dropout implements a DENOISING objective during world-model training -
+    # it corrupts obs_out but never obs_target_out (Architectures.clip_mask) -
+    # and torch implements it inverted, scaling survivors by 1/(1-p) so that
+    # train-mode expectation matches eval mode. Measuring through it therefore
+    # reports activations inflated 17.6% and then randomly zeroed: neither the
+    # training nor the inference distribution. The agent never sees it either -
+    # predict_single skips clip_mask entirely. Every other eval path in the
+    # repo already does this (evaluation/task.py, tasks/omt, trace_probe); this
+    # one was the outlier.
+    #
+    # The injected noise (predNet.trainNoiseMeanStd) is deliberately KEPT: it
+    # is the model's dynamics, and it is what generates the "sleep" activity
+    # SWdist compares against.
+    with eval_mode(modules), on_device(modules, "cpu"):
         if trainDecoder:
             # legacy path: prnn does its own rollout, figures, decoder fit and
             # wandb logging; SWdist needs the second rollout
