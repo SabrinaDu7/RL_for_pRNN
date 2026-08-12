@@ -38,6 +38,7 @@ exp:
     eval_timesteps: 15000 # LEGACY spatial-eval path only (eval_decoder=True): single-rollout length inside prnn
     eval_decoder: False # use prnn's legacy spatial eval (own rollout + 5000-batch decoder fit + prnn-internal logging)
     see_through_walls: null # null = env default (True). False = occlusion; needs its own main_train baseline
+    new_obj_pos: null # [x, y] of a FloorBright object, or null for none. Only forwarded to envs that accept it (LRoom, SquareRoom)
     analyze_agent_behav: True # Policy/state analysis + mutual information logging
 
 logging:

@@ -88,7 +88,12 @@ def setup_run(cfg) -> RunContext:
 
 def setup_env(cfg, seed_offset: int = 0):
     start_room = None if cfg.exp.start_rand else cfg.exp.start_room
+    # Only forwarded when set: not every registered env takes new_obj_pos, and
+    # passing it unconditionally would break the ones that don't.
+    obj = cfg.exp.get("new_obj_pos", None)
+    extra = {"new_obj_pos": tuple(obj)} if obj else {}
     return make_env(
+        **extra,
         env_key=cfg.exp.env_name,
         input_type=cfg.exp.input_type,
         seed=cfg.exp.seed + 10000 + seed_offset,

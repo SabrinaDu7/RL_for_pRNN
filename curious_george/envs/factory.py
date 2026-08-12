@@ -82,7 +82,12 @@ def make_env(
     **kwargs,  # e.g., subroom_size and open_all_paths for FourRooms, size for LRoom
 ):
     assert input_type in AgentInputType
-    assert env_key in MinigridEnvNames
+    # gymnasium's registry, not MinigridEnvNames, is the source of truth for
+    # which ids exist: the enum lives in the pinned prnn package, so a new env
+    # registered in minigrid would otherwise need a prnn release to be usable.
+    if env_key not in gym.registry:
+        known = sorted(k for k in gym.registry if k.startswith("MiniGrid-"))
+        raise ValueError(f"unknown env id {env_key!r}; registered MiniGrid ids: {known}")
     assert act_enc in ActionEncodingsEnum
 
     env = gym.make(

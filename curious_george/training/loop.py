@@ -84,8 +84,10 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     prnn_eval = cfg.exp.offpolicy_prnn_eval or cfg.exp.onpolicy_prnn_eval
 
     schedule = TrainingSchedule.from_config(cfg)
-    cadence = TrainingCadence.from_config(cfg)
+    cadence = TrainingCadence.from_config(cfg, start_step=num_frames)
     print(schedule.summary())
+    if num_frames:
+        print(f"  resuming at {num_frames} steps -> {schedule.total_steps - num_frames} to go")
 
     with tqdm(total=schedule.total_steps, desc="Processing") as pbar:
         while num_frames < schedule.total_steps:

@@ -107,9 +107,12 @@ class StepCadence:
     smaller than `every` fires only once enough steps have accumulated.
     """
 
-    def __init__(self, every: int) -> None:
+    def __init__(self, every: int, start_step: int = 0) -> None:
         self.every = int(every)
-        self._last = 0
+        # A resumed run starts with num_frames already advanced; without this
+        # the first comparison would be against 0 and every event would fire
+        # on the first update.
+        self._last = int(start_step)
 
     def fire(self, step: int) -> bool:
         """True if due, recording the firing. Call at most once per update."""
@@ -129,11 +132,11 @@ class TrainingCadence:
     save: StepCadence
 
     @classmethod
-    def from_config(cls, cfg) -> "TrainingCadence":
+    def from_config(cls, cfg, start_step: int = 0) -> "TrainingCadence":
         log = cfg.logging
         return cls(
-            log=StepCadence(log.log_every_steps),
-            plot=StepCadence(log.plot_every_steps),
-            analysis=StepCadence(log.analysis_every_steps),
-            save=StepCadence(log.save_every_steps),
+            log=StepCadence(log.log_every_steps, start_step),
+            plot=StepCadence(log.plot_every_steps, start_step),
+            analysis=StepCadence(log.analysis_every_steps, start_step),
+            save=StepCadence(log.save_every_steps, start_step),
         )
