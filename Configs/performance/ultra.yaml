@@ -8,9 +8,26 @@
 # (tests/test_device_collector.py). The pooled world-model step, rollout size,
 # and optimizer settings intentionally change training semantics. This is a
 # fast local starting point, not a claim of scientific equivalence.
+#
+# WHY num_envs IS 128 AND NOT 1024:
+# With batched_wm, one update is exactly ONE world-model gradient step, so
+# num_envs sets the gradient-step budget: steps = episodes_total / num_envs.
+# pRNN trainStep is flat in batch on this GPU (~0.19 s from batch 1 to 256,
+# tests/perf/results/trainstep_batch_cuda_4060.json), so gradient steps AND
+# wall-clock both scale as 1/num_envs:
+#
+#   num_envs      1024    512    256    128     64     32      8   8 (serial)
+#   grad steps      78    156    312    625   1250   2500  10000      80000
+#   WM wall-clock  24 s   37 s   63 s   2 min  4 min  8 min  32 min    4.3 h
+#
+# At 1024 the default 80k-episode budget yields 78 gradient steps - a 1000x
+# cut against the serial baseline, which will not converge a 500-unit RNN.
+# 128 is an interim: 8x the updates for ~2 min of world-model time. The right
+# value is whatever loss-per-gradient-step says (tests/perf/
+# sweep_batch_learning.py); see docs/sab_context/open_choices.md.
 
 exp:
-    num_envs: 1024
+    num_envs: 128
     device_env: True
 
 predNet:
@@ -18,8 +35,8 @@ predNet:
     batched_curiosity: True
 
 rl:
-    frames: 262144 # num_envs * one 256-step segment
-    ppo_batch_size: 131072 # 2 minibatches/epoch, 8 Adam steps/update
+    frames: 32768 # num_envs * one 256-step segment
+    ppo_batch_size: 16384 # 2 minibatches/epoch, 8 Adam steps/update
     lr: 1e-3
     optim_betas: [0.8, 0.97]
     entropy_coef: 0.01

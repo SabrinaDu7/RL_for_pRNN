@@ -102,8 +102,8 @@ def test_device_roundtrip_invalidates_captured_graphs():
     left writing to freed memory - a use-after-free that silently corrupts
     whatever the allocator hands those blocks to next.
 
-    This is not hypothetical: `logging.plot_interval`/`analysis_interval` (both
-    200) wrap plotting and the spatial eval in `on_device([...], "cpu")`
+    This is not hypothetical: `logging.plot_every_steps`/`analysis_every_steps`
+    wrap plotting and the spatial eval in `on_device([...], "cpu")`
     (training/loop.py, evaluation/spatial.py). A 2026-07-22 cluster run died 7
     updates after the update-200 event with `obs.direction`==184, because the
     freed parameter block had been reused for that tensor.

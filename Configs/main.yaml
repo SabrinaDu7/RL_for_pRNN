@@ -45,10 +45,16 @@ logging:
     wandb_entity: blake-richards
     wandb_project: curious-george # curious-george-omt, curious-george-ctrl
     video_log_freq: 0 # Episodes between video logs (0: no videos)
-    log_interval: 1 # Updates between two logs
-    plot_interval: 200 # Updates between plotSampleTrajectory figures (was implicitly log_interval=1: a figure + GPU<->CPU model swap EVERY update)
-    analysis_interval: 200 # Updates between analysis events (0: no analysis)
-    save_interval: 120 # Updates between two saves (0: don't save)
+    # Cadences are in ENVIRONMENT STEPS, not updates. An update is rl.frames
+    # steps, which scales with exp.num_envs, so an update-counted interval
+    # silently rescales with the rollout shape: under performance=ultra the
+    # whole run is ~78 updates, and the old 120/200-update intervals never
+    # fired at all. 0 disables the event. Defaults below reproduce the
+    # historical cadence at the default rl.frames=2048.
+    log_every_steps: 2048 # was log_interval=1 update
+    plot_every_steps: 409600 # plotSampleTrajectory: a figure + GPU<->CPU model swap
+    analysis_every_steps: 409600 # sRSA/SWdist + behaviour analysis (0: no analysis)
+    save_every_steps: 245760 # checkpoints (0: don't save)
     early_stop: False # Stop when the environment is solved?
     save_params: True
     focus: False # Which parameter to include in the group name, or False

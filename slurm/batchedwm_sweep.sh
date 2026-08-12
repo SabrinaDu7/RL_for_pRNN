@@ -70,7 +70,7 @@ uv run main_train.py \
     exp.with_obs=False exp.input_type=pRNN \
     exp.seed=$SEED \
     predNet.batched_wm=$WM predNet.lr=$LR \
-    rl.steps=3072000
+    rl.episodes_total=12000 # 3,072,000 steps / predNet.seqdur=256
 
 kill $SYNC_PID 2>/dev/null
 rsync -a $RL_STORAGE/ $DEST_DIR/

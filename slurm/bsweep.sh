@@ -62,7 +62,7 @@ uv run main_train.py \
     exp.exp_name="bsweep-B${B}-s${SEED}" \
     exp.with_obs=False exp.input_type=pRNN \
     exp.num_envs=$B exp.seed=$SEED \
-    rl.steps=3072000
+    rl.episodes_total=12000 # 3,072,000 steps / predNet.seqdur=256
 
 kill $SYNC_PID 2>/dev/null
 rsync -a $RL_STORAGE/ $DEST_DIR/

@@ -1,10 +1,13 @@
 # @package rl
 algo: ppo
 loss: ppo_clip # curious_george.rl.update.losses.LOSSES key
-steps: 2.048e7 # 80 pRNN epochs (each epoch = 256000 steps; seqdur 256 -> 1000 trajs/epoch)
-frames: 2048 # Frames collected per update (across all envs)
-trajs_per_batch: 8
-trajs_total: 80000
+# Run length, as the amount of EXPERIENCE to collect. Total environment steps
+# are derived (episodes_total * predNet.seqdur = 20,480,000 by default), as are
+# the update count and both optimizer-step budgets - see
+# curious_george/training/schedule.py, which prints them at startup.
+episodes_total: 80000 # trajectories of predNet.seqdur steps each
+frames: 2048 # Frames collected per update (across all envs); must divide by exp.num_envs
+trajs_per_batch: 8 # tasks/ only (OMT batch size); main_train derives its own from rl.frames
 discount: 0.98
 lr: 3e-4
 optim_betas: [0.9, 0.999]

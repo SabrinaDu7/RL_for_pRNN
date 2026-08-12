@@ -48,8 +48,10 @@ to print the fully composed config — that, not this file, is where the default
 # default run: the groups listed under `defaults:` in Configs/main.yaml
 uv run main_train.py
 
-# override single keys
-uv run main_train.py rl.steps=10000 logging.save_interval=0
+# override single keys. Run length is set in EPISODES; total environment steps
+# (and both optimizer-step budgets) are derived - see the schedule printed at
+# startup, and curious_george/training/schedule.py.
+uv run main_train.py rl.episodes_total=40 logging.save_every_steps=0
 
 # swap whole components (Configs/<group>/*.yaml)
 uv run main_train.py algo=a2c                      # loss function (rl.loss)
@@ -111,11 +113,15 @@ main_train.py
             │       ├─> updater: epochs/minibatches; loss from LOSSES[rl.loss]
             │       └─> pRNN trained per episode segment (if predNet.train)
             │
-            ├─> every log_interval: wandb metrics + sample-trajectory figure
-            ├─> every analysis_interval: sRSA + SWdist (evaluation/spatial.py)
+            ├─> every log_every_steps: wandb metrics
+            ├─> every plot_every_steps: sample-trajectory + behaviour figures
+            ├─> every analysis_every_steps: sRSA + SWdist (evaluation/spatial.py)
             │   and on-policy analysis (reuses the training rollout - free)
-            └─> every save_interval: status.pt + predictiveNet_state.pt
-                (0 = no checkpoints; everything lands under RL_STORAGE)
+            └─> every save_every_steps: status.pt + predictiveNet_state.pt
+                (0 = disabled; everything lands under RL_STORAGE)
+
+All four cadences are counted in ENVIRONMENT STEPS, not updates, because an
+update is rl.frames steps and therefore scales with exp.num_envs.
 ```
 
 ## Behavior guarantees

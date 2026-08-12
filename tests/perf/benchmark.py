@@ -29,9 +29,10 @@ REPO = Path(__file__).resolve().parents[2]
 
 BASE_OVERRIDES = [
     "logging.wandb_log=false",
-    "logging.save_interval=0",
-    "logging.analysis_interval=0",
-    "logging.log_interval=1000000",  # skip periodic logging inside run loop
+    "logging.save_every_steps=0",
+    "logging.analysis_every_steps=0",
+    "logging.plot_every_steps=0",
+    "logging.log_every_steps=1000000000",  # skip periodic logging inside run loop
 ]
 
 

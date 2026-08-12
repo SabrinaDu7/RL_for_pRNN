@@ -1,10 +1,9 @@
 # @package rl
 algo: a2c
 loss: a2c # no ratio/value clipping; single epoch is conventional
-steps: 2.048e7
+episodes_total: 80000 # trajectories of predNet.seqdur steps each; total steps derived
 frames: 2048
-trajs_per_batch: 8
-trajs_total: 80000
+trajs_per_batch: 8 # tasks/ only (OMT batch size)
 discount: 0.98
 lr: 3e-4
 gae_lambda: 0.95

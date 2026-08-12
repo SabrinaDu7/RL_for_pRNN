@@ -13,6 +13,7 @@ from curious_george.evaluation.on_policy import OnPolicyAnalysis, mutual_info_po
 from curious_george.evaluation.spatial import evaluate_spatial_representation
 from curious_george.storage import save_analysis_of_agent_behav, save_status
 from curious_george.training import logging as train_log
+from curious_george.training.schedule import TrainingCadence, TrainingSchedule
 from curious_george.training.setup import RunContext, TrainingComponents
 from curious_george.world_model.device import on_device
 from curious_george.utils.checkpoints import StatusCkptKeys
@@ -82,8 +83,12 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     n_performance = 0
     prnn_eval = cfg.exp.offpolicy_prnn_eval or cfg.exp.onpolicy_prnn_eval
 
-    with tqdm(total=cfg.rl.steps, desc="Processing") as pbar:
-        while num_frames < cfg.rl.steps:
+    schedule = TrainingSchedule.from_config(cfg)
+    cadence = TrainingCadence.from_config(cfg)
+    print(schedule.summary())
+
+    with tqdm(total=schedule.total_steps, desc="Processing") as pbar:
+        while num_frames < schedule.total_steps:
             update_start = time.time()
 
             if cfg.exp.random_action_agent:
@@ -100,9 +105,16 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             update += 1
             pbar.update(logs["num_frames"])
 
+            # Each cadence fires at most once per update, so claim them all
+            # here: `plot_due` gates both the trajectory figure and the
+            # behaviour figures below.
+            plot_due = cadence.plot.fire(num_frames)
+            log_due = cadence.log.fire(num_frames)
+            analysis_due = cadence.analysis.fire(num_frames)
+            save_due = cadence.save.fire(num_frames)
+
             # --- periodic plotting (expensive: figure + GPU<->CPU model swap)
-            plot_interval = cfg.logging.get("plot_interval", 200)
-            if plot_interval > 0 and update % plot_interval == 0:
+            if plot_due:
                 # plotSampleTrajectory runs predict on CPU tensors; pin the
                 # models to CPU for the call (placement restored on exit).
                 with timer("log/sample_trajectory"):
@@ -110,7 +122,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         comps.predictiveNet.plotSampleTrajectory(env=comps.env, agent=comps.ac_agent)
 
             # --- periodic logging -----------------------------------------
-            if update % cfg.logging.log_interval == 0:
+            if log_due:
                 if run_ctx.wandb_log:
                     stats = train_log.UpdateStats(
                         update=update,
@@ -127,17 +139,16 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                     train_log.log_update(logs, stats, mi)
 
             # --- periodic analysis ----------------------------------------
-            if cfg.logging.analysis_interval > 0 and update % cfg.logging.analysis_interval == 0:
+            if analysis_due:
                 if prnn_eval:
                     with timer("analysis/spatial"):
                         run_spatial_analysis(cfg, comps, run_ctx.wandb_log)
                 if cfg.exp.analyze_agent_behav:
                     with timer("analysis/behavior"):
                         # figures (3 Plotly builds over the full rollout) only
-                        # at plot_interval; the MI scalar every analysis event
+                        # on the plot cadence; the MI scalar every analysis event
                         run_behavior_analysis(
-                            cfg, comps, run_ctx, update,
-                            with_figures=(plot_interval > 0 and update % plot_interval == 0),
+                            cfg, comps, run_ctx, update, with_figures=plot_due,
                         )
 
             # --- early stop -----------------------------------------------
@@ -149,5 +160,5 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         break
 
             # --- checkpointing ---------------------------------------------
-            if cfg.logging.save_interval > 0 and update % cfg.logging.save_interval == 0:
+            if save_due:
                 save_checkpoint(cfg, comps, run_ctx, num_frames, update)
