@@ -267,3 +267,60 @@ def classify(
         "frac_ovc": float(is_ovc.sum() / max(int(screen.sum()), 1)),
         "frac_object_cell": float(is_object.sum() / max(int(screen.sum()), 1)),
     }
+
+
+def vector_percentile(
+    *,
+    maps: Float[np.ndarray, "H ny nx"],
+    env,
+    anchors: list[tuple[int, int]],
+    offsets: Int[np.ndarray, "n_off 2"],
+    n_null: int = 200,
+    exclude_radius: int = 1,
+    seed: int = 0,
+) -> tuple[Float[np.ndarray, "H"], Float[np.ndarray, "H"]]:
+    """Each unit's real-anchor vector score as a percentile of ITS OWN null.
+
+    Returns (percentile, real_score).
+
+    A population threshold does not work here and the reason is a fact about
+    these maps rather than a nuisance: they carry strong global structure -
+    smooth gradients, wall effects - shared across the room, so ANY three
+    neighbourhoods correlate. Measured on the 80k-step L-room checkpoint, random
+    anchor triples reach a 99th-percentile vector score of 0.933, which no
+    injected field can exceed.
+
+    Scoring each unit against random anchor triples drawn for that same unit
+    controls for its own global structure: a unit with a smooth gradient scores
+    high everywhere and so ranks unremarkably, while a genuine vector cell
+    scores high only at the real landmarks. This is the same within-unit null
+    that makes `trace_metric.trace_scores` interpretable, and it puts chance at
+    a known 5% by construction.
+    """
+    walk = sorted(walkable_cells(env=env))
+    rng = np.random.default_rng(seed)
+    real = vector_score(
+        omaps=offset_maps(maps=maps, anchors=anchors, offsets=offsets),
+        offsets=offsets, exclude_radius=exclude_radius,
+    )
+
+    null = []
+    tries = 0
+    while len(null) < n_null and tries < n_null * 40:
+        tries += 1
+        pick = [walk[i] for i in rng.choice(len(walk), len(anchors), replace=False)]
+        if len(offset_grid(env=env, anchors=pick, radius=int(np.abs(offsets).max()))) < len(offsets) // 2:
+            continue
+        null.append(
+            vector_score(
+                omaps=offset_maps(maps=maps, anchors=pick, offsets=offsets),
+                offsets=offsets, exclude_radius=exclude_radius,
+            )
+        )
+    null = np.stack(null)                       # (n_null, H)
+    pct = np.full_like(real, np.nan)
+    for u in range(real.shape[0]):
+        col = null[np.isfinite(null[:, u]), u]
+        if col.size and np.isfinite(real[u]):
+            pct[u] = 100.0 * float(np.mean(col < real[u]))
+    return pct, real
