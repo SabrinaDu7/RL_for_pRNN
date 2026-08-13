@@ -244,12 +244,12 @@ def main() -> None:
     <p>Each landmark is a patch of coloured floor. Shape, colour and position vary
     independently, so a unit responding at the same offset from all three is coding a
     metric relation rather than recognising one object.</p>
-    <p class="note"><strong>Worth a look before this is frozen.</strong> The
-    <code>diamond</code> is <code>plus</code> without its centre pixel — in the view the
-    network actually receives, those two differ by one pixel out of forty-nine. Inside a
-    room the three landmarks always carry different colours, so they stay distinguishable
-    regardless; shape variation is doing a different job. If you want maximum shape
-    separation instead, a 3&times;3 solid block is the one-word alternative.</p>
+    <p class="note">The third shape is a solid 3&times;3 <code>block3</code>, chosen over a
+    4-cell diamond for exactly the reason the bottom row makes visible: a diamond is
+    <code>plus</code> without its centre pixel, so in the only view the network receives the
+    two would have differed by one pixel out of forty-nine. Solid, sparse and cross are
+    mutually distinct at every pixel. All three are anchored at their centre cell, so one
+    reference point serves every landmark when offsets are measured.</p>
   </div>
   <div class="grid wide">{shapes_html}</div>
 </section>

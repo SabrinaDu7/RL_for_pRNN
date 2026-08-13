@@ -46,7 +46,7 @@ from minigrid.envs.Lroom import Landmark
 
 # All three are used in every layout, so "distinct shapes" is automatic and the
 # set is the design, not a sample space.
-SHAPES: tuple[str, ...] = ("x", "plus", "diamond")
+SHAPES: tuple[str, ...] = ("x", "plus", "block3")
 
 # Observations are rendered at tile_size=1, so a cell is ONE pixel and colour
 # carries the entire per-cell signal.
