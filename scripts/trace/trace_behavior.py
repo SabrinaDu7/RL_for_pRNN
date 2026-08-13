@@ -49,6 +49,18 @@ def collect_policy_rollouts(
     faces the same start distribution.
     """
     rng = np.random.default_rng(seed)
+    # Seed torch too, not just the start-direction rng: the policy SAMPLES its
+    # actions and the pRNN injects fresh noise on every predict call, so without
+    # this two invocations of the same analysis give different numbers. Measured
+    # before the fix: (7,2) excess +72.2 vs +71.6 (stable) but (4,7) +32.5 vs
+    # +17.5 (not).
+    torch.manual_seed(seed)
+    # ...and the ENV's own generator. gymnasium envs carry their own np_random,
+    # which neither torch.manual_seed nor np.random.seed reaches, so place_agent
+    # picks a fresh start every invocation regardless of the two above. Same trap
+    # documented in evaluation/spatial.py::evaluate_spatial_representation.
+    np.random.seed(seed)
+    env.env.reset(seed=seed)
     pos_rows: list[np.ndarray] = []
     dir_rows: list[np.ndarray] = []
 

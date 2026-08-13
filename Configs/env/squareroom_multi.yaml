@@ -1,0 +1,32 @@
+# @package exp
+#
+# Multi-room SQUARE room. Same machinery as lroom_multi, one difference that is
+# the whole point: the walls are four-fold symmetric, so they carry no position
+# information and the landmarks are the ONLY cue to where you are.
+#
+# This is the first design in the project that closes BOTH routes by which the
+# network has localised without an object (docs/results/result-summary-2026-08-12.md,
+# "The shape of the problem"):
+#   geometry       - removed by the square walls
+#   dead reckoning - removed by the room changing every episode
+# Every previous design closed at most one of them.
+#
+# `layouts: rooms` is ROOMS_SQUARE, the frozen three; `pool` is a seeded uniform
+# sample. Both are deduplicated under the EIGHT symmetries of the square: all
+# three landmark shapes are D4-invariant, so every admissible layout has seven
+# admissible twins that are the same room rotated or reflected, and a rotated
+# room reads as remapping while the network uses one map. See
+# curious_george/envs/layouts.py::d4_canonical.
+env_name: MiniGrid-SquareRoom-Multi-v0
+room_id: MiniGrid-SquareRoom-v0 # owns the wall geometry; selects the D4 handling
+env_subroom_size: 8 # Size of subrooms for FourRooms env
+opt_return: 0.85 # Optimal return for the environment
+start_rand: True # Whether to randomize the agent start position
+door_poss: [1, 5, 3, 4,]
+start_room: 1
+table_env: True # multi-layout runs on the batched device state machine
+device_env: True # implies table_env; requires num_envs > 1
+layouts: rooms # null | one | rooms | pool ('one' is the single-room control)
+layout_pool_size: 500 # `pool` only: how many rooms to draw
+layout_seed: 20260813 # names the pool; a run is reproducible from this alone
+eval_rooms_max: 4 # spatial eval scores this many rooms (a fixed prefix); the eval costs one CPU rollout set PER ROOM and prnn caps the sRSA sample at 4000 rows, so the pooled estimate saturates at 2-3 rooms

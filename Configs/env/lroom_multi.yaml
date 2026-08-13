@@ -20,4 +20,4 @@ device_env: True # implies table_env; requires num_envs > 1
 layouts: rooms # null | one | rooms | pool ('one' is the single-room control)
 layout_pool_size: 500 # `pool` only: how many rooms to draw
 layout_seed: 20260813 # names the pool; a run is reproducible from this alone
-eval_rooms_max: 8 # spatial eval scores this many rooms (a fixed prefix). The eval costs one CPU rollout set PER ROOM, so scoring all 500 spent more wall-clock measuring than training
+eval_rooms_max: 4 # spatial eval scores this many rooms (a fixed prefix). Measured 4.5-8.9 s PER ROOM. And prnn caps the sRSA pairwise sample at maxNtimesteps=4000 rows while each room contributes 1888, so the POOLED estimate saturates at 2-3 rooms - scoring all 500 collected 944,000 rows and used 4,000. Extra rooms buy only the per-room spread
