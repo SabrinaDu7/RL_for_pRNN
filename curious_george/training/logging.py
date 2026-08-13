@@ -98,6 +98,35 @@ def log_spatial(metrics: dict, nameext: str) -> None:
     wandb.log({f"SWdist_direct{nameext}": metrics["SWdist"]})
 
 
+def log_multi_room(result: dict, layout_episodes) -> None:
+    """Per-room and pooled spatial metrics, plus how much each room was trained on.
+
+    prnn logs the raw sRSA/SI/SWdist under its own per-room name extensions; what
+    is added here is the COMPARISON between them, which is the actual measurement
+    (see evaluation/spatial.py::evaluate_multi_room_representation), and the
+    exposure counts without which a low per-room number cannot be told apart from
+    a room the agent barely visited.
+    """
+    out = {
+        "multiroom/mean_room_sRSA": result["mean_room_sRSA"],
+        "multiroom/pooled_sRSA": result["pooled"]["sRSA"],
+        "multiroom/remapping_index": result["remapping_index"],
+        "multiroom/pooled_SWdist": result["pooled"]["SWdist"],
+        "multiroom/pooled_SI": result["pooled"]["SI"],
+        "multiroom/episodes_min": int(min(layout_episodes)),
+        "multiroom/episodes_max": int(max(layout_episodes)),
+    }
+    for i, room in enumerate(result["per_room"]):
+        out[f"multiroom/room{i}_sRSA"] = room["sRSA"]
+        out[f"multiroom/room{i}_SWdist"] = room["SWdist"]
+        out[f"multiroom/room{i}_SI"] = room["SI"]
+    # Only meaningful when rooms are few enough to name individually.
+    if len(layout_episodes) <= 16:
+        for i, n in enumerate(layout_episodes):
+            out[f"multiroom/room{i}_episodes"] = int(n)
+    wandb.log(out)
+
+
 def log_behavior(opa, with_figures: bool = True) -> None:
     wandb.log({"MI_policy_eval": opa.mi})
     if not with_figures:

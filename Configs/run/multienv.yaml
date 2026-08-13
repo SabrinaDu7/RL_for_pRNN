@@ -1,0 +1,37 @@
+# @package _global_
+#
+# The multi-room training runs. Usage:
+#   uv run python main_train.py env=lroom_multi run=multienv
+#   uv run python main_train.py env=lroom_multi run=multienv exp.layouts=pool
+#
+# WHY POOLED WORLD-MODEL TRAINING HERE, against the 2026-08-11 sweep
+# (docs/sab_context/open_choices.md) which found pooling loses on loss per
+# gradient step: with ONE room that sweep is right and batched_wm should be off.
+# With several rooms per rollout a pooled step averages the gradient ACROSS
+# rooms instead of visiting them one at a time, which is the point of the
+# design. The cost is explicit and accepted: one update is exactly ONE gradient
+# step, so the update count IS the gradient-step budget.
+exp:
+    num_envs: 8 # streams; each draws a room per episode
+    device_env: True
+
+predNet:
+    batched_wm: True
+    batched_curiosity: True
+
+rl:
+    # 240,000 pooled gradient steps = 240,000 updates of rl.frames steps each.
+    # TrainingSchedule prints the derived budget at startup - read that, do not
+    # trust this comment.
+    episodes_total: 1920000 # 240,000 updates x (frames / seqdur)
+    frames: 2048 # num_envs * predNet.seqdur
+    entropy_coef: 0.01 # nothing resisted policy collapse at 0.0; results-summary 2026-08-12 §5
+    ppo_batch_size: 512
+    lr: 3e-4
+
+logging:
+    log_every_steps: 2048
+    analysis_every_steps: 2097152 # per-room spatial eval costs rooms x eval_trajs CPU rollouts
+    plot_every_steps: 20971520
+    save_every_steps: 1048576 # rolling checkpoint
+    archive_every_steps: 10485760 # step-tagged series: ~47 over the run, 3.2 MB each

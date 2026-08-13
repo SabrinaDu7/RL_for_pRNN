@@ -205,8 +205,29 @@ class DeviceTableShellPool:
     """
 
     def __init__(
-        self, *, training_shells: list, eval_shell, device: torch.device
+        self,
+        *,
+        training_shells: list,
+        eval_shell,
+        device: torch.device,
+        layouts: list | None = None,
+        layout_seed: int = 0,
     ):
+        """`layouts` holds one or more rooms the streams are drawn from.
+
+        None keeps the historical single-room behaviour exactly. Otherwise each
+        stream is assigned a layout at every synchronized episode boundary, so a
+        pooled world-model gradient step averages over several rooms at once and
+        the same integrated trajectory lands at a different absolute position
+        depending on which room a stream is in.
+
+        The observation bank gains a leading layout axis; the TRANSITION table
+        does not, and that is asserted rather than assumed. It holds only because
+        landmarks are walkable, non-occluding `Floor`, so they change what the
+        agent sees and never where it can go. A landmark that blocked movement
+        would make the tables diverge, and this must fail loudly if that ever
+        happens.
+        """
         from curious_george.envs.obs_bank import TableDrivenRGBPartialObsWrapper
 
         if len(training_shells) < 2:
@@ -231,7 +252,7 @@ class DeviceTableShellPool:
                 or not np.array_equal(wrapper._bank, reference._bank)
             ):
                 raise ValueError(
-                    "device_env requires every stream to share one static grid"
+                    "device_env requires every stream to start from one static grid"
                 )
 
         if np.any(reference._rewarding) or np.any(reference._terminated):
@@ -247,19 +268,30 @@ class DeviceTableShellPool:
         self._wrappers = wrappers
         self.device = torch.device(device)
         self._mission = reference.unwrapped.mission
+        self.layouts = list(layouts) if layouts else None
+        self._layout_rng = np.random.default_rng(layout_seed)
+
+        banks = (
+            [np.array(reference._bank)]
+            if self.layouts is None
+            else self._collect_layout_banks(reference=reference)
+        )
 
         # Copy read-only NumPy banks before torch takes ownership. State table
-        # is tiny; the uint8 observation bank is only ~150 KiB for 16x16.
+        # is tiny; the uint8 observation bank is only ~0.2 MB per layout at 16x16.
         self.next_state = torch.tensor(
             np.array(reference._next_state),
             dtype=torch.long,
             device=self.device,
         )
-        self.obs_bank = torch.tensor(
-            np.array(reference._bank),
-            dtype=torch.uint8,
-            device=self.device,
+        self.obs_banks = torch.tensor(
+            np.stack(banks), dtype=torch.uint8, device=self.device
         )
+        self.stream_layout = torch.zeros(self.B, dtype=torch.long, device=self.device)
+        # Episodes each layout has been trained on. A layout with few episodes is
+        # UNTESTED rather than negative, so this has to be reported with any
+        # per-layout result.
+        self.layout_episodes = np.zeros(self.n_layouts, dtype=np.int64)
         self._zero_rewards = torch.zeros(self.B, device=self.device)
 
         # Static shell services used by setup/diagnostics.
@@ -273,6 +305,38 @@ class DeviceTableShellPool:
         self.directions = torch.empty(self.B, dtype=torch.long, device=self.device)
         self._prepared_positions: torch.Tensor | None = None
         self._prepared_directions: torch.Tensor | None = None
+        self._prepared_layouts: torch.Tensor | None = None
+        self._prepared_layouts_host: np.ndarray | None = None
+
+    def _collect_layout_banks(self, *, reference) -> list:
+        """One wrapper visits every layout once, stacking the banks it builds.
+
+        Also the place the transition-table invariant is checked: a layout whose
+        landmarks changed where the agent can go would need its own table, and
+        the device path holds exactly one.
+        """
+        banks = []
+        base_state = np.array(reference._next_state)
+        for layout in self.layouts:
+            reference.unwrapped.landmarks = list(layout.landmarks)
+            reference.reset(seed=0)
+            if not np.array_equal(reference._next_state, base_state):
+                raise ValueError(
+                    f"layout {layout.key} changes the transition table; the device "
+                    "path holds one table for all layouts, which is only valid "
+                    "while landmarks are walkable and non-occluding"
+                )
+            banks.append(np.array(reference._bank))
+        return banks
+
+    @property
+    def n_layouts(self) -> int:
+        return 1 if self.layouts is None else len(self.layouts)
+
+    @property
+    def image_shape(self) -> tuple[int, ...]:
+        """Shape of one observation image, independent of the bank's layout axis."""
+        return tuple(self.obs_banks.shape[4:])
 
     def __len__(self) -> int:
         return self.B
@@ -290,25 +354,44 @@ class DeviceTableShellPool:
 
     def observation_device(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Return image uint8 ``(B,H,W,C)`` and direction int64 ``(B,)``."""
-        images = self.obs_bank[
-            self.positions[:, 0], self.positions[:, 1], self.directions
+        images = self.obs_banks[
+            self.stream_layout, self.positions[:, 0], self.positions[:, 1], self.directions
         ]
         return images, self.directions
 
-    def reset_all(self) -> tuple[list, np.ndarray]:
-        """Continue each CPU shell's RNG stream and upload only reset state."""
+    def _reset_streams(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Draw one layout and one start state per stream. (layouts, pos, dir).
+
+        The layout is applied to the CPU shell BEFORE it resets, because
+        MiniGrid's `place_agent` rejects occupied cells and the landmarks are
+        objects - so where an episode can start depends on which room it is in.
+        Reading the start from the shell keeps that rule owned by MiniGrid
+        rather than reimplemented here.
+        """
+        if self.layouts is not None:
+            chosen = self._layout_rng.integers(0, len(self.layouts), size=self.B)
+            for b, wrapper in enumerate(self._wrappers):
+                wrapper.unwrapped.landmarks = list(self.layouts[chosen[b]].landmarks)
+        else:
+            chosen = np.zeros(self.B, dtype=np.int64)
+
         for shell in self._training_shells:
             shell.reset()
         positions = np.asarray(
-            [wrapper.unwrapped.agent_pos for wrapper in self._wrappers],
-            dtype=np.int64,
+            [wrapper.unwrapped.agent_pos for wrapper in self._wrappers], dtype=np.int64
         )
         directions = np.asarray(
-            [wrapper.unwrapped.agent_dir for wrapper in self._wrappers],
-            dtype=np.int64,
+            [wrapper.unwrapped.agent_dir for wrapper in self._wrappers], dtype=np.int64
         )
+        return chosen.astype(np.int64), positions, directions
+
+    def reset_all(self) -> tuple[list, np.ndarray]:
+        """Continue each CPU shell's RNG stream and upload only reset state."""
+        chosen, positions, directions = self._reset_streams()
         self.positions.copy_(torch.as_tensor(positions, device=self.device))
         self.directions.copy_(torch.as_tensor(directions, device=self.device))
+        self.stream_layout.copy_(torch.as_tensor(chosen, device=self.device))
+        np.add.at(self.layout_episodes, chosen, 1)
         # BatchedSRTracker only needs the stream count; policy/pRNN inputs come
         # directly from observation_device().
         return [None] * self.B, positions
@@ -317,19 +400,10 @@ class DeviceTableShellPool:
         """Precompute and upload the finite reset schedule before rollout."""
         if count <= 0:
             raise ValueError("prepared reset count must be positive")
-        position_rows = []
-        directions_rows = []
+        layout_rows, position_rows, directions_rows = [], [], []
         for _ in range(count):
-            for shell in self._training_shells:
-                shell.reset()
-            positions = np.asarray(
-                [wrapper.unwrapped.agent_pos for wrapper in self._wrappers],
-                dtype=np.int64,
-            )
-            directions = np.asarray(
-                [wrapper.unwrapped.agent_dir for wrapper in self._wrappers],
-                dtype=np.int64,
-            )
+            chosen, positions, directions = self._reset_streams()
+            layout_rows.append(chosen)
             position_rows.append(positions)
             directions_rows.append(directions)
 
@@ -339,6 +413,10 @@ class DeviceTableShellPool:
         self._prepared_directions = torch.as_tensor(
             np.stack(directions_rows), device=self.device
         )
+        self._prepared_layouts = torch.as_tensor(
+            np.stack(layout_rows), device=self.device
+        )
+        self._prepared_layouts_host = np.stack(layout_rows)
 
     def apply_prepared_reset(self, *, index: int) -> None:
         """Select an already resident reset row without any host transfer."""
@@ -350,6 +428,8 @@ class DeviceTableShellPool:
             raise IndexError(f"prepared reset {index} is unavailable")
         self.positions.copy_(self._prepared_positions[index])
         self.directions.copy_(self._prepared_directions[index])
+        self.stream_layout.copy_(self._prepared_layouts[index])
+        np.add.at(self.layout_episodes, self._prepared_layouts_host[index], 1)
 
     def step_device(
         self, *, actions: torch.Tensor

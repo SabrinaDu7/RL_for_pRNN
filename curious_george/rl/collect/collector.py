@@ -178,7 +178,7 @@ def collect_rollout(
     )
 
     if device_pool is not None:
-        obs_shape = tuple(device_pool.obs_bank.shape[3:])
+        obs_shape = device_pool.image_shape
         device_images = torch.empty(
             (T, B, *obs_shape), dtype=torch.uint8, device=device
         )

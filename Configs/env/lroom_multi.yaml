@@ -1,0 +1,22 @@
+# @package exp
+#
+# Multi-room L-room. Streams are assigned a room at every synchronized episode
+# boundary, so a pooled world-model gradient step averages over several rooms
+# and the same integrated trajectory lands at a different absolute position
+# depending on which room a stream is in. That is the manipulation: it makes
+# dead reckoning insufficient and a visible landmark necessary.
+#
+# `layouts: rooms` is run 1 (the frozen three, layouts.ROOMS_RUN1);
+# `layouts: pool` is run 2 (a seeded uniform sample of the admissible set).
+# Same code path - set size is the only difference between the runs.
+env_name: MiniGrid-LRoom-Multi-v0
+env_subroom_size: 8 # Size of subrooms for FourRooms env
+opt_return: 0.85 # Optimal return for the environment
+start_rand: True # Whether to randomize the agent start position
+door_poss: [1, 5, 3, 4,]
+start_room: 1
+table_env: True # multi-layout runs on the batched device state machine
+device_env: True # implies table_env; requires num_envs > 1
+layouts: rooms # null | rooms | pool
+layout_pool_size: 500 # `pool` only: how many rooms to draw
+layout_seed: 20260813 # names the pool; a run is reproducible from this alone

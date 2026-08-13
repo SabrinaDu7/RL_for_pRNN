@@ -1,16 +1,18 @@
 """The training loop, with interval-triggered sections as plain functions."""
 
 import time
+from pathlib import Path
 
-import numpy as np
 from tqdm import tqdm
 
 from prnn.utils import save_pN
 
-import wandb
 from curious_george.utils.common import synthesize
 from curious_george.evaluation.on_policy import OnPolicyAnalysis, mutual_info_policy
-from curious_george.evaluation.spatial import evaluate_spatial_representation
+from curious_george.evaluation.spatial import (
+    evaluate_multi_room_representation,
+    evaluate_spatial_representation,
+)
 from curious_george.storage import save_analysis_of_agent_behav, save_status
 from curious_george.training import logging as train_log
 from curious_george.training.schedule import TrainingCadence, TrainingSchedule
@@ -21,7 +23,34 @@ from curious_george.utils.timing import timer
 
 
 def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> None:
-    """sRSA + SWdist on- and/or off-policy (CPU; placement restored by contexts)."""
+    """sRSA + SWdist on- and/or off-policy (CPU; placement restored by contexts).
+
+    Multi-room runs take a different path: each room is measured separately AND
+    the rows are pooled across rooms, because the DIFFERENCE between those two
+    is the remapping index this experiment turns on.
+    """
+    layouts = getattr(comps.envs, "layouts", None)
+    if layouts:
+        agent = comps.random_agent if cfg.exp.random_action_agent else comps.ac_agent
+        result = evaluate_multi_room_representation(
+            comps.predictiveNet, comps.env, agent,
+            layouts=layouts,
+            n_trajs=cfg.exp.get("eval_trajs", 8),
+            traj_timesteps=cfg.predNet.seqdur,
+            sleepstd=0.03,
+        )
+        rooms = " ".join(f"{r['sRSA']:.3f}" for r in result["per_room"])
+        print(
+            f"rooms sRSA [{rooms}] mean={result['mean_room_sRSA']:.4f} "
+            f"pooled={result['pooled']['sRSA']:.4f} "
+            f"remapping={result['remapping_index']:+.4f} "
+            f"SWdist={result['pooled']['SWdist']:.4f} "
+            f"episodes/room {list(map(int, comps.envs.layout_episodes))[:8]}"
+        )
+        if wandb_log:
+            train_log.log_multi_room(result, comps.envs.layout_episodes)
+        return
+
     for enabled, on_policy, nameext in [
         (cfg.exp.onpolicy_prnn_eval, True, "_onPolicy"),
         (cfg.exp.offpolicy_prnn_eval, False, "_offPolicy"),
@@ -58,7 +87,21 @@ def run_behavior_analysis(
         save_analysis_of_agent_behav(opa, run_ctx.model_dir, update)
 
 
-def save_checkpoint(cfg, comps: TrainingComponents, run_ctx: RunContext, num_frames: int, update: int) -> None:
+def save_checkpoint(
+    cfg,
+    comps: TrainingComponents,
+    run_ctx: RunContext,
+    num_frames: int,
+    update: int,
+    archive: bool = False,
+) -> None:
+    """Write the rolling checkpoint, and on `archive` a step-tagged copy too.
+
+    The rolling file is overwritten every time, so on its own a run leaves
+    exactly ONE checkpoint and the question "when did this representation
+    appear" cannot be asked afterwards. The archive is a developmental series:
+    3.2 MB each, so a few hundred over a run is free.
+    """
     status_save = {
         StatusCkptKeys.NUM_FRAMES.value: num_frames,
         StatusCkptKeys.UPDATE.value: update,
@@ -71,6 +114,13 @@ def save_checkpoint(cfg, comps: TrainingComponents, run_ctx: RunContext, num_fra
 
     if comps.predictiveNet is not None and cfg.predNet.train:
         save_pN(comps.predictiveNet, run_ctx.model_dir + "predictiveNet_state.pt")
+        if archive:
+            archive_dir = Path(run_ctx.model_dir) / "checkpoints"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            # Named by ENVIRONMENT STEP, the one counter that means the same
+            # thing across rollout shapes (see training/schedule.py).
+            save_pN(comps.predictiveNet, str(archive_dir / f"predictiveNet_state_step{num_frames:010d}.pt"))
+            print(f"archived checkpoint at step {num_frames}")
 
     print(f"pN and ACmodel status saved at {run_ctx.model_dir}")
 
@@ -114,6 +164,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             log_due = cadence.log.fire(num_frames)
             analysis_due = cadence.analysis.fire(num_frames)
             save_due = cadence.save.fire(num_frames)
+            archive_due = cadence.archive.fire(num_frames)
 
             # --- periodic plotting (expensive: figure + GPU<->CPU model swap)
             if plot_due:
@@ -162,5 +213,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         break
 
             # --- checkpointing ---------------------------------------------
-            if save_due:
-                save_checkpoint(cfg, comps, run_ctx, num_frames, update)
+            if save_due or archive_due:
+                save_checkpoint(
+                    cfg, comps, run_ctx, num_frames, update, archive=archive_due
+                )

@@ -74,6 +74,40 @@ def _sleep_wake_dist(
     return float(swdist)
 
 
+def collect_pooled_activity(
+    pN: PredictiveNet,
+    env,
+    agent,
+    *,
+    n_trajs: int,
+    traj_timesteps: int,
+    onset_transient: int = 20,
+) -> tuple[Float[np.ndarray, "N H"], Float[np.ndarray, "N 2"]]:
+    """Theta-mean hidden activity and matching positions over `n_trajs` rollouts.
+
+    Shared by the single-room and multi-room evaluations so that a pooled
+    measurement across rooms is the SAME statistic as the per-room one, only
+    over a bigger row set. Expects `pN` already on CPU and in eval mode.
+    """
+    h_rows: list = []
+    pos_rows: list = []
+    for _ in range(n_trajs):
+        obs, act, state, _ = pN.collectObservationSequence(
+            env, agent, traj_timesteps, discretize=True
+        )
+        with torch.no_grad():
+            _, _, h = pN.predict(obs, act)
+        h_mean: Float[torch.Tensor, "T H"] = torch.mean(h, dim=0)  # theta mean
+        # h[t] pairs with agent_pos[t] (RGA convention: pos[:-1] vs h)
+        h_rows.append(h_mean[onset_transient:])
+        pos_rows.append(state["agent_pos"][onset_transient:-1, :])
+
+    return (
+        torch.cat(h_rows).detach().numpy(),
+        np.concatenate(pos_rows).astype(np.float64, copy=False),
+    )
+
+
 def evaluate_spatial_representation(
     pN: PredictiveNet,
     env,
@@ -153,22 +187,11 @@ def evaluate_spatial_representation(
             return {"sRSA": sRSA, "SWdist": swdist, "SI": SI}
 
         # ---- pooled multi-trajectory path ----
-        h_rows: list = []
-        pos_rows: list = []
-        for _ in range(n_trajs):
-            obs, act, state, _ = pN.collectObservationSequence(
-                env, agent, traj_timesteps, discretize=True
-            )
-            with torch.no_grad():
-                _, _, h = pN.predict(obs, act)
-            h_mean: Float[torch.Tensor, "T H"] = torch.mean(h, dim=0)  # theta mean
-            # h[t] pairs with agent_pos[t] (RGA convention: pos[:-1] vs h)
-            h_rows.append(h_mean[onset_transient:])
-            pos_rows.append(state["agent_pos"][onset_transient:-1, :])
-
-        h_pool: Float[np.ndarray, "N H"] = torch.cat(h_rows).detach().numpy()
-        pos_pool: Float[np.ndarray, "N 2"] = np.concatenate(pos_rows).astype(
-            np.float64, copy=False
+        h_pool, pos_pool = collect_pooled_activity(
+            pN, env, agent,
+            n_trajs=n_trajs,
+            traj_timesteps=traj_timesteps,
+            onset_transient=onset_transient,
         )
 
         # prnn owns metric computation AND wandb logging (Sabrina's rule);
@@ -186,3 +209,93 @@ def evaluate_spatial_representation(
             wandb_nameext=wandb_nameext,
         )
     return {"sRSA": metrics["sRSA"], "SWdist": metrics["SWdist"], "SI": metrics["SI"]}
+
+
+def evaluate_multi_room_representation(
+    pN: PredictiveNet,
+    env,
+    agent,
+    *,
+    layouts: list,
+    n_trajs: int = 8,
+    traj_timesteps: int = 256,
+    sleepstd: float = 0.03,
+    sleep_timesteps: int = 500,
+    onset_transient: int = 20,
+    active_time_threshold: int = 200,
+    rng: np.random.Generator | None = None,
+) -> dict:
+    """Per-room and pooled spatial metrics, and the remapping index between them.
+
+    WHAT THE REMAPPING INDEX MEASURES
+    `mean(per-room sRSA) - pooled sRSA`. sRSA asks whether representational
+    similarity tracks spatial proximity. Computed WITHIN one room it says the
+    map is good there. Computed over rows POOLED across rooms it additionally
+    requires that the same (x, y) in different rooms be represented alike,
+    because pooled rows at the same position but from different rooms are
+    treated as the same location.
+
+    So the two hypotheses separate cleanly:
+      - the network carries ONE position-only map (dead reckoning still wins):
+        pooled ~= per-room, index ~= 0.
+      - the network builds ROOM-SPECIFIC maps (it has bound what it sees to
+        where it is): per-room stays high while pooled collapses, index > 0.
+
+    An index near zero with high per-room sRSA is the null this experiment is
+    trying to break; an index near zero with LOW per-room sRSA means the map
+    itself degraded and the run is uninformative rather than negative. Report
+    both numbers, never the index alone.
+
+    Rooms are visited by swapping the eval shell's landmarks, so every room is
+    measured through one network and one agent.
+    """
+    modules = [pN]
+    if hasattr(agent, "acmodel"):
+        modules.append(agent.acmodel)
+
+    per_room: list[dict] = []
+    h_rows: list = []
+    pos_rows: list = []
+    with eval_mode(modules), on_device(modules, "cpu"):
+        for k, layout in enumerate(layouts):
+            env.env.unwrapped.landmarks = list(layout.landmarks)
+            env.reset()
+            h, pos = collect_pooled_activity(
+                pN, env, agent,
+                n_trajs=n_trajs,
+                traj_timesteps=traj_timesteps,
+                onset_transient=onset_transient,
+            )
+            h_rows.append(h)
+            pos_rows.append(pos)
+            m = pN.calculateSpatialMetrics(
+                h, pos, env,
+                sleepstd=sleepstd,
+                sleep_timesteps=sleep_timesteps,
+                active_time_threshold=active_time_threshold,
+                rng=rng,
+                wandb_nameext=f"_room{k}",
+            )
+            per_room.append(
+                {"key": layout.key, "sRSA": float(m["sRSA"]),
+                 "SWdist": float(m["SWdist"]), "SI": float(np.nanmean(m["SI"]))}
+            )
+
+        pooled_metrics = pN.calculateSpatialMetrics(
+            np.concatenate(h_rows), np.concatenate(pos_rows), env,
+            sleepstd=sleepstd,
+            sleep_timesteps=sleep_timesteps,
+            active_time_threshold=active_time_threshold,
+            rng=rng,
+            wandb_nameext="_pooled",
+        )
+
+    mean_room_srsa = float(np.mean([r["sRSA"] for r in per_room]))
+    return {
+        "per_room": per_room,
+        "pooled": {"sRSA": float(pooled_metrics["sRSA"]),
+                   "SWdist": float(pooled_metrics["SWdist"]),
+                   "SI": float(np.nanmean(pooled_metrics["SI"]))},
+        "mean_room_sRSA": mean_room_srsa,
+        "remapping_index": mean_room_srsa - float(pooled_metrics["sRSA"]),
+    }

@@ -130,6 +130,7 @@ class TrainingCadence:
     plot: StepCadence
     analysis: StepCadence
     save: StepCadence
+    archive: StepCadence
 
     @classmethod
     def from_config(cls, cfg, start_step: int = 0) -> "TrainingCadence":
@@ -139,4 +140,5 @@ class TrainingCadence:
             plot=StepCadence(log.plot_every_steps, start_step),
             analysis=StepCadence(log.analysis_every_steps, start_step),
             save=StepCadence(log.save_every_steps, start_step),
+            archive=StepCadence(log.get("archive_every_steps", 0), start_step),
         )

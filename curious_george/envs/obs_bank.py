@@ -24,6 +24,12 @@ from minigrid.wrappers import RGBImgPartialObsWrapper_HD
 
 BANK_DIR = Path(__file__).resolve().parents[2] / "data" / "obs_bank"
 
+# Multi-layout training re-keys the bank at every episode boundary, so the same
+# handful of grids is re-read from disk thousands of times a run. Banks are
+# immutable and small (~0.2 MB for 16x16), so they are held in-process, keyed by
+# the same fingerprint that names the file.
+_BANK_CACHE: dict[str, np.ndarray] = {}
+
 
 class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
     """Drop-in replacement for RGBImgPartialObsWrapper_HD backed by the bank."""
@@ -76,6 +82,10 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
         fingerprint = self._grid_fingerprint()
         if fingerprint == self._fingerprint:
             return
+        if (cached := _BANK_CACHE.get(fingerprint)) is not None:
+            self._bank = cached
+            self._fingerprint = fingerprint
+            return
         path = self._bank_path(fingerprint)
         if path.exists():
             bank = np.load(path)["bank"]
@@ -85,6 +95,7 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
             np.savez_compressed(path, bank=bank)
             print(f"obs bank built and saved: {path} ({bank.nbytes / 1e6:.1f} MB raw)")
         bank.flags.writeable = False
+        _BANK_CACHE[fingerprint] = bank
         self._bank = bank
         self._fingerprint = fingerprint
 

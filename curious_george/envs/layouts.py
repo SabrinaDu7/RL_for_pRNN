@@ -305,3 +305,63 @@ def generate_layouts(
             )
         )
     return out
+
+
+# The rooms for the alternating-room run, frozen rather than recomputed.
+#
+# Derived by an exact search over all admissible anchor assignments: rooms whose
+# landmark CONFIGURATIONS differ by at least the within-room anchor separation,
+# then the largest possible distance between their landmarks. They are committed
+# because the search costs minutes and because a training run must not depend on
+# a regenerable file under outputs/. Re-derive and check with
+#
+#     uv run python scripts/layout_figures.py --pool 500 --rooms 3
+#
+# which reports configuration distance 12 and cross-room landmark distance 3 -
+# the latter being the ceiling over the whole admissible set, not a search
+# artifact. The room is only 172 walkable cells.
+ROOMS_RUN1: tuple[Layout, ...] = tuple(
+    Layout(tuple(Landmark(shape, color, tuple(anchor)) for shape, color, anchor in spec))
+    for spec in (
+        (("x", "yellow", (3, 3)), ("plus", "green", (3, 9)), ("block3", "red", (9, 3))),
+        (("x", "green", (3, 6)), ("plus", "blue", (9, 6)), ("block3", "yellow", (3, 12))),
+        (("x", "blue", (6, 9)), ("plus", "yellow", (6, 3)), ("block3", "green", (12, 3))),
+    )
+)
+
+BASE_ROOM_ID = "MiniGrid-LRoom-v0"   # owns the wall geometry; landmarks never change it
+
+
+def base_walkable() -> frozenset[tuple[int, int]]:
+    """Walkable cells of the L-room, read from a throwaway instance.
+
+    Landmarks are walkable `Floor`, so this is the same set for every layout -
+    which is exactly why one transition table serves them all.
+    """
+    import gymnasium as gym
+
+    env = gym.make(BASE_ROOM_ID)
+    env.reset(seed=0)
+    return walkable_cells(env=env)
+
+
+def resolve_layouts(cfg) -> list[Layout] | None:
+    """The rooms a run trains on, from `exp.layouts`.
+
+    None/absent keeps the single-room behaviour. `rooms` is the frozen
+    alternating-room set; `pool` is a seeded uniform sample of the admissible
+    set. Both feed the same machinery - set size is the only difference between
+    the two runs.
+    """
+    mode = cfg.exp.get("layouts", None)
+    if not mode:
+        return None
+    if mode == "rooms":
+        return list(ROOMS_RUN1)
+    if mode == "pool":
+        return generate_layouts(
+            walkable=base_walkable(),
+            n=int(cfg.exp.layout_pool_size),
+            seed=int(cfg.exp.layout_seed),
+        )
+    raise ValueError(f"exp.layouts must be null, 'rooms' or 'pool'; got {mode!r}")

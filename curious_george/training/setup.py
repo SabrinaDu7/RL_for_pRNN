@@ -86,12 +86,16 @@ def setup_run(cfg) -> RunContext:
     )
 
 
-def setup_env(cfg, seed_offset: int = 0):
+def setup_env(cfg, seed_offset: int = 0, landmarks: list | None = None):
     start_room = None if cfg.exp.start_rand else cfg.exp.start_room
     # Only forwarded when set: not every registered env takes new_obj_pos, and
     # passing it unconditionally would break the ones that don't.
     obj = cfg.exp.get("new_obj_pos", None)
     extra = {"new_obj_pos": tuple(obj)} if obj else {}
+    if landmarks is not None:
+        # LEnv_multi has no default room; the pool overwrites this per episode,
+        # so it only has to be a valid member of the run's layout set.
+        extra["landmarks"] = list(landmarks)
     return make_env(
         **extra,
         env_key=cfg.exp.env_name,
@@ -113,21 +117,36 @@ def setup_env(cfg, seed_offset: int = 0):
 
 
 def setup_envs(cfg) -> list:
+    from curious_george.envs.layouts import resolve_layouts
+
     num_envs = cfg.exp.get("num_envs", 1)
+    layouts = resolve_layouts(cfg)
+    seed_landmarks = list(layouts[0].landmarks) if layouts else None
+    if layouts:
+        print(f"multi-room: {len(layouts)} layouts, resampled per episode")
+
     if cfg.exp.get("device_env", False):
         from curious_george.envs.vector import DeviceTableShellPool
 
         if num_envs <= 1:
             raise ValueError("exp.device_env requires exp.num_envs > 1")
         training_shells = [
-            setup_env(cfg, seed_offset=1000 * i) for i in range(num_envs)
+            setup_env(cfg, seed_offset=1000 * i, landmarks=seed_landmarks)
+            for i in range(num_envs)
         ]
         # Evaluation must not mutate one of the training reset RNG streams.
-        eval_shell = setup_env(cfg, seed_offset=1000 * num_envs)
+        eval_shell = setup_env(cfg, seed_offset=1000 * num_envs, landmarks=seed_landmarks)
         return DeviceTableShellPool(
             training_shells=training_shells,
             eval_shell=eval_shell,
             device=get_device(),
+            layouts=layouts,
+            layout_seed=int(cfg.exp.seed),
+        )
+    if layouts:
+        raise ValueError(
+            "multi-room training requires exp.device_env; the CPU and async "
+            "paths hold one grid per stream for the whole run"
         )
     if num_envs > 1 and cfg.exp.get("async_envs", True):
         from curious_george.envs.vector import AsyncShellPool

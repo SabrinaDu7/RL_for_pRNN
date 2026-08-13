@@ -6,6 +6,7 @@ defaults:
     - algo: ppo # -> rl.*       (Configs/algo/)
     - rewards: curious_next_obs # -> rl.*       (Configs/rewards/)
     - tasks: omt
+    - optional run: null # e.g. run=multienv; sets the whole shape of a named experiment
     - optional performance: null # e.g. performance=ultra; explicit because it changes optimizer batching semantics
     - override hydra/hydra_logging: disabled
     - override hydra/job_logging: disabled
@@ -55,7 +56,8 @@ logging:
     log_every_steps: 2048 # was log_interval=1 update
     plot_every_steps: 409600 # plotSampleTrajectory: a figure + GPU<->CPU model swap
     analysis_every_steps: 409600 # sRSA/SWdist + behaviour analysis (0: no analysis)
-    save_every_steps: 245760 # checkpoints (0: don't save)
+    save_every_steps: 245760 # rolling checkpoint, overwritten (0: don't save)
+    archive_every_steps: 0 # ALSO keep a step-tagged copy under <run>/checkpoints/ (0: off). 3.2 MB each; this is the developmental series analysis reads
     early_stop: False # Stop when the environment is solved?
     save_params: True
     focus: False # Which parameter to include in the group name, or False
