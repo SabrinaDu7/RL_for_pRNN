@@ -17,6 +17,6 @@ door_poss: [1, 5, 3, 4,]
 start_room: 1
 table_env: True # multi-layout runs on the batched device state machine
 device_env: True # implies table_env; requires num_envs > 1
-layouts: rooms # null | rooms | pool
+layouts: rooms # null | one | rooms | pool ('one' is the single-room control)
 layout_pool_size: 500 # `pool` only: how many rooms to draw
 layout_seed: 20260813 # names the pool; a run is reproducible from this alone

@@ -356,6 +356,12 @@ def resolve_layouts(cfg) -> list[Layout] | None:
     mode = cfg.exp.get("layouts", None)
     if not mode:
         return None
+    if mode == "one":
+        # The control for every multi-room number: identical env class, identical
+        # landmark shapes and sizes, identical optimizer - one room instead of
+        # several. Without it a change in sRSA cannot be attributed to the room
+        # COUNT rather than to the scale or the schedule.
+        return [ROOMS_RUN1[0]]
     if mode == "rooms":
         return list(ROOMS_RUN1)
     if mode == "pool":
@@ -364,4 +370,6 @@ def resolve_layouts(cfg) -> list[Layout] | None:
             n=int(cfg.exp.layout_pool_size),
             seed=int(cfg.exp.layout_seed),
         )
-    raise ValueError(f"exp.layouts must be null, 'rooms' or 'pool'; got {mode!r}")
+    raise ValueError(
+        f"exp.layouts must be null, 'one', 'rooms' or 'pool'; got {mode!r}"
+    )
