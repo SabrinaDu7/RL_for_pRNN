@@ -152,7 +152,7 @@ The remaining single-stream lever is the thetaRNN Python timestep loop
 - slurm/bsweep.sh: 9 CPU array jobs, B in {1,4,8} x seeds {2,3,4},
   1500 updates each (rl.steps=3072000), exp_name bsweep-B{B}-s{seed}.
   Requires pushing sdu/rl-rollout-arch (cluster clones from $HOME).
-- scripts/analysis_bsweep.py: fetches the runs from wandb, bins curves over a
+- scripts/legacy/analysis_bsweep.py: fetches the runs from wandb, bins curves over a
   common frame horizon, reports per-B mean+/-std across seeds and a
   within-2sd-of-B=1 overlap verdict; optional figure.
 - Local pilot first: bsweep-pilot-B{1,8}-s2, 300 updates each, validates the
@@ -163,7 +163,7 @@ The remaining single-stream lever is the thetaRNN Python timestep loop
 ## Phase C gate result: B>1 is learning-equivalent (2026-07-13)
 
 9/9 bsweep runs completed (B in {1,4,8} x seeds {2,3,4}, 1500 updates).
-scripts/analysis_bsweep.py verdict vs the B=1 across-seed band:
+scripts/legacy/analysis_bsweep.py verdict vs the B=1 across-seed band:
 - cur_reward_mean 92% in-band (rel diff 0.6-1.0%); value_loss 83-100%
   (1.4-2.4%); advantages_max 100% (2.2%); advantages_min 83-92% (0.4-1.1%);
   loc_entropy 83-92%; cur_reward_max 75-83%.

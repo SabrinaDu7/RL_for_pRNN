@@ -93,7 +93,7 @@ Artifacts: `tests/perf/results/migration_{old,new}_stack.json`,
 ## Follow-ups
 
 1. Sabrina: launch full RL training run; compare vs old-stack wandb band
-   (`scripts/analysis_bsweep.py`); expect small shifts from bias training.
+   (`scripts/legacy/analysis_bsweep.py`); expect small shifts from bias training.
 2. Re-baseline sRSA/SI/SWdist references on the new stack (SI shifts from
    the minmax fix; expected).
 3. Open a PR from `sdu/rl-integration` → LevensteinLab main when ready

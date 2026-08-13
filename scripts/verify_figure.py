@@ -13,7 +13,7 @@ the device-resident environment, which is trajectory-exact
 (tests/test_device_collector.py), so any divergence is a real regression rather
 than an expected difference.
 
-    uv run --no-sync python scripts/verify_figure.py --run verify-lroom-0812
+    uv run python scripts/verify_figure.py --run verify-lroom-0812
 """
 
 from __future__ import annotations

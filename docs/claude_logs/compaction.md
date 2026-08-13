@@ -67,7 +67,7 @@ Consequences, and they explain every result in the project:
 
 ## 3. The metric, and the rules for using it
 
-`scripts/trace_metric.py`.
+`scripts/trace/trace_metric.py`.
 
 ```
 field_gain g(u,c) = mean rate in a radius-2 disc at c / unit's mean rate   (scale-free)
@@ -195,7 +195,7 @@ one:
 
 2. **Break path integration directly**: teleport the agent mid-episode, and/or randomise the
    initial hidden state per trajectory. Cheap pre-check before building anything — re-run
-   `scripts/moser_decode_quadrant.py` with the start cell randomised and hidden from the
+   `scripts/moser/moser_decode_quadrant.py` with the start cell randomised and hidden from the
    decoder. If accuracy collapses toward 0.25, history is confirmed as the route.
 
 3. **Combine (1) or (2) with `lr_trials=[2,0,8]`** (freeze the readout). That is the only

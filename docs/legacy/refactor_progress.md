@@ -229,7 +229,7 @@ wmsweep-B3-s3 died early (unexamined) - horizon truncated to 1.48M frames.
   rewards=curious in capture configs and still bitwise-green).
 - Gates ladder: bitwise (goldens) -> metric harness (tests/perf/benchmark.py
   + compare_metrics.py, fixed seed) -> curve gate (multi-seed banded
-  comparison via scripts/analysis_bsweep.py; used for bsweep PASS and
+  comparison via scripts/legacy/analysis_bsweep.py; used for bsweep PASS and
   wmsweep FAIL).
 - Paused queue: thcycRNN_5win RL integration (docs/thcyc_rl_integration.md,
   4 open design questions for Sabrina).

@@ -34,20 +34,20 @@ input-driven code: it decays ~2× per masked step and is near chance within thre
 
 | method | module | used by |
 |---|---|---|
-| Fixed measurement probe (688 trajectories, collect once, replay per checkpoint) | `scripts/trace_probe.py` | both |
-| Occupancy-masked rate maps, Skaggs + uniform SI, shuffle null, split-half, object modulation | `scripts/trace_maps.py` | trace cells |
-| Rate-map panels (`unit_panel`, `trace_panel`, `occupancy_figure`) | `scripts/trace_figure.py` | both |
-| Readout-vs-dynamics chimaera swap | `scripts/trace_readout_test.py` | trace cells |
-| ...gain-corrected version (`‖h‖` differs ~9% between nets) | `scripts/trace_readout_gaincorrected.py` | trace cells |
-| Object-vector (egocentric view-frame) tuning | `scripts/trace_objvector_test.py` | trace cells |
-| On-policy behaviour with a within-run null over all 172 cells | `scripts/trace_behavior.py` | trace cells |
-| Curiosity-reward maps — by agent position, and conditioned on visibility | `scripts/trace_reward_map.py`, `trace_reward_inview.py` | trace cells |
-| Presence decoding from `h`, **split by input-mask phase** | `scripts/trace_presence_decoder.py` | hidden state |
+| Fixed measurement probe (688 trajectories, collect once, replay per checkpoint) | `scripts/trace/trace_probe.py` | both |
+| Occupancy-masked rate maps, Skaggs + uniform SI, shuffle null, split-half, object modulation | `scripts/trace/trace_maps.py` | trace cells |
+| Rate-map panels (`unit_panel`, `trace_panel`, `occupancy_figure`) | `scripts/trace/trace_figure.py` | both |
+| Readout-vs-dynamics chimaera swap | `scripts/trace/trace_readout_test.py` | trace cells |
+| ...gain-corrected version (`‖h‖` differs ~9% between nets) | `scripts/trace/trace_readout_gaincorrected.py` | trace cells |
+| Object-vector (egocentric view-frame) tuning | `scripts/trace/trace_objvector_test.py` | trace cells |
+| On-policy behaviour with a within-run null over all 172 cells | `scripts/trace/trace_behavior.py` | trace cells |
+| Curiosity-reward maps — by agent position, and conditioned on visibility | `scripts/trace/trace_reward_map.py`, `trace_reward_inview.py` | trace cells |
+| Presence decoding from `h`, **split by input-mask phase** | `scripts/trace/trace_presence_decoder.py` | hidden state |
 | Stochastic object presence / random object position during training | `tasks/otc/` | hidden state |
-| Moser session sequence (no object → 6 positions → no object), trained from scratch | `scripts/moser_sessions.py` | symmetric room |
-| Object cells vs trace cells as **independent** populations, per Tsao/Moser | `scripts/moser_analysis.py` | symmetric room |
-| Session panels, counts, field gain, map drift | `scripts/moser_figures.py` | symmetric room |
-| Quadrant decoding from `h`, object present vs absent (**the diagnostic that explained the null**) | `scripts/moser_decode_quadrant.py` | symmetric room |
+| Moser session sequence (no object → 6 positions → no object), trained from scratch | `scripts/moser/moser_sessions.py` | symmetric room |
+| Object cells vs trace cells as **independent** populations, per Tsao/Moser | `scripts/moser/moser_analysis.py` | symmetric room |
+| Session panels, counts, field gain, map drift | `scripts/moser/moser_figures.py` | symmetric room |
+| Quadrant decoding from `h`, object present vs absent (**the diagnostic that explained the null**) | `scripts/moser/moser_decode_quadrant.py` | symmetric room |
 | Reference sRSA/SWdist/SI with their noise floor | `scripts/spatial_baseline.py` | metrics |
 | Is the SI activity threshold a bias correction or does it delete real fields? | `scripts/si_threshold_audit.py` | metrics |
 
@@ -58,7 +58,7 @@ Nothing requires retraining; all figures rebuild from caches in `outputs/trace/`
 ```bash
 uv run python scripts/otc_figures.py plot     # fig_otc_phases / _encoding / _tradeoff
 uv run python scripts/otc_figures.py maps     # fig_otc_maps / _maps_diff
-uv run python scripts/trace_cell_figures.py   # the six trace-cell figures
+uv run python scripts/trace/trace_cell_figures.py   # the six trace-cell figures
 ```
 
 To recompute the caches themselves (needs the checkpoints under `outputs/`):

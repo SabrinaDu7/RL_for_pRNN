@@ -74,7 +74,7 @@ Gate: replaying one checkpoint twice is bitwise identical.
 A logistic probe reads object presence out of `h`, restricted to timesteps where the object
 location is inside the 7×7 view, **split by mask phase**. Train/test split is by
 **trajectory**, so nothing leaks; each number averages 3 splits. Chance = 0.5.
-(`scripts/trace_presence_decoder.py`)
+(`scripts/trace/trace_presence_decoder.py`)
 
 ### 3.4 Interventions
 
@@ -257,8 +257,8 @@ uv run python scripts/otc_figures.py collect   # -> outputs/trace/otc_results.np
 uv run python scripts/otc_figures.py plot      # -> outputs/trace/fig_otc_*.png
 ```
 
-Key modules: `scripts/trace_probe.py` (probe build/replay), `scripts/trace_presence_decoder.py`
-(phase-split decoding), `scripts/trace_readout_test.py` (object contrast, weight deltas),
+Key modules: `scripts/trace/trace_probe.py` (probe build/replay), `scripts/trace/trace_presence_decoder.py`
+(phase-split decoding), `scripts/trace/trace_readout_test.py` (object contrast, weight deltas),
 `scripts/otc_figures.py` (collection + figures), `tasks/otc/` (stochastic presence/position).
 
 Gate throughout: `uv run pytest` → 126 passed, 0 failed, 7 deselected.

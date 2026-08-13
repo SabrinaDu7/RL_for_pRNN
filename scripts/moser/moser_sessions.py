@@ -23,11 +23,11 @@ session's checkpoint, so weights, both optimizers and the frame counter carry
 over while the environment changes. `rl.episodes_total` is CUMULATIVE for that
 reason: the loop runs until the total, starting from the loaded frame count.
 
-    uv run --no-sync python scripts/moser_sessions.py --dry-run
-    uv run --no-sync python scripts/moser_sessions.py
+    uv run python scripts/moser_sessions.py --dry-run
+    uv run python scripts/moser_sessions.py
 
-Needs the local editable minigrid (`uv pip install -e ../minigrid --no-deps`)
-and therefore `uv run --no-sync`, or MiniGrid-SquareRoom-v0 will not resolve.
+MiniGrid-SquareRoom-v0 comes from the pinned minigrid in uv.lock; no editable
+install is needed.
 """
 
 from __future__ import annotations

@@ -27,7 +27,7 @@ The probe is identical across sessions by construction: the object is a
 non-blocking floor tile, so a fixed action sequence visits exactly the same
 positions whether or not it is present. Only the observations differ.
 
-    uv run --no-sync python scripts/moser_analysis.py --manifest outputs/moser_manifest.json
+    uv run python scripts/moser_analysis.py --manifest outputs/moser_manifest.json
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 > **STATUS (2026-08-03): SUPERSEDED, kept for the refactor/runnability record.**
 > The three runs described here predate `86f31be` and kept only checkpoints 0 and 2992.
 > They were re-run with dense checkpoints on 2026-07-30 (jobs 10252642/10252658/10252659).
-> The "Next steps" below are all obsolete: `scripts/analysis_OMT_h.py` was NOT patched — new
+> The "Next steps" below are all obsolete: `scripts/legacy/analysis_OMT_h.py` was NOT patched — new
 > tooling was written instead (`scripts/trace_*.py`). For the science see
 > `exp_object_trace_cells_2026-07-30.md`; for the interventions see
 > `exp_object_into_hidden_state_2026-08-01.md`.
@@ -126,11 +126,11 @@ below); re-run if the trajectory-resolved series is needed.
 - **`--export` cannot carry a hydra list.** `sbatch --export=ALL,OBJ_LOC=[7,2]`
   splits on the comma inside the brackets and tears the literal in half. Set
   the vars in the submitting shell instead. Caught before any submission.
-- **`scripts/analysis_OMT_h.py` path drift (not fixed).** `get_ckpts` hardcodes
+- **`scripts/legacy/analysis_OMT_h.py` path drift (not fixed).** `get_ckpts` hardcodes
   `omt-cur-dot-noObs-goal{i}{j}/{step}/pN-{step}.pt`, which is neither the name
   nor the location `main_task.py` produces. Needs patching to
   `$RL_STORAGE/<run_name>/<step>/pN-<step>.pt` before the hidden-state
-  analysis can consume these checkpoints. ~~**This is the next blocker.**~~ It was not — `scripts/trace_probe.py` and friends replaced that path entirely; `analysis_OMT_h.py` remains unpatched.
+  analysis can consume these checkpoints. ~~**This is the next blocker.**~~ It was not — `scripts/trace/trace_probe.py` and friends replaced that path entirely; `analysis_OMT_h.py` remains unpatched.
 - **`main_task.py` hardcodes `DEVICE = torch.device("cuda")`** with no CPU
   fallback — OMT jobs must request a GPU.
 - **Only first+last checkpoints were saved.** `slurm/omt_task.sh` overrode
@@ -146,7 +146,7 @@ below); re-run if the trajectory-resolved series is needed.
 ## Next steps
 
 1. Collect the three finished runs' checkpoints from `$SCRATCH/pRNN/<JOB_ID>/`.
-2. Patch `scripts/analysis_OMT_h.py::get_ckpts` for the new output layout.
+2. Patch `scripts/legacy/analysis_OMT_h.py::get_ckpts` for the new output layout.
 3. Hidden-state analysis: PCA / spatial tuning near the object, compared across
    the three locations.
 4. Follow-up recorded in `tests/golden_omt/test_golden_omt.py`: add a

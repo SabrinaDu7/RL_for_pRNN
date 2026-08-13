@@ -223,7 +223,7 @@ location is inside the 7×7 view, **split by mask phase**. Train/test split is b
 nothing leaks; each number averages 3 splits; chance = 0.5. Paired object-present/object-absent
 probes with **byte-identical trajectories** — possible because the object is a non-blocking
 `FloorBright` tile, so a fixed action sequence gives identical `agent_pos`/`agent_dir` (verified;
-16.2% of timesteps differ in observation). `scripts/trace_presence_decoder.py`,
+16.2% of timesteps differ in observation). `scripts/trace/trace_presence_decoder.py`,
 `scripts/otc_figures.py`.
 
 ### Result
@@ -300,7 +300,7 @@ field that persists at a departed location.
 ### Method
 
 `(7,11) → (7,2) → (4,7) → REMOVED`, 1000 trajectories per phase, checkpoints at every phase
-boundary, 8 seeds in parallel. Hidden state scored with `scripts/trace_metric.py`: field gain
+boundary, 8 seeds in parallel. Hidden state scored with `scripts/trace/trace_metric.py`: field gain
 `g(u,c)` = mean rate in a radius-2 disc at `c` / the unit's mean rate (scale-free), trace score
 `dg = g_post − g_pre`, and the unit's score is the object cell's **percentile among all 172
 walkable cells**. Object cell if percentile > 95, so chance is 5% by construction.
@@ -492,7 +492,7 @@ trace cell is mechanistically *required* rather than merely permitted.
 
 `no object → 6 positions → no object`. Session 0 no object, 8000 episodes; sessions 1–6 objects at
 (5,4) (10,6) (6,11) (12,3) (3,9) (11,12), 2000 each; session 7 no object, 2000. Seed 1, n=1.
-`scripts/moser_sessions.py`, `moser_analysis.py`, `moser_figures.py`.
+`scripts/moser/moser_sessions.py`, `moser_analysis.py`, `moser_figures.py`.
 
 ### Result — object cells: NULL
 
@@ -679,7 +679,7 @@ mechanistic rather than analogical:
    place.
 2. **Break path integration directly** — teleport the agent mid-episode, and/or randomise the
    initial hidden state per trajectory. Cheap pre-check before building anything: re-run
-   `scripts/moser_decode_quadrant.py` with the start cell randomised and hidden from the decoder.
+   `scripts/moser/moser_decode_quadrant.py` with the start cell randomised and hidden from the decoder.
    If accuracy collapses toward 0.25, history is confirmed as the route.
 3. **Combine (1) or (2) with `lr_trials=[2,0,8]`.** The room removes the localisation route;
    freezing `W_out` removes the absorbing route. Both halves of the mechanism, closed at once —
@@ -725,44 +725,31 @@ Recorded so the numbers above can be trusted differentially.
    and `docs/ref-trace-cells.png`. I did not fetch the DOI to re-verify the quotation.
 7. **The brief for this document stated the older `outputs/trace/*.png` had been deleted. They had
    not** — all 22 were present, intact, and newer than their caches. I regenerated them anyway via
-   `scripts/trace_cell_figures.py` and `scripts/otc_figures.py plot|maps`; all seven and four
+   `scripts/trace/trace_cell_figures.py` and `scripts/otc_figures.py plot|maps`; all seven and four
    respectively rebuilt cleanly, and the `otc_figures.py plot` console table reproduced the §2
    phase numbers exactly.
-
----
-
-## Reproduction
-
-```bash
-# ALWAYS --no-sync: plain `uv run` re-syncs from uv.lock and silently uninstalls the
-# editable minigrid, which breaks MiniGrid-SquareRoom-v0.
-
-uv run --no-sync python scripts/trace_cell_figures.py        # -> outputs/trace/fig_{occupancy,tuned_units_*,si_weighting,trace_3loc,exposure_*,behavior_n3}.png
-uv run --no-sync python scripts/otc_figures.py plot          # -> outputs/trace/fig_otc_{phases,encoding,tradeoff}.png
-uv run --no-sync python scripts/otc_figures.py maps          # -> outputs/trace/fig_otc_maps{,_diff}.png
-uv run --no-sync python scripts/summary_figures.py           # -> outputs/summary/*.png  (this document's new figures)
-uv run --no-sync python scripts/summary_figures.py fetch_entropy   # refresh the wandb cache (needs network)
-```
-
-`scripts/summary_figures.py` is new in this session; nothing else was modified.
 
 ---
 
 ## Regenerating every figure in this document
 
 Verified end-to-end on 2026-08-12 after the `scripts/` reorganisation: **17 of the 19
-figures rebuild from committed code plus the caches under `outputs/`**. All commands need
-`--no-sync` (the editable `minigrid` checkout is required for `MiniGrid-SquareRoom-v0`, and
-plain `uv run` re-syncs it away).
+figures rebuild from committed code plus the caches under `outputs/`**.
+
+(An earlier revision of this document required `uv run --no-sync`, because `minigrid` was
+installed editable so that `MiniGrid-SquareRoom-v0` would resolve. That is obsolete: minigrid
+is pinned from git again in `uv.lock`, so plain `uv run` is correct and `--no-sync` would now
+give you a *stale* environment.)
 
 ```bash
-uv run --no-sync python scripts/summary_figures.py            # the 5 outputs/summary/ figures
-uv run --no-sync python scripts/trace/trace_cell_figures.py   # 7 figures in outputs/trace/
-uv run --no-sync python scripts/otc_figures.py plot           # fig_otc_phases/_encoding/_tradeoff
-uv run --no-sync python scripts/otc_figures.py maps           # fig_otc_maps/_maps_diff
-uv run --no-sync python scripts/moser/moser_figures.py        # the 4 outputs/moser/ figures
-uv run --no-sync python scripts/seq_figures.py \
+uv run python scripts/summary_figures.py            # the 5 outputs/summary/ figures
+uv run python scripts/trace/trace_cell_figures.py   # 7 figures in outputs/trace/
+uv run python scripts/otc_figures.py plot           # fig_otc_phases/_encoding/_tradeoff
+uv run python scripts/otc_figures.py maps           # fig_otc_maps/_maps_diff
+uv run python scripts/moser/moser_figures.py        # the 4 outputs/moser/ figures
+uv run python scripts/seq_figures.py \
     outputs/seq4/OTC_seq_5200_10340479/SEQ4-otc-p0.5-fixedpos-c1-0811-123058
+uv run python scripts/summary_figures.py fetch_entropy   # refresh the wandb cache (network)
 ```
 
 Note on that last path: half the `outputs/seq4/OTC_seq_*` directories are empty rsync

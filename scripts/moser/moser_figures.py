@@ -3,8 +3,8 @@
 Consumes outputs/moser/moser_maps.npz (scripts/moser_analysis.py) and the
 wandb reference curve, and writes to outputs/moser/.
 
-    uv run --no-sync python scripts/moser_figures.py          # all
-    uv run --no-sync python scripts/moser_figures.py panel    # one
+    uv run python scripts/moser_figures.py          # all
+    uv run python scripts/moser_figures.py panel    # one
 
 Figures
   panel    the replication of docs/ref-trace-cells.png: one row per example

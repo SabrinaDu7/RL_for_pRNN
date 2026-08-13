@@ -31,7 +31,7 @@ future observation that **position alone does not predict**.
 
 ## 2. The metric (deliverable 1)
 
-`scripts/trace_metric.py`.
+`scripts/trace/trace_metric.py`.
 
 ### 2.1 Definition
 

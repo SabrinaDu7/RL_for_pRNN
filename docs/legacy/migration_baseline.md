@@ -43,7 +43,7 @@ CPU) into scratchpad and compared bitwise:
 ## Curve-gate reference
 
 The banded multi-seed reference is the existing wandb `bsweep-B*`/`wmsweep`
-runs consumed by `scripts/analysis_bsweep.py` (old-stack dynamics).
+runs consumed by `scripts/legacy/analysis_bsweep.py` (old-stack dynamics).
 Post-migration short runs will be compared against that band; the full-run
 verdict is Sabrina's training launch. NOTE (by design, decisions 2026-07-17):
 the new stack adopts upstream's model core (LayerNorm cell, Xavier init,

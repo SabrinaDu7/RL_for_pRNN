@@ -69,7 +69,7 @@ difference is in the weights.
   ~0.4 in `h`), so `replay_checkpoint` seeds torch immediately before each forward. Replaying
   one checkpoint twice is **bitwise identical**.
 
-`scripts/trace_probe.py`, `scripts/trace_maps.py`.
+`scripts/trace/trace_probe.py`, `scripts/trace/trace_maps.py`.
 
 ### 3.2 Spatial tuning statistics
 
@@ -102,8 +102,8 @@ difference is in the weights.
    transplant over-drives one chimaera and under-drives the other — both errors biasing toward
    "the readout carries it". `W_out` is rescaled by the measured `‖h‖` ratio.
 
-`scripts/trace_readout_test.py`, `scripts/trace_readout_gaincorrected.py`,
-`scripts/trace_objvector_test.py`.
+`scripts/trace/trace_readout_test.py`, `scripts/trace/trace_readout_gaincorrected.py`,
+`scripts/trace/trace_objvector_test.py`.
 
 ### 3.4 Behaviour
 
@@ -111,7 +111,7 @@ On-policy rollouts in the object-**present** env at each checkpoint, 128 per poi
 the object location's **percentile among all 172 walkable cells** for two measures:
 occupancy within radius 2, and time with the cell inside the 7×7 view. Within-run, so it does
 not depend on pooling seeds — which matters, because pooling manufactures apparent clustering
-when the object sits in a structurally high-traffic spot (§4.4). `scripts/trace_behavior.py`.
+when the object sits in a structurally high-traffic spot (§4.4). `scripts/trace/trace_behavior.py`.
 
 ### 3.5 Curiosity reward
 
@@ -269,7 +269,7 @@ uv run python scripts/otc_figures.py maps    # spatial-tuning panels
 | `outputs/trace/fig_behavior_n3.png` | behaviour is object-directed; (14,7) is the artifact |
 | `outputs/trace/fig_si_weighting.png` | Skaggs vs uniform bin weighting |
 
-Modules: `scripts/trace_probe.py`, `trace_maps.py`, `trace_figure.py`, `trace_behavior.py`,
+Modules: `scripts/trace/trace_probe.py`, `trace_maps.py`, `trace_figure.py`, `trace_behavior.py`,
 `trace_readout_test.py`, `trace_readout_gaincorrected.py`, `trace_objvector_test.py`,
 `trace_reward_map.py`, `trace_reward_inview.py`.
 

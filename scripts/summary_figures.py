@@ -3,8 +3,8 @@
 Every figure here either compares against a baseline/control or shows spatial
 tuning; none is a bare time series.
 
-    uv run --no-sync python scripts/summary_figures.py            # all
-    uv run --no-sync python scripts/summary_figures.py occlusion  # one
+    uv run python scripts/summary_figures.py            # all
+    uv run python scripts/summary_figures.py occlusion  # one
 
 Writes to `outputs/summary/`. Caches consumed:
     outputs/trace/seq4_matrix.npy    (8 seeds, 4 phases, 3 locs) hidden-state object-cell frac
