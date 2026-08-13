@@ -32,20 +32,16 @@ from __future__ import annotations
 import numpy as np
 from jaxtyping import Bool, Float, Int
 
+from curious_george.envs import layouts
+
 # World cell (x, y) lives at maps[unit, y - 1, x - 1]: get_map_bins gives 14
 # bins over [0.5, 14.5], so bin index is the integer coordinate minus one.
 _BIN_OFFSET = 1
 
 
-def walkable_cells(*, env) -> set[tuple[int, int]]:
-    """World cells the agent can occupy."""
-    u = env.env.unwrapped if hasattr(env, "env") else env.unwrapped
-    return {
-        (x, y)
-        for y in range(u.height)
-        for x in range(u.width)
-        if (c := u.grid.get(x, y)) is None or c.can_overlap()
-    }
+def walkable_cells(*, env) -> frozenset[tuple[int, int]]:
+    """World cells the agent can occupy. Handles the shell's extra `env` layer."""
+    return layouts.walkable_cells(env=env.env if hasattr(env, "env") else env)
 
 
 def offset_grid(
@@ -57,15 +53,16 @@ def offset_grid(
     between offset maps is only meaningful over offsets that exist for both.
     The result is a hard property of the room geometry, not a tuning knob — in
     the default L-room with the 6x6 landmarks it is 56 offsets at Chebyshev <= 4.
+
+    The rule itself lives with layout generation, which has to enforce it when
+    building rooms; this is the array-returning view of it.
     """
-    walk = walkable_cells(env=env)
-    offs = [
-        (dx, dy)
-        for dy in range(-radius, radius + 1)
-        for dx in range(-radius, radius + 1)
-        if all((a[0] + dx, a[1] + dy) in walk for a in anchors)
-    ]
-    return np.asarray(sorted(offs), dtype=int)
+    return np.asarray(
+        layouts.common_offsets(
+            walkable=walkable_cells(env=env), anchors=tuple(anchors), radius=radius
+        ),
+        dtype=int,
+    )
 
 
 def offset_maps(
