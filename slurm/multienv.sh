@@ -2,29 +2,35 @@
 #SBATCH --job-name=multienv
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
 #SBATCH --error=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.err
+#SBATCH --partition=long
 #SBATCH --time=4-12:00:00
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=24G
-#SBATCH --constraint=sapphire
-#SBATCH --exclusive
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --gres=gpu:1
 #
 # Multi-room pRNN training. Usage:
 #   sbatch slurm/multienv.sh rooms      # run 1: the frozen three rooms
 #   sbatch slurm/multienv.sh pool       # run 2: the 500-layout seeded pool
 #
-# CPU on purpose, inherited from train_prnn.sh: async_bench_10111153 measured
-# CUDA at 558 FPS with the GPU ~91% idle against 674 FPS on 16 CPUs, and
-# Sapphire Rapids nodes run this at ~1270 FPS. That was measured for SERIAL
-# world-model training; pooling cuts trainStep calls 8x per update, which
-# changes the dispatch arithmetic that verdict rested on. Locally the pooled
-# path reaches ~2360 FPS on an RTX 4060. Treat the CPU choice here as the
-# proven default, not as a re-measured one.
+# GPU on `long`, against train_prnn.sh's CPU/sapphire choice. Two reasons, and
+# the second is the practical one:
 #
-# 4-12:00:00 against main's 5-day limit: 240,000 pooled gradient steps is
-# 491.5M environment steps, ~107 h at 1270 FPS. The run is EXPECTED to be cut
-# off by the wall clock, which is why archive_every_steps exists - the
-# step-tagged series under <run>/checkpoints/ is the deliverable, not a
-# finished run.
+#   1. That verdict (async_bench_10111153: CUDA 558 FPS with the GPU ~91% idle
+#      vs 674 FPS on 16 CPUs; sapphire ~1270 FPS) was measured for SERIAL
+#      world-model training, where the bill is op COUNT. Pooling cuts trainStep
+#      calls 8x per update, which is exactly the quantity that verdict rested
+#      on. Locally the pooled path runs at ~2400 FPS on an RTX 4060.
+#   2. The CPU partitions are unusable right now - checked 2026-08-13, every
+#      sapphire node is reserved, draining or allocated, so a 16-CPU job queues
+#      indefinitely. `long` has 108 nodes in mixed state with free GPUs.
+#
+# So this is the available choice, not a re-measured one. FPS is logged; read it
+# from the run rather than trusting either number above.
+#
+# 4-12:00:00 against long's 7-day limit: 240,000 pooled gradient steps is 491.5M
+# environment steps. The run is EXPECTED to be cut off by the wall clock, which
+# is why archive_every_steps exists - the step-tagged series under
+# <run>/checkpoints/ is the deliverable, not a finished run.
 
 set -eo pipefail   # NOT -u: WANDB_API_KEY is optional, creds come from ~/.netrc
 LAYOUTS="${1:-rooms}"
@@ -41,7 +47,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 export JOB_ID="${SLURM_JOB_NAME}_${LAYOUTS}_${SLURM_JOB_ID}"
-export CG_DEVICE=cpu
+export CG_DEVICE=cuda
 export RL_STORAGE=$SLURM_TMPDIR/outputs/$JOB_ID
 export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
 mkdir -p "$RL_STORAGE"
