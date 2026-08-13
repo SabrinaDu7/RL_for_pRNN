@@ -9,8 +9,10 @@
 #SBATCH --gres=gpu:1
 #
 # Multi-room pRNN training. Usage:
-#   sbatch slurm/multienv.sh rooms      # run 1: the frozen three rooms
-#   sbatch slurm/multienv.sh pool       # run 2: the 500-layout seeded pool
+#   sbatch slurm/multienv.sh rooms                    # run 1, L-room
+#   sbatch slurm/multienv.sh pool                     # run 2, L-room
+#   sbatch slurm/multienv.sh rooms squareroom_multi   # run 1, SQUARE room
+#   sbatch slurm/multienv.sh pool  squareroom_multi   # run 2, SQUARE room
 #
 # GPU on `long`, against train_prnn.sh's CPU/sapphire choice. Two reasons, and
 # the second is the practical one:
@@ -34,7 +36,8 @@
 
 set -eo pipefail   # NOT -u: WANDB_API_KEY is optional, creds come from ~/.netrc
 LAYOUTS="${1:-rooms}"
-echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')   layouts=$LAYOUTS"
+ENVCFG="${2:-lroom_multi}"     # lroom_multi | squareroom_multi
+echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')   layouts=$LAYOUTS env=$ENVCFG"
 
 module --force purge
 module load python/3.10
@@ -46,7 +49,7 @@ export PATH="$HOME/.local/bin:$PATH"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-export JOB_ID="${SLURM_JOB_NAME}_${LAYOUTS}_${SLURM_JOB_ID}"
+export JOB_ID="${SLURM_JOB_NAME}_${ENVCFG%%_*}_${LAYOUTS}_${SLURM_JOB_ID}"
 export CG_DEVICE=cuda
 export RL_STORAGE=$SLURM_TMPDIR/outputs/$JOB_ID
 export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
@@ -75,9 +78,9 @@ SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null || true; rsync -a "$RL_STORAGE/" "$DEST_DIR/" || true' EXIT
 
 uv run main_train.py \
-    env=lroom_multi run=multienv \
+    env="$ENVCFG" run=multienv \
     exp.layouts="$LAYOUTS" \
-    exp.exp_name="multienv-$LAYOUTS"
+    exp.exp_name="multienv-${ENVCFG%%_*}-$LAYOUTS"
 
 kill $SYNC_PID 2>/dev/null || true
 rsync -a "$RL_STORAGE/" "$DEST_DIR/"
