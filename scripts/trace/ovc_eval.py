@@ -61,7 +61,7 @@ def landmark_anchors(*, env) -> list[tuple[int, int]]:
     ]
 
 
-def activity(*, env_name: str, ckpt_dir: str, n_dirs: int = 2):
+def activity(*, env_name: str, ckpt_dir: str, n_dirs: int = 2, landmarks=None):
     """Replay the fixed probe through a checkpoint; return (h, pos, env)."""
     from hydra import initialize_config_dir, compose
     from prnn.utils import ActionEncodingsEnum, AgentInputType
@@ -71,10 +71,11 @@ def activity(*, env_name: str, ckpt_dir: str, n_dirs: int = 2):
 
     with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
         args = compose(config_name="main")
+    extra = {"landmarks": list(landmarks)} if landmarks else {}
     env = make_env(env_key=env_name, input_type=AgentInputType.H_PO.value,
-                   act_enc=ActionEncodingsEnum.SpeedHD.value, seed=0)
-    pN = get_pN(args=args, env=env, device="cpu",
-                pRNN_ckpt=str(Path(ckpt_dir) / "predictiveNet_state.pt"))
+                   act_enc=ActionEncodingsEnum.SpeedHD.value, seed=0, **extra)
+    ckpt = ckpt_dir if ckpt_dir.endswith(".pt") else str(Path(ckpt_dir) / "predictiveNet_state.pt")
+    pN = get_pN(args=args, env=env, device="cpu", pRNN_ckpt=ckpt)
     pN.wandb_log = False
     probe = _build_probe(pN=pN, env=env, env_name=env_name, n_dirs=n_dirs)
     h = tp.replay_checkpoint(pN=pN, probe=probe).detach().numpy()

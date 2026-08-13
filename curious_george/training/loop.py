@@ -32,9 +32,16 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
     layouts = getattr(comps.envs, "layouts", None)
     if layouts:
         agent = comps.random_agent if cfg.exp.random_action_agent else comps.ac_agent
+        # Evaluate a CAPPED, FIXED prefix of the layout set, not all of it. The
+        # eval costs one CPU rollout set per room, so a 500-room pool spends more
+        # wall-clock measuring than training - measured on the first pool run:
+        # 7,167 gradient steps against the 3-room run's 22,542 in the same 5h40m.
+        # The prefix is fixed rather than sampled so the series stays comparable
+        # across checkpoints, which is the whole point of tracking it over time.
+        scored = layouts[: int(cfg.exp.get("eval_rooms_max", 8))]
         result = evaluate_multi_room_representation(
             comps.predictiveNet, comps.env, agent,
-            layouts=layouts,
+            layouts=scored,
             n_trajs=cfg.exp.get("eval_trajs", 8),
             traj_timesteps=cfg.predNet.seqdur,
             sleepstd=0.03,
@@ -46,6 +53,7 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
             f"remapping={result['remapping_index']:+.4f} "
             f"SWdist={result['pooled']['SWdist']:.4f} "
             f"episodes/room {list(map(int, comps.envs.layout_episodes))[:8]}"
+            f"{'' if len(scored) == len(layouts) else f' [{len(scored)}/{len(layouts)} rooms scored]'}"
         )
         if wandb_log:
             train_log.log_multi_room(result, comps.envs.layout_episodes)
