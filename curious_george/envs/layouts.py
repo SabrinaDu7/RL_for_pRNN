@@ -205,6 +205,8 @@ def enumerate_anchor_triples(
     min_anchor_separation: int = 6,
     min_wall_distance: int = 2,
     min_testable_offsets: int = 40,
+    dedupe_d4: bool = False,
+    span: int = 14,
 ) -> list[tuple[tuple[int, int], ...]]:
     """EVERY anchor assignment the room admits, one per shape in `SHAPES` order.
 
@@ -237,6 +239,7 @@ def enumerate_anchor_triples(
     )
 
     out = []
+    seen_orbits: set = set()
     for k in np.nonzero(sep >= min_anchor_separation)[0]:
         triple = tuple(tuple(int(v) for v in p[k]) for p in picks)
         layout = Layout(
@@ -252,6 +255,11 @@ def enumerate_anchor_triples(
             continue
         if layout.n_testable_offsets(walkable=walkable) < min_testable_offsets:
             continue
+        if dedupe_d4:
+            orbit = d4_canonical(triple, span=span)
+            if orbit in seen_orbits:
+                continue
+            seen_orbits.add(orbit)
         out.append(triple)
     return out
 
@@ -265,6 +273,8 @@ def generate_layouts(
     min_anchor_separation: int = 6,
     min_wall_distance: int = 2,
     min_testable_offsets: int = 40,
+    dedupe_d4: bool = False,
+    span: int = 14,
 ) -> list[Layout]:
     """`n` layouts drawn uniformly without replacement from the admissible set.
 
@@ -278,6 +288,8 @@ def generate_layouts(
         min_anchor_separation=min_anchor_separation,
         min_wall_distance=min_wall_distance,
         min_testable_offsets=min_testable_offsets,
+        dedupe_d4=dedupe_d4,
+        span=span,
     )
     if len(triples) < n:
         raise ValueError(
@@ -329,20 +341,93 @@ ROOMS_RUN1: tuple[Layout, ...] = tuple(
     )
 )
 
-BASE_ROOM_ID = "MiniGrid-LRoom-v0"   # owns the wall geometry; landmarks never change it
+# The rooms for the SQUARE alternating-room run, frozen like ROOMS_RUN1.
+#
+# Derived under the same exact search plus two square-room-specific rules:
+#   - D4 dedup. A square has EIGHT symmetries and all three landmark shapes are
+#     themselves D4-invariant, so every admissible layout has seven admissible
+#     twins that are the same room rotated or reflected. Measured: 32,280
+#     admissible assignments collapse to 4,035 orbits, and 100% of layouts share
+#     an orbit with another. Without dedup the selection would happily pick two.
+#   - Distinct separation signatures. Selecting on distance alone returned three
+#     rooms all at signature (6,6,6) - congruent triangles, 7.1% of the set -
+#     which tests one configuration moved around rather than three rooms.
+#
+# Re-derive with:
+#     uv run python scripts/layout_figures.py --room square --pool 500 --rooms 3
+ROOMS_SQUARE: tuple = tuple(
+    Layout(tuple(Landmark(shape, color, anchor) for shape, color, anchor in spec))
+    for spec in (
+        (("x", "yellow", (3, 3)), ("plus", "green", (3, 9)), ("block3", "red", (9, 3))),
+        (("x", "green", (3, 6)), ("plus", "blue", (9, 10)), ("block3", "yellow", (12, 4))),
+        (("x", "blue", (6, 6)), ("plus", "yellow", (4, 12)), ("block3", "green", (12, 12))),
+    )
+)
+
+BASE_ROOM_ID = "MiniGrid-LRoom-v0"       # owns the wall geometry; landmarks never change it
+SQUARE_ROOM_ID = "MiniGrid-SquareRoom-v0"
+
+# Rooms a run can be built in. The square room's walls are four-fold symmetric,
+# so its landmarks are the ONLY cue to position - which is why it needs the D4
+# handling below and the L-room does not.
+MULTI_ENV_ID = {
+    BASE_ROOM_ID: "MiniGrid-LRoom-Multi-v0",
+    SQUARE_ROOM_ID: "MiniGrid-SquareRoom-Multi-v0",
+}
 
 
-def base_walkable() -> frozenset[tuple[int, int]]:
-    """Walkable cells of the L-room, read from a throwaway instance.
+def base_walkable(room_id: str = BASE_ROOM_ID) -> frozenset[tuple[int, int]]:
+    """Walkable cells of a room, read from a throwaway instance.
 
-    Landmarks are walkable `Floor`, so this is the same set for every layout -
-    which is exactly why one transition table serves them all.
+    Landmarks are walkable `Floor`, so this is the same set for every layout in
+    a room - which is exactly why one transition table serves them all.
     """
     import gymnasium as gym
 
-    env = gym.make(BASE_ROOM_ID)
+    env = gym.make(room_id)
     env.reset(seed=0)
     return walkable_cells(env=env)
+
+
+# --- the dihedral group of the square ---------------------------------------
+# A square room has EIGHT symmetries. Two layouts related by one of them are the
+# same room: a trajectory through one produces an identical observation sequence
+# to the transformed trajectory through the other, and all three landmark shapes
+# are themselves D4-invariant (verified: x, plus and block3 each map to
+# themselves under rotation and reflection), so a transformed layout is a valid
+# layout with the same shapes and colours.
+#
+# This matters in a specific, silent way. Under a rotation the landmarks move to
+# different ABSOLUTE coordinates, so a unit using ONE map, rotated, looks like a
+# unit that remapped - the remapping index would read positive for a network
+# that did nothing of the kind. Worse, the room-selection metrics actively
+# PREFER such pairs: a rotation gives large cross-room landmark distance AND
+# large configuration distance while being the same room. That is the translated
+# -rooms failure again, in a bigger group.
+#
+# The L-room's L-shaped wall breaks every one of these symmetries, so this
+# applies to the square room only.
+def _d4(cell: tuple[int, int], op: int, span: int) -> tuple[int, int]:
+    """Image of `cell` under one of the 8 symmetries of a `span`-wide square."""
+    x, y = cell
+    lo, hi = 1, span                       # interior runs 1..span
+    if op & 4:                             # reflect in x first
+        x = lo + hi - x
+    for _ in range(op & 3):                # then rotate 90 degrees, op&3 times
+        x, y = y, lo + hi - x
+    return (x, y)
+
+
+def d4_canonical(anchors: tuple[tuple[int, int], ...], *, span: int) -> tuple:
+    """A representative shared by every layout in `anchors`' D4 orbit.
+
+    Two anchor assignments have the same canonical form iff one is a rotation or
+    reflection of the other. Anchors keep their shape order (SHAPES), because a
+    transformation moves the landmarks without relabelling them.
+    """
+    return min(
+        tuple(_d4(a, op, span) for a in anchors) for op in range(8)
+    )
 
 
 def resolve_layouts(cfg) -> list[Layout] | None:
@@ -356,6 +441,12 @@ def resolve_layouts(cfg) -> list[Layout] | None:
     mode = cfg.exp.get("layouts", None)
     if not mode:
         return None
+    room = cfg.exp.get("room_id", BASE_ROOM_ID)
+    square = room == SQUARE_ROOM_ID
+    if mode == "rooms" and square:
+        return list(ROOMS_SQUARE)
+    if mode == "one" and square:
+        return [ROOMS_SQUARE[0]]
     if mode == "one":
         # The control for every multi-room number: identical env class, identical
         # landmark shapes and sizes, identical optimizer - one room instead of
@@ -366,9 +457,12 @@ def resolve_layouts(cfg) -> list[Layout] | None:
         return list(ROOMS_RUN1)
     if mode == "pool":
         return generate_layouts(
-            walkable=base_walkable(),
+            walkable=base_walkable(room),
             n=int(cfg.exp.layout_pool_size),
             seed=int(cfg.exp.layout_seed),
+            # Only the square room has the symmetries; the L-shaped wall breaks
+            # all eight, so deduping there would discard nothing and cost time.
+            dedupe_d4=square,
         )
     raise ValueError(
         f"exp.layouts must be null, 'one', 'rooms' or 'pool'; got {mode!r}"
