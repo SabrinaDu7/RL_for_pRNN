@@ -1,10 +1,11 @@
 2026-08-13
 
-# Idle-time probe: an object-vector lead that survives its location control
+# Idle-time probe: an object-vector lead, and the control that killed it
 
-**Status: INDICATIVE, not a result.** Run while waiting on the multi-room jobs, on an
-existing checkpoint. Every caveat in §4 is load-bearing. Nothing in the multi-room
-build was steered by this.
+**Status: RETRACTED.** A promising signal (14.4% against 5% chance) passed a
+random-position location control and was then killed by the cross-over test in §5. The
+effect is room GEOMETRY, not object-vector coding. Kept because the way it failed is the
+transferable part. Nothing in the multi-room build was steered by it.
 
 ## 1. What prompted it
 
@@ -71,10 +72,10 @@ real landmarks percentile among controls:  100
 The controls' median of 0.051 against a nominal 0.05 says the null is calibrated. The real
 landmarks exceed all 40 controls.
 
-**This is the first object-coding signal in this project to survive its own location
-control** — the control that killed the occlusion result and the trace-cell count.
+At this point it looked like the first object-coding signal in this project to survive its
+own location control. **That reading was wrong**, and §5 is why.
 
-## 4. Why this is still not a result
+## 4. Caveats recorded before the decisive test
 
 1. **The margin is thin.** 0.154 against a control max of 0.138. With 40 controls the
    percentile bound is p < 1/41 ≈ 0.024, which is real but not overwhelming.
@@ -87,24 +88,53 @@ control** — the control that killed the occlusion result and the trace-cell co
    assumed to be the 80k L-room checkpoint replayed through the standard probe, and the
    assumption is supported by its agreement with the committed Stage 0 number (0.575 vs
    0.55–0.61 re-derived here) but not established.
-5. **A landmark-driven effect should follow the landmarks.** The decisive test is the
-   cross-over: score the small-object checkpoint at ITS anchors and at the L-room's. If
-   each net scores high only at its own landmarks, the effect is landmark-driven; if both
-   score high at the same places, it is geometry. **Not yet run** — it needs a GPU replay
-   of the small-object checkpoint.
+5. **A landmark-driven effect must follow the landmarks.** Run below.
 
-## 5. If it holds up
+## 5. The cross-over test, and the retraction
 
-It would mean the earlier nulls were a probe problem rather than an absence: the trace
-hunt was aimed at the wrong cell class, and the object-vector class the prediction
-objective actually demands was never measured with a sensitive enough statistic. That is
-the reading `../exp_instructions/instructions-OVC.md` set out in advance as
-"E1 passes" — and it still needs E2, the landmark swap, to separate genuine vector coding
-from place cells at coincidental offsets.
+Two nets with landmarks in DIFFERENT places, each scored at both anchor sets. If the
+signal is landmark-driven each net scores high only at its own anchors.
 
-## 6. Reproducing
+```
+net         scored at              frac > own p95    own?
+Lroom-6x6   Lroom-6x6 anchors               0.142     OWN
+Lroom-6x6   small-2x2 anchors               0.073
+small-2x2   Lroom-6x6 anchors               0.203
+small-2x2   small-2x2 anchors               0.164     OWN
 
-The measurements here were made with throwaway scripts and are **not** committed, so this
-document is a lead to re-derive rather than a checkable result. Promoting the conjunction
-statistic into `scripts/trace/ovc_metric.py` and running it through Stage 0 is the next
-step; until then treat every number above as indicative.
+mean at OWN landmarks    0.153
+mean at OTHER landmarks  0.138          chance 0.05
+```
+
+**The small-object net scores HIGHER at the L-room's landmark positions (0.203) than at
+its own (0.164)** — and it never had a landmark at those positions. Own and other are
+effectively equal (0.153 vs 0.138). The signal tracks where those cells sit in the room,
+not what is painted there.
+
+The L-room net on its own looks convincing (0.142 own vs 0.073 other). One net cannot
+distinguish the two accounts; it takes two nets whose landmarks disagree.
+
+## 6. The transferable lesson
+
+**A location control drawn from RANDOM positions is weaker than one drawn from
+geometrically comparable positions.** The 40 matched control triples in §3 were random
+walkable triples: separation-matched, but not matched on the thing that actually mattered
+- lying in the three lobes of the L, at similar wall distances. The small-object
+landmarks ARE matched that way, and they score just as high.
+
+This is the third time in this project that a within-unit null has been fooled by
+structure shared across units at particular room locations - after (14,7) and the
+occlusion gradient. The generalisable rule: **score the criterion under a second network
+whose landmarks are somewhere else.** A control that only moves the scored location within
+one network cannot separate "coding this object" from "this place is special".
+
+## 7. What survives
+
+- The diagnosis in §1: Stage 0's positive control fails because the null is WIDE, not
+  high. Detrending, the step `compaction-2026-08-13` §4 proposed next, does not address
+  that and should not be attempted.
+- The conjunction statistic in §2 is genuinely ~2x more sensitive than the committed
+  correlation criterion at matched specificity. It is a better detector; it just has
+  nothing to detect here.
+- The measurements were made with throwaway scripts and are not committed. Re-deriving
+  them means re-running the cross-over, which is the only one worth keeping.
