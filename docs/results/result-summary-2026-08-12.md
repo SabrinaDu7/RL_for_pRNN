@@ -10,6 +10,10 @@ place field where a novel object used to be, as in Tsao, Moser & Moser 2013
 **They do not appear.** Ten designs have now been run and every hidden-state result is null. This
 document explains the mechanism that predicts all of them, and links every claim to a figure.
 
+*Updated 2026-08-13: §3 gains a behavioural result (Figure 3.3) that was missing — behaviour
+tracks the present object and abandons the departed one, matching the readout and not the hidden
+state.*
+
 ### How to read the evidence markers
 
 | marker | meaning |
@@ -352,6 +356,82 @@ green change averaged over every in-view timestep, each 7×7 patch rolled so the
 is at the centre. An object-locked effect appears at the centre; viewpoint-specific noise averages
 away. This is the readout-side measurement behind the right panel of Figure 0.1.
 
+
+### Result — behaviour: follows the present object, abandons the departed one (added 2026-08-13)
+
+This section originally reported hidden state and readout and **no behaviour**; the behavioural
+probe existed only for §1. The gap is not closable from the logs — the 8 finished SEQ4 runs in
+`blake-richards/curious-george-otc` log 27 keys and **not one is a position or an occupancy**
+(no `loc_entropy`, no `subroom_ids`). Answered instead by rolling the trained policy at each
+phase-end checkpoint (`outputs/seq4/OTC_seq_*/SEQ4-*/phase{0..3}_992`) in that phase's own
+environment, scored with the same within-run percentile §1 uses. 8 seeds x 4 phases x 24 rollouts
+x 256 steps. **[live]**
+
+![sequential behaviour](../../outputs/summary/fig_seq_behavior.png)
+
+**Figure 3.3** — `outputs/summary/fig_seq_behavior.png`
+(`scripts/trace/seq_behavior_figure.py`, cache `outputs/trace/seq_behavior.npz`).
+
+**Panel A, occupancy percentile** (rows: where the object WAS; columns: location scored;
+50 = a typical cell of 172):
+
+```
+  phase                    (7,11)     (7,2)     (4,7)
+  0: object at (7,11)       65.5 *      6.8      62.9
+  1: object at (7,2)        45.4       85.5 *    70.1
+  2: object at (4,7)        78.2       24.1      77.9 *
+  3: REMOVED                70.4       10.6      48.2
+```
+
+The object's own location is the highest entry in its row in every phase that has an object.
+Read alone that says behaviour follows the object — **and that is exactly the reasoning that
+produced the (14,7) false positive in §4.**
+
+**Panel B, the location control.** The statistic that counts is the EXCESS: the value at L when
+the object is at L, minus the mean at L when it is anywhere else, so pure location bias cancels.
+Paired across the 8 seeds:
+
+```
+  location  own phase  other phases    EXCESS  paired t        p
+   (7, 11)       65.5          64.7      +0.8      0.14   0.8962
+    (7, 2)       85.5          13.8     +71.6     11.54   0.0000
+    (4, 7)       77.9          60.4     +17.5      1.33   0.2264
+```
+
+**One location decisively, one weakly, one not at all.** (7,11) reads ~65th percentile whatever
+the object does — a structurally high-traffic cell, the same class of trap as (14,7). So the
+honest claim is *not* "behaviour follows the object"; it is "behaviour follows the object at
+(7,2) decisively, at (4,7) suggestively, and at (7,11) not measurably."
+
+**Panel C, the departure test.** Does the agent linger where the object last was? No:
+
+```
+(4,7) raw occupancy   0.191 -> 0.046   4.2x drop, t=2.94, p=0.022, 7 of 8 seeds
+(4,7) percentile      77.9  -> 48.2    t=2.03, p=0.082
+```
+
+48.2 is a median cell. The location becomes unremarkable the moment the object leaves — **no
+behavioural trace.**
+
+**Why this matters.** Three independent measurements now show one signature:
+
+| measurement | object present | after it leaves |
+|---|---|---|
+| readout (§0, §3) | elevated | collapses, drop 0.024–0.030, p<0.005 |
+| **behaviour (§3, this)** | **elevated** | **collapses, 4.2x, 7/8 seeds** |
+| hidden state (§3) | never elevated | nothing to collapse |
+
+This is the behavioural confirmation of "transfer, not trace", and it is what the §1
+interpretation predicts: curiosity reward is prediction MSE, a function of the *readout*, while
+the policy's input is `h` — which never changes.
+
+⚠️ **Caveat.** `collect_policy_rollouts` seeds its start-direction rng but **not** torch, so
+action sampling and pRNN noise vary between invocations. Two runs gave (7,2) excess +72.2 and
++71.6 (stable) but (4,7) +32.5 and +17.5 (not). The per-seed paired tests are within one
+invocation and unaffected; the means carry that noise. Seeding torch in that helper is a one-line
+fix and should be done before these means are quoted elsewhere. Full write-up:
+`probe-seq-behaviour-2026-08-13.md`.
+
 ### Interpretation
 
 The hidden state never codes the object, so there is no trace to look for. The readout *does*
@@ -641,6 +721,7 @@ to MEC/hippocampus, in which case **the target itself, not the room, is what nee
 | **`[2,0,8]` does not create memory** (§2) | NULL | **High** | consistent across all 13 conditions; noise-free replay shows it was never written |
 | **Sequential displacement: no trace in `h`** (§3) | NULL | **High** | n=8; nothing forms during exposure at all, so there is nothing to trace; every statistic re-derived from cache |
 | **Readout is transfer, not trace** (§3) | ESTABLISHED | **Medium-High** | n=8, p=0.0007/0.0043; but rests on one probe design and one environment |
+| **Behaviour follows the present object and abandons it on removal** (§3) | ESTABLISHED | **Medium** | n=8 paired; the departure drop is 4.2x in 7/8 seeds (p=0.022). But the location control leaves only (7,2) significant (+71.6, p<1e-4); (4,7) +17.5 p=0.23 and (7,11) +0.8. Rollouts are not torch-seeded, so the means carry run-to-run noise |
 | **Occlusion produces object cells** (§4) | **FALSE POSITIVE** | **Do not trust** | killed by its own location control; retained here only as the methodological lesson |
 | **The (12,7) occlusion control itself** (§4) | control | **Medium** | ⚠️ n=3, and only a one-line summary survives in the repo — no per-seed table (§7) |
 | **Symmetric room, object cells** (§5) | NULL | **Low-Medium** | n=1; sessions 1–3 usable, sessions 4–6 confounded by policy collapse |
@@ -749,6 +830,7 @@ uv run python scripts/otc_figures.py maps           # fig_otc_maps/_maps_diff
 uv run python scripts/moser/moser_figures.py        # the 4 outputs/moser/ figures
 uv run python scripts/seq_figures.py \
     outputs/seq4/OTC_seq_5200_10340479/SEQ4-otc-p0.5-fixedpos-c1-0811-123058
+uv run python scripts/trace/seq_behavior_figure.py   # fig_seq_behavior (Figure 3.3)
 uv run python scripts/summary_figures.py fetch_entropy   # refresh the wandb cache (network)
 ```
 

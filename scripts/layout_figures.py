@@ -51,8 +51,16 @@ def base_room():
     return env
 
 
-def build(layout: Layout):
-    env = gym.make(ENV_ID, landmarks=list(layout.landmarks))
+def build(layout: Layout, env_id: str = ENV_ID):
+    """Instantiate `layout`'s room.
+
+    `env_id` is an ARGUMENT, not a module global read at call time. It used to be
+    the latter, and layout_artifact.py "overrode" it by assigning its own
+    globals()["ENV_ID"] - which this function never reads. Every room in the
+    square-room artifact was therefore drawn as an L-room carrying square-room
+    landmark coordinates.
+    """
+    env = gym.make(env_id, landmarks=list(layout.landmarks))
     env.reset(seed=0)
     return env
 
@@ -145,7 +153,7 @@ def timings(*, layouts: list[Layout], n_bank: int) -> dict:
 
 
 def plot(*, layouts: list[Layout], walkable: frozenset, path: Path, title: str,
-         ncols: int = 5) -> None:
+         ncols: int = 5, env_id: str = ENV_ID) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -160,7 +168,7 @@ def plot(*, layouts: list[Layout], walkable: frozenset, path: Path, title: str,
     for ax in axes.ravel():
         ax.axis("off")
     for ax, layout in zip(axes.ravel(), layouts):
-        env = build(layout)
+        env = build(layout, env_id)
         ax.imshow(env.unwrapped.get_frame(highlight=False, tile_size=16))
         ax.axis("off")
         caption = "\n".join(
@@ -183,7 +191,7 @@ def plot(*, layouts: list[Layout], walkable: frozenset, path: Path, title: str,
     print(f"wrote {path}")
 
 
-def plot_shapes(*, path: Path) -> None:
+def plot_shapes(*, path: Path, env_id: str = ENV_ID) -> None:
     """What each shape looks like TO THE AGENT, beside the top-down view.
 
     The top-down render is 16 px per cell; the observation the network receives
@@ -205,7 +213,7 @@ def plot_shapes(*, path: Path) -> None:
             Landmark(shapes[(col + 1) % len(shapes)], "blue", (3, 12)),
             Landmark(shapes[(col + 2) % len(shapes)], "green", (12, 3)),
         ))
-        env = gym.make(ENV_ID, landmarks=list(layout.landmarks))
+        env = gym.make(env_id, landmarks=list(layout.landmarks))
         env.reset(seed=0)
         u = env.unwrapped
         axes[0][col].imshow(u.get_frame(highlight=False, tile_size=16))
@@ -241,8 +249,23 @@ def cross_layout_distance(a: Layout, b: Layout) -> int:
     )
 
 
+def _separation_signature(layout: Layout) -> tuple[int, ...]:
+    """Sorted pairwise anchor separations - the room's internal GEOMETRY.
+
+    Two rooms with the same signature are congruent triangles: the network can
+    learn one landmark configuration and only has to locate it. Requiring the
+    selected rooms to differ here is what makes them different ROOMS rather than
+    one room moved around. Measured in the square room: 13 signatures exist, and
+    selecting on distance alone returned three rooms all at (6, 6, 6), which is
+    7.1% of the admissible set.
+    """
+    a = np.array(layout.anchors)
+    return tuple(sorted(int(np.abs(a[i] - a[j]).max()) for i, j in ((0, 1), (0, 2), (1, 2))))
+
+
 def pick_rooms(*, layouts: list[Layout], k: int, walkable: frozenset,
-               min_config_distance: int = 6) -> list[Layout]:
+               min_config_distance: int = 6,
+               distinct_signatures: bool = False) -> list[Layout]:
     """The `k` rooms whose landmark CONFIGURATIONS differ most, then whose
     landmarks are furthest apart.
 
@@ -304,15 +327,21 @@ def pick_rooms(*, layouts: list[Layout], k: int, walkable: frozenset,
     # distance between landmarks WITHIN a room are different rooms, not
     # perturbations of one - and landmark distance is maximised subject to it.
     floor = min_config_distance
+    sig = np.array([hash(_separation_signature(l)) for l in layouts])
+    sig_ok = sig[:, None] != sig[None, :] if distinct_signatures else np.ones_like(dist, bool)
     for t in range(int(dist.max()), 0, -1):
-        found = triangle((cfg_dist >= floor) & (dist >= t))
+        found = triangle((cfg_dist >= floor) & (dist >= t) & sig_ok)
         if found is None:
             continue
         got = int(cfg_dist[np.ix_(list(found), list(found))][np.triu_indices(3, 1)].min())
+        chosen = [layouts[i] for i in found]
         print(f"  selection over {n:,} candidates: configuration distance "
               f"≥ {got} (0 would mean translated rooms, floor {floor}), "
               f"smallest cross-room landmark distance {t} cells")
-        return [layouts[i] for i in found]
+        print(f"  separation signatures: "
+              f"{[_separation_signature(c) for c in chosen]}"
+              f"{'  (distinct required)' if distinct_signatures else ''}")
+        return chosen
     raise RuntimeError(
         f"no {k} rooms with configuration distance ≥ {floor}; lower it"
     )
@@ -380,10 +409,16 @@ def main() -> None:
     ap.add_argument("--sweep", action="store_true",
                     help="report the wall-clearance / separation trade-off and stop")
     ap.add_argument("--min-testable-offsets", type=int, default=40)
+    ap.add_argument("--room", default="lroom", choices=("lroom", "square"),
+                    help="square applies D4 dedup and D4-aware room selection")
     a = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
-    walkable = walkable_cells(env=base_room())
+    from curious_george.envs.layouts import BASE_ROOM_ID, SQUARE_ROOM_ID, base_walkable, d4_canonical
+    room_id = SQUARE_ROOM_ID if a.room == "square" else BASE_ROOM_ID
+    env_id = ("MiniGrid-SquareRoom-Multi-v0" if a.room == "square"
+              else "MiniGrid-LRoom-Multi-v0")
+    walkable = base_walkable(room_id)
     print(f"room: {len(walkable)} walkable cells   shapes {SHAPES}   colours {LANDMARK_COLORS}")
 
     t0 = time.perf_counter()
@@ -397,6 +432,7 @@ def main() -> None:
         min_anchor_separation=a.min_anchor_separation,
         min_wall_distance=a.min_wall_distance,
         min_testable_offsets=a.min_testable_offsets,
+        dedupe_d4=(a.room == "square"),
     )
     gen_s = time.perf_counter() - t0
     print(f"\ngenerated {len(pool)} layouts in {gen_s:.2f} s "
@@ -430,13 +466,23 @@ def main() -> None:
         min_anchor_separation=a.min_anchor_separation,
         min_wall_distance=a.min_wall_distance,
         min_testable_offsets=a.min_testable_offsets,
+        dedupe_d4=(a.room == "square"),
     )
+    if a.room == "square":
+        # Selection must ALSO see the group: two candidates in one D4 orbit are
+        # one room, and the configuration metric rates them as maximally
+        # different. Dedup above keeps one per orbit, so any two candidates here
+        # are genuinely distinct rooms.
+        orbits = {d4_canonical(t, span=14) for t in all_triples}
+        assert len(orbits) == len(all_triples), "D4 dedup failed"
+        print(f"  D4: {len(all_triples):,} candidates, one per orbit")
     print(f"\nroom selection searches all {len(all_triples):,} admissible anchor assignments")
     rooms = pick_rooms(
         layouts=[Layout(tuple(Landmark(sh, c, an) for sh, c, an in zip(SHAPES, LANDMARK_COLORS, t)))
                  for t in all_triples],
         k=a.rooms, walkable=walkable,
-        min_config_distance=a.min_anchor_separation)
+        min_config_distance=a.min_anchor_separation,
+        distinct_signatures=True)
     rooms = assign_distinct_colors(rooms=rooms, seed=a.seed)
     print(f"\nalternating-room set ({a.rooms}):")
     for i, r in enumerate(rooms):
@@ -447,11 +493,11 @@ def main() -> None:
               f"{r.n_testable_offsets(walkable=walkable)} testable offsets, "
               f"nearest landmark in another room {min(cross_layout_distance(r, o) for o in others)} cells")
 
-    plot_shapes(path=OUT / "fig_layout_shapes.png")
-    plot(layouts=rooms, walkable=walkable, path=OUT / "fig_layouts_rooms.png",
+    plot_shapes(path=OUT / "fig_layout_shapes.png", env_id=env_id)
+    plot(env_id=env_id, layouts=rooms, walkable=walkable, path=OUT / "fig_layouts_rooms.png",
          title=f"Run 1 — the {a.rooms} rooms trained on simultaneously "
                f"(shape, colour and position all differ)", ncols=min(a.rooms, 5))
-    plot(layouts=pool[: a.show], walkable=walkable, path=OUT / "fig_layouts_pool.png",
+    plot(env_id=env_id, layouts=pool[: a.show], walkable=walkable, path=OUT / "fig_layouts_pool.png",
          title=f"Run 2 — first {a.show} of the {a.pool}-layout seeded pool "
                f"(seed {a.seed})", ncols=5)
 

@@ -51,15 +51,15 @@ def png_data_uri(rgb: np.ndarray, *, scale: int = 1) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def room_uri(layout: Layout, *, tile: int = 14) -> str:
-    env = build(layout)
+def room_uri(layout: Layout, *, tile: int = 14, env_id: str = ENV_ID) -> str:
+    env = build(layout, env_id)
     return png_data_uri(env.unwrapped.get_frame(highlight=False, tile_size=tile))
 
 
-def agent_view_uri(shape: str) -> str:
+def agent_view_uri(shape: str, env_id: str = ENV_ID) -> str:
     """The 7x7 observation, upscaled - the only view the pRNN receives."""
     centre = (7, 7)
-    env = gym.make(ENV_ID, landmarks=[Landmark(shape, "red", centre)])
+    env = gym.make(env_id, landmarks=[Landmark(shape, "red", centre)])
     env.reset(seed=0)
     u = env.unwrapped
     u.agent_pos, u.agent_dir = (centre[0], centre[1] + 3), 3
@@ -68,14 +68,14 @@ def agent_view_uri(shape: str) -> str:
     )
 
 
-def card(layout: Layout, *, walkable, tile: int = 14) -> str:
+def card(layout: Layout, *, walkable, tile: int = 14, env_id: str = ENV_ID) -> str:
     rows = "".join(
         f"<tr><td>{lm.shape}</td><td><span class='sw' style='background:{_css(lm.color)}'></span>"
         f"{lm.color}</td><td class='num'>{lm.anchor[0]}, {lm.anchor[1]}</td></tr>"
         for lm in layout.landmarks
     )
     return f"""<figure class="room">
-  <img src="{room_uri(layout, tile=tile)}" alt="L-room with three landmarks">
+  <img src="{room_uri(layout, tile=tile, env_id=env_id)}" alt="L-room with three landmarks">
   <figcaption>
     <span class="key">{layout.key}</span>
     <table class="lm"><tbody>{rows}</tbody></table>
@@ -96,7 +96,7 @@ def _css(color: str) -> str:
     return f"rgb({r},{g},{b})"
 
 
-HEAD = """<title>Multi-room landmark layouts</title>
+HEAD_TMPL = """<title>{title}</title>
 <style>
 :root {
   --ground: #F2F3F1; --panel: #FFFFFF; --ink: #16191A; --muted: #5C6567;
@@ -192,20 +192,27 @@ def main() -> None:
     ap.add_argument("--min-anchor-separation", type=int, default=6)
     ap.add_argument("--min-wall-distance", type=int, default=2)
     ap.add_argument("--min-testable-offsets", type=int, default=40)
+    ap.add_argument("--room", default="lroom", choices=("lroom", "square"))
     a = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
-    walkable = walkable_cells(env=base_room())
+    from curious_george.envs.layouts import BASE_ROOM_ID, SQUARE_ROOM_ID, base_walkable
+    square = a.room == "square"
+    env_id = "MiniGrid-SquareRoom-Multi-v0" if square else "MiniGrid-LRoom-Multi-v0"
+    base_id = SQUARE_ROOM_ID if square else BASE_ROOM_ID
+    walkable = base_walkable(base_id)
     kw = dict(min_cell_gap=a.min_cell_gap, min_anchor_separation=a.min_anchor_separation,
               min_wall_distance=a.min_wall_distance,
-              min_testable_offsets=a.min_testable_offsets)
+              min_testable_offsets=a.min_testable_offsets,
+              dedupe_d4=square, span=14)
     pool = generate_layouts(walkable=walkable, n=a.pool, seed=a.seed, **kw)
     triples = enumerate_anchor_triples(walkable=walkable, **kw)
     n_colour = len(LANDMARK_COLORS) * (len(LANDMARK_COLORS) - 1) * (len(LANDMARK_COLORS) - 2)
     rooms = pick_rooms(
         layouts=[Layout(tuple(Landmark(s, c, an) for s, c, an in zip(SHAPES, LANDMARK_COLORS, t)))
                  for t in triples],
-        k=3, walkable=walkable, min_config_distance=a.min_anchor_separation)
+        k=3, walkable=walkable, min_config_distance=a.min_anchor_separation,
+        distinct_signatures=square)
     from scripts.layout_figures import assign_distinct_colors
     rooms = assign_distinct_colors(rooms=rooms, seed=a.seed)
     xroom = min(cross_layout_distance(x, y)
@@ -214,19 +221,21 @@ def main() -> None:
     shapes_html = "".join(
         f"""<figure class="shape">
   <h3>{s}</h3><p style="margin:0 0 .6rem">{len(STENCILS[s])} cells</p>
-  <img src="{agent_view_uri(s)}" alt="7x7 agent view of the {s} landmark">
+  <img src="{agent_view_uri(s, env_id)}" alt="7x7 agent view of the {s} landmark">
   <p>as the pRNN receives it — 7&times;7, one pixel per cell</p>
 </figure>"""
         for s in SHAPES
     )
-    rooms_html = "".join(card(r, walkable=walkable, tile=18) for r in rooms)
-    pool_html = "".join(card(p, walkable=walkable) for p in pool[: a.gallery])
+    rooms_html = "".join(card(r, walkable=walkable, tile=18, env_id=env_id) for r in rooms)
+    pool_html = "".join(card(p, walkable=walkable, env_id=env_id) for p in pool[: a.gallery])
 
+    HEAD = HEAD_TMPL.replace("{title}",
+        "Square rooms for multi-room training" if square else "Multi-room landmark layouts")
     html = f"""{HEAD}
 <div class="wrap">
 <header class="measure">
   <p class="eyebrow">Curious George · environment design</p>
-  <h1>Rooms for multi-environment training</h1>
+  <h1>{"Square" if square else "L-shaped"} rooms for multi-environment training</h1>
   <p class="lede">Two training runs need rooms whose landmarks move: three rooms
   held simultaneously, and a pool of {a.pool} sampled at random. Every room below is
   rendered from a live environment built by the same generator training will use.</p>
@@ -325,12 +334,12 @@ def main() -> None:
 </section>
 
 <footer>
-  generated by scripts/layout_artifact.py · rooms from {ENV_ID} · geometry from {BASE_ENV_ID}
+  generated by scripts/layout_artifact.py · rooms from {env_id} · geometry from {base_id}
   · regenerate with <code>uv run python scripts/layout_artifact.py</code>
 </footer>
 </div>"""
 
-    path = OUT / "layouts.html"
+    path = OUT / ("layouts_square.html" if square else "layouts.html")
     path.write_text(html)
     print(f"wrote {path}  ({path.stat().st_size / 1e6:.2f} MB)")
 
