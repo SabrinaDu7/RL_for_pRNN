@@ -32,11 +32,14 @@ object's own location for that phase.
 
 ```
   phase                      (7, 11)      (7, 2)      (4, 7)
-  0: (7, 11)                  71.8 *      15.5        56.5
-  1: (7, 2)                   40.1        86.5 *      65.4
-  2: (4, 7)                   69.6        12.4        89.5 *
-  3: REMOVED                  75.4        15.0        49.1
+  0: (7, 11)                  63.2 *      18.2        61.3
+  1: (7, 2)                   36.4        86.4 *      69.3
+  2: (4, 7)                   63.9        40.4        87.6 *
+  3: REMOVED                  70.7        20.2        44.5
 ```
+
+Figures: `outputs/summary/fig_seq_behavior.png` (the control) and
+`outputs/summary/fig_seq_occupancy.png` (the same result as occupancy maps).
 
 The diagonal is the highest entry in its row in every phase where an object exists.
 Read alone, that says behaviour follows the object.
@@ -50,30 +53,29 @@ location bias cancels. Paired across the 8 seeds:
 
 ```
   location  own phase  other phases    EXCESS  paired t        p
-   (7, 11)       65.5          64.7      +0.8      0.14   0.8962
-    (7, 2)       85.5          13.8     +71.6     11.54   0.0000
-    (4, 7)       77.9          60.4     +17.5      1.33   0.2264
+   (7, 11)       63.2          57.0      +6.2      0.76   0.4715
+    (7, 2)       86.4          26.3     +60.1     11.76   0.0000
+    (4, 7)       87.6          58.3     +29.2      5.38   0.0010
 ```
 
-- **(7,2): decisive.** +71.6 percentile points, t=11.54.
-- **(4,7): suggestive, not significant.** +17.5, p=0.23.
-- **(7,11): nothing.** +0.8. It reads ~65th percentile whatever the object does - a
-  structurally high-traffic cell, the same class of trap as (14,7).
+- **(7,2): decisive.** +60.1 percentile points, t=11.76.
+- **(4,7): significant.** +29.2, t=5.38, p=0.0010.
+- **(7,11): nothing.** +6.2, p=0.47. It reads ~63rd percentile whatever the object does
+  - a structurally high-traffic cell, the same class of trap as (14,7).
 
-So the honest claim is **behaviour follows the object at one of three locations
-decisively, one weakly, and one not at all** - not the clean "behaviour follows the
-object" the raw diagonal suggests.
+So: **two of three locations survive the control, one does not** - not the blanket
+"behaviour follows the object" the raw diagonal suggests.
 
 ## The agent does NOT linger where the object was
 
 The specific question. C = (4,7), during its own phase versus after removal:
 
 ```
-occupancy percentile   77.9  ->  48.2      t=2.03  p=0.082
-raw occupancy          0.191 ->  0.046     4.2x drop, in 7 of 8 seeds
+occupancy percentile   87.6  ->  44.5      t=5.25  p=0.0012
+raw occupancy          0.213 ->  0.043     5.0x drop, in 8 of 8 seeds
 ```
 
-It abandons C immediately. 48.2 is a median cell - the location becomes unremarkable
+It abandons C immediately. 44.5 is a median cell - the location becomes unremarkable
 the moment the object leaves. There is no behavioural trace.
 
 ## Why this matters
@@ -83,7 +85,7 @@ Three independent measurements now show the same signature:
 | measurement | while the object is present | after it leaves |
 |---|---|---|
 | readout (§0, §3) | elevated | collapses (drop 0.024-0.030, p<0.005) |
-| behaviour (here) | elevated | collapses (4.2x, 7/8 seeds) |
+| behaviour (here) | elevated | collapses (5.0x, 8/8 seeds) |
 | hidden state (§3) | never elevated at all | nothing to collapse |
 
 Behaviour tracks the *present* object and abandons the departed one, exactly as the
@@ -92,15 +94,35 @@ reward is prediction MSE and therefore a function of the readout. The policy's i
 is `h`, and `h` never changes. This is the behavioural confirmation of "transfer, not
 trace".
 
-## Caveats
+## Reproducibility: fixed, and it strengthened the result
 
-1. **The rollouts are not seeded deterministically.** `collect_policy_rollouts` seeds
-   its start-direction rng but not torch, so action sampling and pRNN noise vary
-   between invocations. Two runs of this analysis gave (7,2) excess +72.2 and +71.6
-   (stable) but (4,7) +32.5 and +17.5 (not). Per-seed paired tests are within a single
-   invocation and unaffected; the reported means carry that noise. Seeding torch in
-   that helper would fix it and is a one-line change worth making before this is
-   quoted.
-2. n=8 seeds, one environment, one object type.
-3. The measure is occupancy/in-view of a radius-2 disc, not "approach". An agent that
+The first pass ran with unseeded rollouts and the numbers moved between invocations
+((4,7) excess +32.5 then +17.5). The fix was **three** generators, not the one line I
+first guessed:
+
+- `torch.manual_seed` - action sampling and the pRNN's per-call noise injection;
+- `np.random.seed` - anything on the numpy global;
+- `env.env.reset(seed=)` - the gymnasium generator that owns `place_agent`, which
+  neither of the others reaches. Same trap documented in
+  `curious_george/evaluation/spatial.py::evaluate_spatial_representation`.
+
+**Every number in this document is from the seeded version.** Removing the noise made
+the result stronger, not weaker:
+
+```
+                      unseeded            seeded
+(4,7) excess       +17.5 (p=0.23)   +29.2 (p=0.0010)
+(7,2) excess       +71.6 (p<1e-4)   +60.1 (p<1e-4)
+C departure         7/8 (p=0.082)     8/8 (p=0.0012)
+```
+
+⚠️ Back-to-back calls that REUSE one agent object still diverge from timestep 2, so
+full bitwise determinism is not established. Start positions ARE now reproducible
+(they were not). The analysis constructs a fresh net and agent per checkpoint, which is
+the case that matters here, but the residual should be chased before anyone relies on
+byte-level reproducibility.
+
+## Other caveats
+1. n=8 seeds, one environment, one object type.
+2. The measure is occupancy/in-view of a radius-2 disc, not "approach". An agent that
    passes through often scores the same as one that dwells.
