@@ -46,16 +46,21 @@ from minigrid.envs.Lroom import Landmark
 
 # All three are used in every layout, so "distinct shapes" is automatic and the
 # set is the design, not a sample space.
-SHAPES: tuple[str, ...] = ("x", "plus", "square")
+SHAPES: tuple[str, ...] = ("x", "plus", "diamond")
 
 # Observations are rendered at tile_size=1, so a cell is ONE pixel and colour
-# carries the entire per-cell signal. This palette is chosen on measured RGB
-# separation (minigrid.core.constants.COLORS): every pair is >= 255 apart and
-# every colour is >= 255 from the black floor.
+# carries the entire per-cell signal.
 #
-# Excluded, and why - `grey` is 173 from the floor, the weakest landmark
-# available, and 114 from `purple`; `purple` is 133 from `blue`; `neon_green` is
-# 60 from `green` and is reserved for FloorBright, the OMT novel object.
+# Distances below are AS RENDERED, not the nominal palette. `Floor` paints
+# `76 + 0.35 * COLORS[c]`, a blend toward grey, so every nominal separation
+# reaches the network at 35% of its face value - empty floor is (76, 76, 76),
+# not black. Chosen on that basis: within this palette the closest pair is 89
+# apart and the closest colour to empty floor is 89.
+#
+# Excluded, and why - `grey` renders 61 from empty floor, weaker than any pair
+# here, and it was visibly indistinguishable in the rendered rooms; `purple` is
+# 46 from `blue`; `neon_green` is 21 from `green` and is reserved for
+# FloorBright, the OMT novel object.
 LANDMARK_COLORS: tuple[str, ...] = ("blue", "green", "red", "yellow")
 
 OFFSET_RADIUS = 4  # the object-vector window; see docs/exp_instructions/instructions-OVC.md

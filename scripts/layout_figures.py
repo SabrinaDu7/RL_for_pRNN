@@ -91,7 +91,7 @@ def verify(*, layouts: list[Layout], walkable: frozenset) -> dict:
         if len(walkable_cells(env=env)) != len(walkable):
             problems.append(f"{layout.key}: walkable count changed")
 
-    keys = [l.key for lay in layouts]
+    keys = [lay.key for lay in layouts]
     if len(set(keys)) != len(keys):
         problems.append("duplicate layouts in the pool")
     return {"n": len(layouts), "problems": problems}
@@ -183,6 +183,52 @@ def plot(*, layouts: list[Layout], walkable: frozenset, path: Path, title: str,
     print(f"wrote {path}")
 
 
+def plot_shapes(*, path: Path) -> None:
+    """What each shape looks like TO THE AGENT, beside the top-down view.
+
+    The top-down render is 16 px per cell; the observation the network receives
+    is ONE pixel per cell in a 7x7 view. A pair of shapes can be obvious from
+    above and nearly identical in the only view that matters, so both are shown
+    at the same scale.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    shapes = list(SHAPES)
+    fig, axes = plt.subplots(2, len(shapes), figsize=(3.0 * len(shapes), 6.6),
+                             squeeze=False, gridspec_kw={"hspace": 0.35})
+    centre = (7, 7)
+    for col, shape in enumerate(shapes):
+        layout = Layout((
+            Landmark(shape, "red", centre),
+            Landmark(shapes[(col + 1) % len(shapes)], "blue", (3, 12)),
+            Landmark(shapes[(col + 2) % len(shapes)], "green", (12, 3)),
+        ))
+        env = gym.make(ENV_ID, landmarks=list(layout.landmarks))
+        env.reset(seed=0)
+        u = env.unwrapped
+        axes[0][col].imshow(u.get_frame(highlight=False, tile_size=16))
+        axes[0][col].set_title(f"{shape} — {len(Landmark(shape, 'red', centre).cells)} cells\n"
+                               f"top-down, 16 px per cell", fontsize=9)
+
+        # agent three cells below the landmark centre, facing it (dir 3 = up)
+        u.agent_pos = (centre[0], centre[1] + 3)
+        u.agent_dir = 3
+        view = u.get_frame(highlight=False, tile_size=1, agent_pov=True)
+        axes[1][col].imshow(np.repeat(np.repeat(view, 40, axis=0), 40, axis=1),
+                            interpolation="nearest")
+        axes[1][col].set_title("what the network sees\n7x7 view, 1 px per cell "
+                               "(shown 40x)", fontsize=9)
+        for r in (0, 1):
+            axes[r][col].axis("off")
+    fig.suptitle("Landmark shapes at both scales — the bottom row is the only one "
+                 "the pRNN ever receives", fontsize=12)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {path}")
+
+
 def cross_layout_distance(a: Layout, b: Layout) -> int:
     """How far b's landmarks sit from a's - the smallest anchor-to-anchor move.
 
@@ -220,7 +266,7 @@ def pick_rooms(*, layouts: list[Layout], k: int, walkable: frozenset,
         raise NotImplementedError("exact selection is implemented for k=3")
 
     n = len(layouts)
-    anchors = np.array([l.anchors for lay in layouts], dtype=np.int16)     # (n, 3, 2)
+    anchors = np.array([lay.anchors for lay in layouts], dtype=np.int16)     # (n, 3, 2)
     pairs = [(0, 1), (0, 2), (1, 2)]
     config = np.stack([anchors[:, b] - anchors[:, a] for a, b in pairs], axis=1)  # (n,3,2)
 
@@ -401,6 +447,7 @@ def main() -> None:
               f"{r.n_testable_offsets(walkable=walkable)} testable offsets, "
               f"nearest landmark in another room {min(cross_layout_distance(r, o) for o in others)} cells")
 
+    plot_shapes(path=OUT / "fig_layout_shapes.png")
     plot(layouts=rooms, walkable=walkable, path=OUT / "fig_layouts_rooms.png",
          title=f"Run 1 — the {a.rooms} rooms trained on simultaneously "
                f"(shape, colour and position all differ)", ncols=min(a.rooms, 5))
