@@ -25,7 +25,9 @@ RUNS = {(7, 11): "outputs/mila_omt_dense/omt-cur-dot-0730-165325",
 CTRL = [[2, 5], [4, 7], [11, 3], [13, 5]]
 BASE = "outputs/ckpts/pRNN_curious_26-07-23-10-06-25"
 ONSET, H = 20, 500
-CFG = "/home/sabrina/Documents/experiments/RL_for_pRNN/Configs"
+# Resolved from the working directory, not from one machine's home: an
+# absolute path here silently breaks for every other checkout.
+CFG = str(Path("Configs").resolve())
 
 with initialize_config_dir(config_dir=CFG, version_base=None):
     args = compose(config_name="main")

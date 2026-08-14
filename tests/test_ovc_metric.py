@@ -122,3 +122,48 @@ def test_nan_bins_do_not_crash_and_are_excluded():
     om = offset_maps(maps=maps, anchors=ANCHORS, offsets=offs)
     vs = vector_score(omaps=om, offsets=offs)
     assert np.isfinite(vs).all() and np.nanmin(vs) > 0.4
+
+
+def _vector_score_reference(*, omaps, offsets, exclude_radius=1):
+    """The obvious per-unit implementation, kept only to pin the fast path.
+
+    `vector_score` is vectorised over units because the finite mask is a
+    property of the offset rather than of the unit. That reasoning is load
+    bearing - it is what makes the 200-draw null affordable - so it is asserted
+    rather than argued.
+    """
+    keep = np.abs(offsets).max(axis=1) > exclude_radius
+    n_anchor, H, _ = omaps.shape
+    out = np.full(H, np.nan)
+    for u in range(H):
+        rs = []
+        for i in range(n_anchor):
+            for j in range(i + 1, n_anchor):
+                a, b = omaps[i, u, keep], omaps[j, u, keep]
+                ok = np.isfinite(a) & np.isfinite(b)
+                if ok.sum() < 4:
+                    continue
+                av, bv = a[ok], b[ok]
+                if av.std() < 1e-12 or bv.std() < 1e-12:
+                    continue
+                rs.append(float(np.corrcoef(av, bv)[0, 1]))
+        if rs:
+            out[u] = float(np.mean(rs))
+    return out
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_vector_score_matches_reference_loop(seed):
+    offs = _offsets()
+    rng = np.random.default_rng(seed)
+    maps = rng.uniform(0.2, 1.0, size=(24, NY, NX))
+    maps = inject_vector_field(maps=maps, anchors=ANCHORS, offset=(2, 2),
+                               units=np.arange(0, 24, 3), amplitude=3.0)
+    maps[:, 0, :] = np.nan                 # an unvisited row, as occupancy masking gives
+    maps[:, :, NX - 1] = np.nan
+    maps[7] = 0.5                          # a flat unit, which the guard must drop
+    om = offset_maps(maps=maps, anchors=ANCHORS, offsets=offs)
+    fast = vector_score(omaps=om, offsets=offs)
+    slow = _vector_score_reference(omaps=om, offsets=offs)
+    assert np.array_equal(np.isnan(fast), np.isnan(slow)), "NaN pattern differs"
+    np.testing.assert_allclose(fast[~np.isnan(fast)], slow[~np.isnan(slow)], atol=1e-10)

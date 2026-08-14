@@ -78,6 +78,7 @@ def _phases(run: Path):
 
 def fields(run: Path, sequence: list, n_units: int = 8) -> None:
     """Rate maps of the most-changed units, one column per phase."""
+    from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positions
     from scripts.trace import trace_figure as tf
     from scripts.trace.trace_metric import _disc_masks, field_gain
 
@@ -86,21 +87,98 @@ def fields(run: Path, sequence: list, n_units: int = 8) -> None:
     phases = _phases(run)
     maps = [base] + [_maps(args, env, probe, ck) for _, ck in phases]
 
-    # rank units by how much their field gain moved at ANY object location
+    # WHAT "MOST CHANGED" MEANS, EXACTLY - the figure used to leave this to the
+    # reader, and the answer used to be a ratio that ranked by quietness.
+    #
+    #     g(u, c)  = mean rate of unit u in a radius-2 disc at cell c
+    #                / u's mean rate over the whole map            (field_gain)
+    #     dg(u, c) = g_phase(u, c) - g_pre(u, c)
+    #     score(u) = max over (phase, OBJECT location) of the percentile of
+    #                dg(u, that location) among dg(u, ·) at ALL 172 walkable cells
+    #
+    # Above 95 is what makes a unit an object cell (trace_metric), so the rows
+    # are the units the null test itself flagged. Two properties still bound
+    # what the figure can be read to say, and both are reported per unit:
+    #   - dg is signed, so a unit that LOST its field at an object location can
+    #     rank high; the sign is printed and drawn;
+    #   - the percentile only asks whether the object's cell is unusual FOR THIS
+    #     UNIT. Structure shared ACROSS units at one location is invisible to it
+    #     - that is exactly what (14,7) is - and only a location control catches
+    #     that.
     locs = [tuple(c) for c in sequence if c]
-    discs = _disc_masks(env=env, cells=locs, radius=2.0)
-    g0 = field_gain(maps=base, discs=discs)
-    dg = np.nanmax(np.abs(np.stack([field_gain(maps=m, discs=discs) - g0
-                                    for m in maps[1:]]), ), axis=(0, 1))
-    units = np.argsort(-np.nan_to_num(dg, nan=-np.inf))[:n_units]
-    print(f"  most-changed units: {units.tolist()}")
+    all_cells = [tuple(p.tolist())
+                 for p in get_walkable_minigrid_positions(get_walkable_mask(env))]
+    discs = _disc_masks(env=env, cells=all_cells, radius=2.0)
+    g0 = field_gain(maps=base, discs=discs)                       # (n_cells, H)
+    obj_idx = [all_cells.index(L) for L in locs]
+
+    # WITHIN-UNIT percentile, the statistic the null test uses: how unusual is
+    # the change at an object location among this unit's change at all walkable
+    # cells. Ranking on the raw ratio instead put the network's QUIETEST units on
+    # top - the ratio's variance scales as 1/rate - while ranking on absolute
+    # change puts the loudest on top and confounds a whole map dimming with a
+    # local one. Comparing a unit only against itself removes both.
+    H = base.shape[0]
+    n_ph = len(maps) - 1
+    pct = np.full((n_ph, len(locs), H), np.nan)
+    signed = np.full((n_ph, len(locs), H), np.nan)
+    for p, m in enumerate(maps[1:]):
+        dgp = field_gain(maps=m, discs=discs) - g0                # (n_cells, H)
+        valid = np.isfinite(dgp)
+        for j, ci in enumerate(obj_idx):
+            ref = dgp[ci]
+            pct[p, j] = 100.0 * ((dgp < ref[None, :]) & valid).sum(0) / np.maximum(valid.sum(0), 1)
+            signed[p, j] = ref
+
+    flat_pct, flat_sgn = pct.reshape(-1, H), signed.reshape(-1, H)
+    score = np.nanmax(flat_pct, axis=0)
+    arg = np.nanargmax(np.where(np.isfinite(flat_pct), flat_pct, -np.inf), axis=0)
+    best_sgn = flat_sgn[arg, np.arange(H)]
+    # percentile first, |change| as tie-break: units saturate at the top
+    units = np.lexsort((-np.nan_to_num(np.abs(best_sgn)),
+                        -np.nan_to_num(score, nan=-np.inf)))[:n_units]
+
+    rate = np.nanmean(base, axis=(1, 2))
+    rate_pct = np.array([100.0 * np.nanmean(rate < r) for r in rate])
+    print("  ranking statistic: max over (phase, object location) of the WITHIN-UNIT percentile")
+    print(f"  {'unit':>6} {'pctile':>7} {'signed dg':>10} {'phase':>6} {'at':>9} "
+          f"{'mean rate':>10} {'rate pctile':>12}")
+    for u in units:
+        p, c = divmod(int(arg[u]), len(locs))
+        print(f"  {u:>6} {score[u]:>7.0f} {best_sgn[u]:>+10.3f} {p:>6} {str(locs[c]):>9} "
+              f"{rate[u]:>10.4f} {rate_pct[u]:>11.0f}%")
+    signed, pct = best_sgn, rate_pct
+    n_down = int((signed[units] < 0).sum())
+    # Did the ranking maximum land where the object ACTUALLY was in that phase?
+    # stack index p is phases[p], whose object is sequence[phases[p][0]]; a
+    # maximum at any other location is map drift the statistic cannot tell from
+    # an object effect, because it never asks.
+    own = []
+    for u in units:
+        p, c = divmod(int(arg[u]), len(locs))
+        here = sequence[phases[p][0]]              # [] in the REMOVED phase
+        own.append(bool(here) and tuple(here) == locs[c])
+    n_own = int(sum(own))
+    print(f"  -> {n_down}/{len(units)} of the selected changes are DECREASES; "
+          f"median rate percentile of the selection: {np.median(pct[units]):.0f}%")
+    print(f"  -> {n_own}/{len(units)} maxima land at the location that ACTUALLY held the object "
+          f"in that phase; the other {len(units) - n_own} are drift elsewhere")
 
     labels = ["pre-exposure"] + [
         f"phase {ph}: {tuple(sequence[ph]) if sequence[ph] else 'REMOVED'}"
         for ph, _ in phases]
     fig = tf.trace_panel(
         maps_by_checkpoint=maps, labels=labels, units=units, obj_xy=None,
-        title=f"{run.name}\nreceptive fields of the 8 most-changed units, one column per phase")
+        title=f"{run.name}\nThe {n_units} units ranked highest by the WITHIN-UNIT percentile of their "
+              "change in field gain at an object location:\nhow unusual that change is among the same "
+              "unit's change at all 172 walkable cells (>95 = object cell), maximised over phases.\n"
+              f"Row labels give that percentile, the signed change, and the unit's rate percentile. "
+              f"{n_down} of {n_units} selected changes are decreases;\n{n_own} of {n_units} land where "
+              "the object actually was in that phase.")
+    for r, u in enumerate(units):
+        fig.axes[r * len(maps)].set_ylabel(
+            f"#{u}\np{score[u]:.0f}\n{signed[u]:+.2f}\nrate p{pct[u]:.0f}", fontsize=7,
+            rotation=0, labelpad=18, va="center")
     # mark each column's object position
     for c, (ph, _) in enumerate(phases, start=1):
         loc = sequence[ph]

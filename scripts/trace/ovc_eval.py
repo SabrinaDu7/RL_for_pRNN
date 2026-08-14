@@ -196,10 +196,8 @@ def e1(*, key: str, thresholds: dict, n_dirs: int = 2) -> dict:
     offsets = om.offset_grid(env=env, anchors=anchors, radius=4)
     maps = maps_from(h=h, pos=pos, env=env)
 
-    si = tm.spatial_info(maps=maps, occupancy=np.ones(maps.shape[1:]))
-    null_si = tm.shuffle_null_si(h=h[:, ONSET:, :], pos=pos[:, ONSET:, :], env=env,
-                                 n_shuffles=50)
-    spatial_ok = si > np.nanpercentile(null_si, 95, axis=0)
+    spatial_ok = om.spatial_screen(h=h[:, ONSET:, :], pos=pos[:, ONSET:, :],
+                                   maps=maps, env=env)
 
     pct, real = om.vector_percentile(maps=maps, env=env, anchors=anchors,
                                      offsets=offsets, n_null=thresholds["n_null"])

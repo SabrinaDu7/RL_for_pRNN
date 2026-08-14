@@ -19,7 +19,9 @@ from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positi
 RUNS = {(14, 7): "outputs/mila_omt_dense/omt-cur-dot-0730-165922",
         (7, 2):  "outputs/mila_omt_dense/omt-cur-dot-0730-165916"}
 ONSET, BS = 20, 128
-CFG = "/home/sabrina/Documents/experiments/RL_for_pRNN/Configs"
+# Resolved from the working directory, not from one machine's home: an
+# absolute path here silently breaks for every other checkout.
+CFG = str(Path("Configs").resolve())
 
 
 def mse_per_step(pN, probe):

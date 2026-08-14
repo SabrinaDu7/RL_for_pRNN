@@ -105,21 +105,36 @@ def vector_score(
     """
     keep = _chebyshev(offsets) > exclude_radius
     n_anchor, H, _ = omaps.shape
+
+    # Vectorised over units. Legitimate because the NaN pattern does NOT vary by
+    # unit: `occupancy_and_maps` writes `maps[:, ~valid] = nan` with a `valid`
+    # mask shared by every unit, and `offset_maps` blanks whole out-of-grid
+    # columns. So the finite mask is a property of the offset, and one Pearson
+    # over the unit axis replaces H*n_pairs corrcoef calls - the null draws 200
+    # of these per checkpoint, which is the whole runtime.
+    # `tests/test_ovc_metric.py::test_vector_score_matches_reference_loop` pins
+    # this against the obvious per-unit implementation.
+    sums = np.zeros(H)
+    counts = np.zeros(H, dtype=int)
+    for i in range(n_anchor):
+        for j in range(i + 1, n_anchor):
+            a_all, b_all = omaps[i][:, keep], omaps[j][:, keep]
+            ok = np.isfinite(a_all).all(axis=0) & np.isfinite(b_all).all(axis=0)
+            if ok.sum() < 4:
+                continue
+            a = a_all[:, ok] - a_all[:, ok].mean(axis=1, keepdims=True)
+            b = b_all[:, ok] - b_all[:, ok].mean(axis=1, keepdims=True)
+            sa, sb = (a ** 2).sum(axis=1), (b ** 2).sum(axis=1)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                r = (a * b).sum(axis=1) / np.sqrt(sa * sb)
+            # a flat crop has no pattern to match; std < 1e-12 over n points
+            n = int(ok.sum())
+            good = np.isfinite(r) & (sa > (1e-12 ** 2) * n) & (sb > (1e-12 ** 2) * n)
+            sums[good] += r[good]
+            counts[good] += 1
+
     out = np.full(H, np.nan)
-    for u in range(H):
-        rs = []
-        for i in range(n_anchor):
-            for j in range(i + 1, n_anchor):
-                a, b = omaps[i, u, keep], omaps[j, u, keep]
-                ok = np.isfinite(a) & np.isfinite(b)
-                if ok.sum() < 4:
-                    continue
-                av, bv = a[ok], b[ok]
-                if av.std() < 1e-12 or bv.std() < 1e-12:
-                    continue  # a flat crop has no pattern to match
-                rs.append(float(np.corrcoef(av, bv)[0, 1]))
-        if rs:
-            out[u] = float(np.mean(rs))
+    np.divide(sums, counts, out=out, where=counts > 0)
     return out
 
 
@@ -225,6 +240,32 @@ def inject_place_field(
     for u in units:
         out[u] += amplitude * np.nanmean(maps[u]) * bump
     return out
+
+
+def spatial_screen(
+    *,
+    h: Float[np.ndarray, "B T H"],
+    pos: Float[np.ndarray, "B T 2"],
+    maps: Float[np.ndarray, "H ny nx"],
+    env,
+    n_shuffles: int = 50,
+) -> Bool[np.ndarray, "H"]:
+    """Units whose spatial information beats the trajectory-shuffle null's 95th pct.
+
+    Step 1 of the Hoydal pipeline: a unit with no spatial structure at all cannot
+    have vector structure, so it is excluded before any anchoring criterion runs.
+
+    This lives here, and not inline in each driver, because it is the screen that
+    decides the DENOMINATOR of every reported fraction. It was previously applied
+    by `ovc_eval.e1` and not by the figure path, so the two reported different
+    numbers for the same quantity - which is exactly the kind of silent
+    divergence a shared home prevents.
+    """
+    from scripts.trace import trace_maps as tm
+
+    si = tm.spatial_info(maps=maps, occupancy=np.ones(maps.shape[1:]))
+    null = tm.shuffle_null_si(h=h, pos=pos, env=env, n_shuffles=n_shuffles)
+    return si > np.nanpercentile(null, 95, axis=0)
 
 
 def classify(

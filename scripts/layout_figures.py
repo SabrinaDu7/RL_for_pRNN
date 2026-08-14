@@ -414,10 +414,10 @@ def main() -> None:
     a = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
-    from curious_george.envs.layouts import BASE_ROOM_ID, SQUARE_ROOM_ID, base_walkable, d4_canonical
+    from curious_george.envs.layouts import (
+        BASE_ROOM_ID, MULTI_ENV_ID, SQUARE_ROOM_ID, base_walkable, d4_canonical)
     room_id = SQUARE_ROOM_ID if a.room == "square" else BASE_ROOM_ID
-    env_id = ("MiniGrid-SquareRoom-Multi-v0" if a.room == "square"
-              else "MiniGrid-LRoom-Multi-v0")
+    env_id = MULTI_ENV_ID[room_id]
     walkable = base_walkable(room_id)
     print(f"room: {len(walkable)} walkable cells   shapes {SHAPES}   colours {LANDMARK_COLORS}")
 

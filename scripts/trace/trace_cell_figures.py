@@ -85,24 +85,118 @@ def tuned_units() -> None:
     print("wrote fig_tuned_units_main_train.png, fig_tuned_units_uniformSI.png, fig_si_weighting.png")
 
 
-def trace_3loc() -> None:
-    """Units most modulated at (7,11), across the three object locations."""
-    from scripts.trace import trace_maps as tm, trace_figure as tf
+def trace_3loc(n_units: int = 3) -> None:
+    """One block per object location: its OWN units, its OWN marker.
+
+    The previous construction selected units by Δ object-modulation at (7,11)
+    only and drew the `+` at (7,11) in every column, including the columns whose
+    run had its object at (14,7) or (7,2). Those columns therefore showed units
+    chosen for a different location, marked at a different location, and carried
+    no information about their own object - the figure could not have shown a
+    trace at (14,7) or (7,2) even if one existed.
+
+    Here each of the three blocks selects the units most modulated at ITS
+    location and marks ITS location, so every panel is scored against the thing
+    it is about. Reading down the marked column of each block is then the
+    §4 location control in spatial-tuning form: the diagonal blocks are where a
+    trace would appear, the off-diagonal panels are its control.
+
+    Colour scale is shared across a row (one unit, four maps), never across
+    rows, so a fading field reads as fading.
+
+    UNITS ARE RANKED BY THE STATISTIC THE NULL TEST ITSELF USES
+    `trace_metric.trace_scores`: the change in field gain at the object cell,
+    expressed as a percentile among the SAME unit's change at all 172 walkable
+    cells. Above 95 is what makes a unit an object cell, so the rows are the
+    units the test flagged rather than a separate population.
+
+    The obvious alternatives both fail, measured on this cache:
+      - ranking on `object_modulation` (what this figure used to do) is a ratio
+        to the unit's own activity, so its variance scales as 1/rate and the top
+        fills with the QUIETEST units - all nine former selections sat in the
+        bottom 0-28th percentile of rate and changed 0.04-0.31x as much as a
+        typical large change;
+      - ranking on the raw change in disc rate inverts that bias, selecting the
+        LOUDEST units and confounding a whole map dimming with a local change -
+        its top picks land at the 4th, 10th and 54th percentile of their own
+        within-unit null, i.e. the least object-like units in the population.
+    The within-unit percentile is scale-free AND drift-controlled, because every
+    comparison happens inside one unit's own distribution.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positions
+    from scripts.trace import trace_figure as tf
+    from scripts.trace.trace_metric import OBJECT_CELL_PCTILE, trace_scores
 
     env = _env()
     d = np.load(OUT / "maps_all.npz")
     base = d["baseline"]
-    L = (7, 11)
-    dm = (tm.object_modulation(maps=d[f"m_{L[0]}_{L[1]}"], obj_xy=L, env=env, radius=2.0)
-          - tm.object_modulation(maps=base, obj_xy=L, env=env, radius=2.0))
-    units = np.argsort(-np.nan_to_num(dm, nan=-np.inf))[:8]
-    tf.trace_panel(
-        maps_by_checkpoint=[base] + [d[f"m_{l[0]}_{l[1]}"] for l in LOCS],
-        labels=["pre-exposure"] + [f"obj @ {l}" for l in LOCS],
-        units=units, obj_xy=L, removal_after=0,
-        title=f"Units most modulated at {L} after exposure there.\nWhite + marks {L}. "
-              "Same colour scale per row. Columns 2-4 are 3 separate runs.",
-    ).savefig(OUT / "fig_trace_3loc.png", dpi=150, bbox_inches="tight")
+    series = [base] + [d[f"m_{x}_{y}"] for x, y in LOCS]
+    labels = ["pre-exposure"] + [f"obj @ {l}" for l in LOCS]
+    n_col = len(series)
+    cells = [tuple(p.tolist())
+             for p in get_walkable_minigrid_positions(get_walkable_mask(env))]
+
+    picks, pcts, dgs = {}, {}, {}
+    for L in LOCS:
+        s = trace_scores(maps_pre=base, maps_post=d[f"m_{L[0]}_{L[1]}"], env=env,
+                         cells=cells, obj_cell=L)
+        pct, dg = s["percentile"], s["dg_obj"]
+        # percentile first, |dg| as the tie-break: many units saturate at 99
+        order = np.lexsort((-np.nan_to_num(np.abs(dg)), -np.nan_to_num(pct, nan=-np.inf)))
+        picks[L], pcts[L], dgs[L] = order[:n_units], pct[order[:n_units]], dg[order[:n_units]]
+        print(f"  {L}: units {picks[L].tolist()}  percentile {np.round(pcts[L], 0).tolist()}  "
+              f"Δfield gain {np.round(dgs[L], 3).tolist()}   "
+              f"[{s['n_object_cells']}/{s['n_scored']} units over the "
+              f"{OBJECT_CELL_PCTILE:.0f}th percentile = {s['frac']:.3f}, p={s['p_binom']:.3f}]")
+
+    n_row = n_units * len(LOCS)
+    fig, axes = plt.subplots(n_row, n_col, figsize=(1.6 * n_col, 1.55 * n_row), squeeze=False)
+    for b, L in enumerate(LOCS):
+        for i, u in enumerate(picks[L]):
+            r = b * n_units + i
+            maps_row = [m[u] for m in series]
+            vmax = np.nanmax([np.nanmax(m) for m in maps_row])
+            vmax = vmax if np.isfinite(vmax) and vmax > 0 else 1.0
+            for c, m in enumerate(maps_row):
+                ax = axes[r][c]
+                tf._draw_map(ax, m, vmax=vmax)
+                ax.plot(L[0] - 1, L[1] - 1, "w+", ms=7, mew=1.5)
+                if r == 0:
+                    ax.set_title(labels[c], fontsize=9, pad=4)
+                # The block's OWN run: the only column where a trace could show.
+                if c == b + 1:
+                    for side in ("top", "bottom", "left", "right"):
+                        ax.spines[side].set_visible(True)
+                        ax.spines[side].set(color="#C0392B", linewidth=2.0)
+            axes[r][0].set_ylabel(f"#{u}\np{pcts[L][i]:.0f}  Δg {dgs[L][i]:+.2f}", fontsize=8,
+                                  rotation=0, labelpad=30, va="center")
+
+    fig.suptitle(
+        "Object-trace null as spatial tuning. Each block takes ITS own location's top-ranked units and\n"
+        "marks ITS own location (white +). Rank = the object cell's change in field gain as a PERCENTILE\n"
+        "among that unit's change at all 172 walkable cells - the statistic the null test itself uses\n"
+        f"(>{OBJECT_CELL_PCTILE:.0f} = object cell). Row labels give that percentile and the raw Δfield gain.\n"
+        "The RED-OUTLINED panel is the block's own run, the only one in which a trace at that + could appear.",
+        fontsize=10.5)
+    fig.tight_layout(rect=(0.10, 0, 1, 0.945))
+
+    # Block labels and separators are placed from the LAID-OUT axes, not from
+    # row arithmetic: tight_layout and the suptitle mean row index and figure
+    # fraction are not the same thing (the first attempt drew the separators
+    # through the middle of rows).
+    for b, L in enumerate(LOCS):
+        top = axes[b * n_units][0].get_position().y1
+        bot = axes[(b + 1) * n_units - 1][0].get_position().y0
+        fig.text(0.045, (top + bot) / 2, f"selected at {L}", ha="center", va="center",
+                 fontsize=11, fontweight="bold", rotation=90)
+        if b:
+            prev = axes[b * n_units - 1][0].get_position().y0
+            fig.add_artist(plt.Line2D([0.02, 0.99], [(prev + top) / 2] * 2,
+                                      color="k", lw=1.2, ls="--"))
+    fig.savefig(OUT / "fig_trace_3loc.png", dpi=150, bbox_inches="tight")
     print("wrote fig_trace_3loc.png")
 
 

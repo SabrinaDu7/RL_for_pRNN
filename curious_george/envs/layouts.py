@@ -332,6 +332,29 @@ def generate_layouts(
 # which reports configuration distance 12 and cross-room landmark distance 3 -
 # the latter being the ceiling over the whole admissible set, not a search
 # artifact. The room is only 172 walkable cells.
+#
+# ⚠️ MEASURED 2026-08-13: THESE THREE ROOMS ARE EXACT TRANSLATIONS OF ONE
+# CONFIGURATION. room 0 -> room 1 is a shift by (0, 3); room 0 -> room 2 is a
+# shift by (3, 0); all three have separation signature (6, 6, 6), i.e. congruent
+# right triangles. The shape/colour assignment is permuted across the shift, so
+# identity does vary, but the GEOMETRY does not.
+#
+# The "configuration distance" floor above therefore does not do what its name
+# suggests: it separates the rooms by POSITION, not by internal geometry, which
+# is the same failure the square-room selection was later fixed for (see
+# ROOMS_SQUARE's `distinct_signatures`). ROOMS_RUN1 predates that fix.
+#
+# Consequence for interpretation, and it is not small: a network can cover all
+# three rooms with ONE map plus a translation, so remapping is never REQUIRED in
+# the L-room arm. A remapping index of ~0 there is consistent with a network
+# that has bound nothing, AND with one facing a manipulation too weak to force
+# it. The square arm does not have this problem. State it with any L-room
+# multi-room result.
+#
+# Verify with:
+#     uv run python -c "from curious_george.envs.layouts import ROOMS_RUN1 as R; \
+#       print({(dx,dy) for dx in range(-14,15) for dy in range(-14,15) \
+#       if {(x+dx,y+dy) for x,y in R[0].anchors} == set(R[1].anchors)})"
 ROOMS_RUN1: tuple[Layout, ...] = tuple(
     Layout(tuple(Landmark(shape, color, tuple(anchor)) for shape, color, anchor in spec))
     for spec in (

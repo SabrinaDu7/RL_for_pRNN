@@ -20,7 +20,9 @@ RUNS = {(7, 11): "outputs/mila_omt_dense/omt-cur-dot-0730-165325",
         (7, 2):  "outputs/mila_omt_dense/omt-cur-dot-0730-165916"}
 CTRL = [[2, 5], [4, 7], [11, 3], [13, 5]]
 ONSET, BS = 20, 128
-CFG = "/home/sabrina/Documents/experiments/RL_for_pRNN/Configs"
+# Resolved from the working directory, not from one machine's home: an
+# absolute path here silently breaks for every other checkout.
+CFG = str(Path("Configs").resolve())
 
 
 def mse_per_step(pN, probe):

@@ -133,7 +133,24 @@ clustering when the object sits in a structurally high-traffic spot
 ### Method
 
 `tasks/omt/`, object at `(7,11)`, `(14,7)`, `(7,2)`, 3 seeds each, 3000 trajectories, checkpoints
-every 200. Probe: one trajectory from every (walkable cell, head direction) pair = **688
+every 200.
+
+The map caches these figures are built from carry no record of which run made them; those runs have
+no config on disk and no surviving wandb entry. Recovered from the data instead by replaying each
+candidate and correlating against the cache
+(`scripts/trace/verify_map_provenance.py`, cache `outputs/trace/map_provenance.json`) **[live]**:
+
+```
+outputs/mila_omt/omt-cur-dot-0730-125634  ->  m_7_11    r = 1.00000  (margin +0.023)
+outputs/mila_omt/omt-cur-dot-0730-130252  ->  m_7_2     r = 1.00000  (margin +0.080)
+outputs/mila_omt/omt-cur-dot-0730-130307  ->  m_14_7    r = 1.00000  (margin +0.023)
+```
+
+So `maps_all.npz` — and therefore Figures 1.2 and 1.4 — comes from `outputs/mila_omt/`, one run per
+location. The script asserts its own pipeline first (baseline checkpoint vs cached `baseline`,
+r = 1.00000) so that a wrong-run answer cannot be confused with a wrong-pipeline one.
+
+Probe: one trajectory from every (walkable cell, head direction) pair = **688
 trajectories × 256 steps**, ~828 samples per spatial bin, maps 14×14 occupancy-masked to 172/196
 valid bins. A `RandomActionAgent` generates actions independently of the network, so the same
 trajectories are valid for every checkpoint — checkpoints are **replayed, not re-collected**, and
@@ -150,10 +167,29 @@ not a broken measurement.
 
 ![trace across 3 locations](../../outputs/trace/fig_trace_3loc.png)
 
-**Figure 1.2** — `outputs/trace/fig_trace_3loc.png`. **The main null, as spatial tuning.** Rows
-are the units most modulated at (7,11); columns are pre-exposure and then three separate exposure
-runs. The white `+` marks (7,11). Nothing appears there, in any column. Shared colour scale per
-row.
+**Figure 1.2** — `outputs/trace/fig_trace_3loc.png` (rebuilt 2026-08-13). **The main null, as
+spatial tuning, in location-control form.** Three blocks, one per object location. Each block
+selects the units most modulated at **its own** location and marks **its own** location with the
+white `+`; the red-outlined panel is that block's own exposure run, the only column in which a
+trace at that `+` could appear. Colour scale shared across a row. Nothing appears at any `+`,
+including inside every red outline.
+
+⚠️ **The previous version of this figure could not have shown a trace at (14,7) or (7,2).** It
+selected units by Δ object-modulation at (7,11) only and drew the `+` at (7,11) in *every* column,
+so columns 3–4 showed units chosen for one location, marked at another, in runs whose object was
+somewhere else. The null is unchanged; the figure now scores each panel against the thing it is
+about.
+
+⚠️ **The ranking statistic selects the network's quietest units, and this is not stated anywhere.**
+`object_modulation` is the bounded contrast `(near − far)/(near + far)`, so a small denominator
+inflates Δ. Measured this session from `maps_all.npz` **[cache]**: population mean rate median
+0.2168, and all nine selected units fall in the bottom 0–28th percentile of rate. Unit #429 (rate
+0.0034, **0th percentile**) tops the list at two of the three locations, with an absolute rate
+change in its disc of +0.006 against a population p95 of 0.150. Two of the nine (#438 −0.020,
+#314 −0.006) got *dimmer* at their own object location and were still ranked "most modulated".
+Changing the ranking statistic is a methodological choice and has not been made; the figure now at
+least prints each row's Δmodulation so the selection is visible. The same defect affects Figure 3.1
+— see there.
 
 ![exposure timeline](../../outputs/trace/fig_exposure_timeline_14_7.png)
 
@@ -245,6 +281,11 @@ baseline    0.6787   0.5781   0.5378   0.5210   0.5131   0.5066    (n=1)
 Welch t-test, `[2,0,8]` vs `[2,2,2]` fixedpos: **ph0 t=14.44, p<1e-5; ph1 t=7.28, p=3e-5** [doc].
 Every `[2,0,8]` seed exceeds every fixedpos seed.
 
+The two arms are **location-matched**, which was assumed rather than known until 2026-08-13: the
+`[2,0,8]` runs trained at (7,11) (`wandb/run-20260801_120212-8xck38gb/files/config.yaml:9`), and the
+three `mila_omt_dense` runs in the control arm are all (7,11) too (§7.8) **[live]**. Had they mixed
+locations, the comparison would have confounded condition with object position.
+
 ![phases](../../outputs/trace/fig_otc_phases.png)
 
 **Figure 2.1** — `outputs/trace/fig_otc_phases.png`. Decoding by mask phase, every condition
@@ -303,8 +344,42 @@ field that persists at a departed location.
 
 ### Method
 
-`(7,11) → (7,2) → (4,7) → REMOVED`, 1000 trajectories per phase, checkpoints at every phase
-boundary, 8 seeds in parallel. Hidden state scored with `scripts/trace/trace_metric.py`: field gain
+`(7,11) → (7,2) → (4,7) → REMOVED`, checkpoints at every phase boundary, 8 seeds in parallel.
+
+![sequential phase environments](../../outputs/summary/fig_seq_phases.png)
+
+**Figure 3.0** — `outputs/summary/fig_seq_phases.png` (`scripts/trace/seq_phase_figure.py`). The four
+environments and what each phase cost. Every panel is the same room with the same agent start; the
+object — the single bright-green tile — is the only difference. Per phase, derived in-script from the
+run's phase directories and the composed config **[live]**:
+
+```
+1,000 trajectories (125 batches x 8)      256,000 environment steps
+1,000 world-model gradient steps          4,000 PPO gradient steps
+```
+
+`predNet.batched_wm` is **False** for these runs, so the world model takes one gradient step per
+episode segment (`curious_george/rl/update/world_model.py`), i.e. `frames/seqdur` = 8 per batch —
+not one per batch.
+
+⚠️ **Exposure is not matched to §1, and that bounds what this null can be compared against.** The
+pre-exposure checkpoint has **79,999** world-model gradient steps (the reference run's wandb `trial`
+counter, fetched this session — this also resolves the open question in §7.2: `_step` reaches
+110,349 but is the wandb event counter, not gradient steps). So each phase here adds **+1.25%** more
+world-model training, while §1's standard OMT gave a single location 3,000 gradient steps, **+3.75%**
+— three times more per location. Neither null is obviously an exposure-duration artifact (§1 is null
+at 3× and its Figure 1.3 timeline is null throughout), but the two are not exposure-matched.
+
+⚠️ **The run directories are misnamed in two ways.** `SEQ4-otc-p0.5-…` takes `p0.5` from
+`tasks.otc.presence_prob` (`tasks/otc/main_task.py:40`), but when `tasks.otc.sequence` is set,
+`main_task.py:85` dispatches to `train_sequence`, which **hardcodes** `presence_prob=1.0` for object
+phases and `0.0` for the removal phase (`tasks/otc/task.py:165`) and never reads the config value —
+every SEQ4 phase had the object in *every* environment, not half. And `phase{n}_992` is the
+trajectory count at the *start* of the last batch: `train` saves at
+`(num_batches − 1) × trajs_per_batch`, so the checkpoint labelled 992 is written after all 1,000
+trajectories. `phase{n}_0` is likewise written after 8 trajectories, not 0 — nothing reads it today
+(`seq_figures._phases` takes each phase's max step), but it would mislead anyone using it as a phase
+baseline. Hidden state scored with `scripts/trace/trace_metric.py`: field gain
 `g(u,c)` = mean rate in a radius-2 disc at `c` / the unit's mean rate (scale-free), trace score
 `dg = g_post − g_pre`, and the unit's score is the object cell's **percentile among all 172
 walkable cells**. Object cell if percentile > 95, so chance is 5% by construction.
@@ -344,10 +419,53 @@ itself.
 
 ![sequential fields](../../outputs/trace/fig_seq_fields_3058.png)
 
-**Figure 3.1** — `outputs/trace/fig_seq_fields_3058.png`. Spatial tuning across the four phases.
-Units **do** reorganise their receptive fields substantially between phases — but not at the
-object. That is the null made visible: the maps are not frozen, they simply do not care where the
-object is.
+**Figure 3.1** — `outputs/trace/fig_seq_fields_3058.png` (re-run 2026-08-13, now self-documenting).
+Spatial tuning across the four phases. Units **do** reorganise their receptive fields substantially
+between phases — but not at the object. That is the null made visible: the maps are not frozen,
+they simply do not care where the object is.
+
+**What "most changed" means** — the figure never said, and it matters. From
+`scripts/seq_figures.py::fields`, field gain `g(u,c)` is the unit's mean rate in a radius-2 disc at
+`c` over its mean rate everywhere, and the ranking statistic is
+
+```
+dg[u] = max over (phase p, object location c) of | g_p(u,c) − g_pre(u,c) |
+```
+
+So it is an **absolute** change, maximised over both phases and locations, and scored **only inside
+the three discs** — it is not a global map-change measure and says nothing about the reorganisation
+elsewhere that the caption points at. Re-running it prints the selection **[live]**:
+
+```
+  unit  signed dg  phase        at  mean rate  rate pctile
+   429     -3.161      0    (7, 2)     0.0034           0%
+   449     +2.969      0    (7, 2)     0.0839           7%
+   448     +2.546      1    (7, 2)     0.1256          18%
+   372     -2.515      1   (7, 11)     0.1288          20%
+   226     -2.041      0   (7, 11)     0.1030          11%
+   390     -1.977      0    (7, 2)     0.1055          12%
+   368     +1.921      0    (4, 7)     0.0302           1%
+   195     +1.904      0    (4, 7)     0.1097          13%
+```
+
+Three things follow, and they resolve the tension between the selection and the caption:
+
+1. **4 of 8 selected changes are decreases.** The absolute value ranks a lost field identically to
+   a gained one, so half these rows are units that got *weaker* at an object location.
+2. **6 of 8 maxima land at a location that did not hold the object in that phase.** Phase 0's object
+   is at (7,11), yet #429, #449 and #390 max out at (7,2) and #368/#195 at (4,7). Only #448
+   (phase 1 at (7,2)) and #226 (phase 0 at (7,11)) peak where the object actually was. The
+   statistic never asks, so most of what it ranks is drift.
+3. **The selection is the network's quietest units** — median rate percentile 11%, and #429 sits at
+   the 0th (rate 0.0034). `g` divides by the unit's own mean rate, so a near-silent unit posts a
+   large `dg` from a tiny absolute change. This is the same defect as in Figure 1.2, which uses a
+   different normalisation (`object_modulation`) and lands on the same low-rate tail — #429 tops
+   both figures.
+
+The null is unaffected: nothing appears at an object location under either ranking. But "the units
+whose receptive fields changed most" was never what this figure showed, and a ranking statistic that
+is scale-free by division is not safe on a population containing near-silent units. **Fixing it is a
+methodological choice and has not been made.**
 
 ![object-centred readout](../../outputs/trace/fig_seq_predcentred_3058.png)
 
@@ -830,6 +948,47 @@ Recorded so the numbers above can be trusted differentially.
    `scripts/trace/trace_cell_figures.py` and `scripts/otc_figures.py plot|maps`; all seven and four
    respectively rebuilt cleanly, and the `otc_figures.py plot` console table reproduced the §2
    phase numbers exactly.
+8. **Map-cache provenance: RESOLVED for the caches, and for the runs the figures name**
+   (2026-08-13, `scripts/trace/verify_map_provenance.py`). Neither `maps_all.npz` nor
+   `maps_dense.npz` records which run produced it, the `outputs/mila_omt*` runs have no config on
+   disk (only `pN-*.pt` and `status.pt`), and no wandb entry survives for them — queried
+   `blake-richards/curious-george` and `curious-george-otc`, where the only run dated 2026-07-30 is
+   `prnn_curious_26-07-30-10-37-02`. Recovered by replay-and-correlate, with the pipeline asserted
+   first (baseline checkpoint vs cached `baseline`, **r = 1.00000**) so a wrong-run answer could not
+   be mistaken for a wrong-pipeline one:
+
+   ```
+   maps_all.npz    <- outputs/mila_omt/       125634 (7,11)   130252 (7,2)    130307 (14,7)
+   maps_dense.npz  <- outputs/mila_omt_dense/ 165325 (7,11)   165916 (7,2)    165922 (14,7)
+   all six diagonal matches r = 1.00000, margins +0.023 to +0.080
+   ```
+
+   The map route cannot reach the six dense runs no cached set was built from — their correlations
+   are noise (margins 0.0003–0.019, three of them scoring *higher* against `baseline` than against
+   any target). Those are recovered instead from the **readout**, where §0 says exposure writes the
+   object: excess predicted green at each candidate over the pre-exposure baseline at the same cell.
+   §0 also says that write is ~89% position-independent, so the route is reported against the three
+   runs whose answer the map route already fixed — **positive control 3/3, every margin ≥ +0.039**
+   (`--readout`, cache `outputs/trace/map_provenance_readout.json`):
+
+   ```
+   (7,11)  165325  172405  175326          three seeds per location, three locations;
+   (14,7)  165922  172845  175805          the launch groups are LOCATION triples,
+    (7,2)  165916  173016  180402          not seed triples
+   ```
+
+   ✅ **Independently corroborated for the three it overlaps.**
+   `scripts/trace/trace_objvector_test.py:22-24` carries a `RUNS` dict mapping
+   `(7,11)→165325, (14,7)→165922, (7,2)→165916` — recorded in code rather than in a config, which is
+   why the config/wandb search missed it. It agrees with the replay recovery exactly. Two independent
+   sources, so the mapping is settled rather than merely inferred; the other six runs are new.
+
+   **This settles two things.** Figure 0.2's `[2,2,2] normal` column is `omt-cur-dot-0730-165325`,
+   trained at **(7,11)**, matching its `[2,0,8]` and RANDPOS columns (confirmed independently from
+   `wandb/run-20260801_120212-8xck38gb/files/config.yaml:9` and sibling configs) — the figure is
+   correct as drawn. And `otc_figures.CONDITIONS["[2,2,2] fixedpos"]` names `165325, 172405, 175326`,
+   which are **all (7,11)** — so §2's control arm is location-matched to its treated arm. That was an
+   assumption with nothing behind it until now.
 
 ---
 
@@ -851,9 +1010,19 @@ uv run python scripts/otc_figures.py maps           # fig_otc_maps/_maps_diff
 uv run python scripts/moser/moser_figures.py        # the 4 outputs/moser/ figures
 uv run python scripts/seq_figures.py \
     outputs/seq4/OTC_seq_5200_10340479/SEQ4-otc-p0.5-fixedpos-c1-0811-123058
+uv run python scripts/trace/seq_phase_figure.py       # fig_seq_phases    (Figure 3.0)
 uv run python scripts/trace/seq_behavior_figure.py    # fig_seq_behavior  (Figure 3.3)
 uv run python scripts/trace/seq_occupancy_figure.py   # fig_seq_occupancy (Figure 3.4)
 uv run python scripts/summary_figures.py fetch_entropy   # refresh the wandb cache (network)
+```
+
+Provenance of the map caches those figures read (§7.8) — asserts its own pipeline before reporting,
+and its readout route reports its positive control with every result:
+
+```bash
+uv run python scripts/trace/verify_map_provenance.py --runs outputs/mila_omt/*
+uv run python scripts/trace/verify_map_provenance.py --all --cache maps_dense.npz --step 2800
+uv run python scripts/trace/verify_map_provenance.py --all --readout
 ```
 
 Note on that last path: half the `outputs/seq4/OTC_seq_*` directories are empty rsync
