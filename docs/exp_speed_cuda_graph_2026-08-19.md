@@ -56,6 +56,7 @@ serial world model, RTX 4060, idle GPU.
 | | serial instead of pooled | 3.53 | **methodological** — pooling is deliberate in the multi-room design (§7) |
 | ✅ | `predNet.compile_cell=layer` on top of serial | **8.22** | **ready** — 2.47× measured, graph-free (`cudagraphs=False`), default off (§9d) |
 | ✅ | run 2–4 seeds concurrently on one GPU | ×1.70 – ×2.47 aggregate | **ready** — no code change; also buys the replication every result doc says is missing (§9b) |
+| 🎯 | **batch N seeds into one kernel** (`vmap` over replicas) | up to **×103 per-sample** on the matmul | **the largest available win** — the weight read is already paid (§9e). Needs functionalising the WM step, and a logging design |
 | ⏸ | `predNet.cuda_graph=True` | 10.19 | **on hold** — not judgeable yet (banner above) |
 | ⏸ | `num_envs` 8 → 64 | 4.55 eager / 37.50 graphed | **not recommended eager** — 1.25× and plateaus, at 4× policy dilution (§9c) |
 
@@ -768,6 +769,62 @@ parameter addresses, so it does not carry the failure mode of §5.
 x concurrent seeds 2.47x aggregate (§9b) — against graphing's 8.59x on a single
 run. Compiling the loop closes most of the gap the checkability decision opened. The gap is the cost of the checkability decision, stated so it can be
 revisited with evidence rather than by argument.
+
+## 9e. Why one pRNN step starves the GPU — the floor, and what is targetable
+
+`tests/perf/roofline_step.py`, RTX 4060, idle GPU **[live]**:
+
+```
+launch overhead, one trivial kernel          7.08 us
+measured read bandwidth                     256.6 GB/s
+
+recurrent matmul x[B,500] @ W[500,500]   (W = 977 KiB)
+      B   us/call   us/sample
+      1     12.08     12.076
+      8     12.29      1.537
+    128     14.97      0.117      <- same call, 128x the work
+   2048    156.05      0.076
+
+one step's two matmuls at batch 1
+  weights that MUST be read per step          1279 KiB
+  reading them at peak bandwidth               5.11 us   <- HARD FLOOR
+  launch overhead for the 2 kernels           14.16 us
+  measured                                    28.34 us
+```
+
+### The diagnosis
+
+**Launching a kernel costs more than the kernel does.** One launch is 7.08 us.
+The useful work in a 500x500 matrix-VECTOR product is reading 977 KiB of
+weights, which at the measured 256.6 GB/s takes ~3.9 us. Subtract launch from
+the B=1 measurement and the matmul runs at ~200 GB/s of a 256 GB/s ceiling —
+**the kernels are near-optimal; there are simply too many of them and each is
+too small.** A single pRNN step fires roughly a dozen.
+
+Underneath is the roofline: at batch 1 the step reads 1.28 MB of weights to
+produce 500 numbers — **0.20 FLOP/byte**, where this GPU needs ~60 FLOP/byte to
+be compute-bound. We are ~300x below the ridge point. A 500-unit recurrent step
+is a memory-streaming problem handed to a compute engine, which is precisely
+what "the GPU is starved" means, stated quantitatively.
+
+### What is targetable, and what is not
+
+| | | |
+|---|---|---|
+| ✅ | launch overhead — **most of the cost** | fuse kernels (`compile_cell=layer`, **2.47x** measured) or eliminate launches (`cuda_graph`, 8.59x, on hold) |
+| ❌ | the **5.11 us/step weight read** | **irreducible.** Every step must read every weight. No framework, kernel, or language changes this — JAX included |
+| ✅ | the *per-sample* cost of that read | **batch.** 12.076 us/sample at B=1 → **0.117 at B=128 = 103x** |
+
+**This is why a single run can never saturate this GPU**, and it is not an
+implementation defect: there is not enough arithmetic in one 500-unit step to
+occupy 24 SMs, and the optimizer steps within a run are sequential so the batch
+dimension is unavailable to it.
+
+**It is also the physical argument for multi-seed training.** The weight read is
+already paid; 128 seeds ride the same 12–15 us call. Running seeds in parallel
+is not a cheap way to get statistics — it is the only way to use hardware the
+project is already paying for. See §9b for the concurrency measurements and
+their CPU cap.
 
 ## 10. Reproducing
 
