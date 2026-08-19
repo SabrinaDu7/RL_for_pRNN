@@ -20,7 +20,7 @@
 #
 # This is a BENCHMARK job, not a training run: a few minutes per arm, no
 # checkpoints, no wandb. It does NOT touch the cluster working tree.
-# Usage:  sbatch slurm/graph_bench.sh [git-ref]   (default origin/sdu/speed)
+# Usage:  sbatch slurm/graph_bench.sh [branch]   (default sdu/speed)
 #
 #SBATCH --job-name=graph_bench
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
@@ -49,12 +49,19 @@ export CG_DEVICE=cuda
 #     dedupe_d4 in envs/layouts.py on sdu/multi-env). Copying it would
 #     benchmark an unknown mixture; checking out over it would risk the work.
 #   - a result should name the commit that produced it.
-REF="${1:-origin/sdu/speed}"
-git -C $HOME/experiments/RL_for_pRNN fetch -q origin
-git clone -q --shared $HOME/experiments/RL_for_pRNN $SLURM_TMPDIR/RL_for_pRNN
+# $1 is a BRANCH name. `git clone --shared` copies only refs/heads, and the
+# cluster checkout keeps sdu/speed as a remote-tracking ref rather than a local
+# branch - so `checkout origin/sdu/speed` in the clone failed with "--detach
+# does not take a path argument" (job 10416001). Fetch the remote-tracking ref
+# out of the source repo explicitly instead; no network needed on the node.
+BRANCH="${1:-sdu/speed}"
+SRC=$HOME/experiments/RL_for_pRNN
+git -C $SRC fetch -q origin
+git clone -q --shared $SRC $SLURM_TMPDIR/RL_for_pRNN
 cd $SLURM_TMPDIR/RL_for_pRNN
-git checkout -q --detach "$REF"
-echo "benchmarking $(git rev-parse --short HEAD)  ($REF)"
+git fetch -q "$SRC" "refs/remotes/origin/$BRANCH"
+git checkout -q --detach FETCH_HEAD
+echo "benchmarking $(git rev-parse --short HEAD)  (origin/$BRANCH)"
 rm -rf .venv && uv venv .venv && source .venv/bin/activate && uv sync
 
 OUT=$SLURM_TMPDIR/graph_results
