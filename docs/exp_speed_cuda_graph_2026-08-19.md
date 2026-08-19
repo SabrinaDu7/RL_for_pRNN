@@ -45,6 +45,38 @@ difference as an effect.
 E is mine to recommend once §6 passes. M is Sabrina's call and needs its own
 learning gate.
 
+## What to actually do, given the graphing hold
+
+Everything below is on **world-model gradient steps per second**, `num_envs=8`,
+serial world model, RTX 4060, idle GPU.
+
+| | change | grad steps/s | status |
+|---|---|---|---|
+| baseline | today's production default (pooled + eager) | **1.19** | — |
+| | serial instead of pooled | 3.53 | **methodological** — pooling is deliberate in the multi-room design (§7) |
+| ✅ | `predNet.compile_cell=True` on top of serial | **4.72** | **ready** — 1.42× measured, graph-free, default off (§9d) |
+| ✅ | run 2–4 seeds concurrently on one GPU | ×1.70 – ×2.47 aggregate | **ready** — no code change; also buys the replication every result doc says is missing (§9b) |
+| ⏸ | `predNet.cuda_graph=True` | 10.19 | **on hold** — not judgeable yet (banner above) |
+| ⏸ | `num_envs` 8 → 64 | 4.55 eager / 37.50 graphed | **not recommended eager** — 1.25× and plateaus, at 4× policy dilution (§9c) |
+
+**The single recommendation I'd make today: `compile_cell=True`**, after a
+learning gate. It is a standard PyTorch feature, it changes no memory
+management, and it is worth 1.42×.
+
+**The honest headline is that the large lever is the one on hold.** Graphing is
+8.59× and everything graph-free together is ~1.4× per run (×2.5 aggregate across
+seeds). That gap is the price of the checkability decision — which is a
+defensible price, and is recorded here so it can be revisited with evidence
+rather than by argument.
+
+**If graphing is revisited, run this first** (it needs no CUDA knowledge to
+read): the July failure is characterised as *crash at ~update 427 with the
+model-moving diagnostics on, clean 1200 updates with them skipped*, so run the
+config that used to die, past where it used to die, with and without the guard.
+Two logs, one binary outcome. Commands in §5 and §10.
+
+---
+
 Every number here is RTX 4060, torch 2.8.0+cu128, measured with the GPU
 otherwise idle (`nvidia-smi --query-compute-apps` checked empty before each
 block — GPU contention is what invalidated the last session's headline number).
