@@ -792,9 +792,51 @@ one step's two matmuls at batch 1
   measured                                    28.34 us
 ```
 
-### The diagnosis
+### The diagnosis, with the budget closed
 
-**Launching a kernel costs more than the kernel does.** One launch is 7.08 us.
+⚠️ **Correction to an earlier version of this section.** It claimed launch
+overhead was most of the cost, using the 7.08 us figure below. That figure is a
+whole *Python op round-trip* (`tiny.add_(1.0)`), NOT a driver launch, and the
+two were conflated. Profiling one eager trainStep (fwd+bwd, L=256) settles it
+**[live]**:
+
+```
+per timestep:
+  kernel launches                41.0
+  CPU time                     1041.0 us
+    of which cudaLaunchKernel   250.0 us   (24%)
+    of which cudaMemcpyAsync     11.0 us
+    remaining ~780 us           (75%)  = PyTorch dispatch / autograd / Python
+  GPU time                      132.8 us      (CPU/GPU ratio 7.8x)
+  memory floor                    5.11 us
+```
+
+`cudaLaunchKernel` is **24%** of CPU time, not the bulk. Three quarters sits in
+PyTorch's per-operation machinery ABOVE the driver.
+
+**Three layers, each now with a number:**
+
+| layer | per timestep | vs floor | cause |
+|---|---|---|---|
+| physics floor | **5.11 us** | 1x | must read 1.28 MB of weights |
+| GPU actually spends | **132.8 us** | 26x | the step is **41 separate small kernels**, each with device-side overhead and poor occupancy |
+| CPU spends | **1041 us** | 204x | **161 aten ops** of dispatch/autograd to command those 41 kernels |
+
+This explains every result in this document. `compile_cell=layer` (2.47x) cuts
+op count AND kernel count. `cuda_graph` (8.59x) removes dispatch and launch in
+one replay, which is why it reaches 63 us/timestep — **below even eager's
+132.8 us of GPU time**, since replay also closes the device-side gaps between
+kernels. A bigger GPU changes neither layer, which is exactly what the RTX 8000
+measurement showed (0.1879 s vs the 4060's 0.1946 s per trainStep).
+
+It also bounds what remains: graphed, 63 us against a 5.11 us floor is still
+**12x**, because 41 kernels still execute. Closing that needs **one fused kernel
+per step**, not fewer ops — a custom cell, which is a far larger undertaking
+than anything measured here.
+
+### The per-kernel picture
+
+One trivial PyTorch op round-trip is 7.08 us.
 The useful work in a 500x500 matrix-VECTOR product is reading 977 KiB of
 weights, which at the measured 256.6 GB/s takes ~3.9 us. Subtract launch from
 the B=1 measurement and the matmul runs at ~200 GB/s of a 256 GB/s ceiling —
