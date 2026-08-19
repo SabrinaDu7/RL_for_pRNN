@@ -109,6 +109,12 @@ def run_benchmark(
 
     # per-trainStep pRNN losses accumulated by prnn's TrainingSaver
     ts = comps.predictiveNet.TrainingSaver
+    # recordTrainingTrial appends exactly one row per world-model trainStep, so
+    # the row delta IS the gradient-step count - the quantity the 2026-08-11
+    # batch sweep concluded must be maximised. It is NOT a fixed function of
+    # n_updates: predNet.batched_wm collapses a rollout's segments into one
+    # pooled step, so the same update count buys num_envs times fewer steps.
+    wm_grad_steps = len(ts) - training_saver_start
     if len(ts) and "loss" in ts:
         metrics["prnn_loss"] = [
             float(x) for x in ts["loss"].iloc[training_saver_start:].tolist()
@@ -163,7 +169,15 @@ def run_benchmark(
             "num_envs": cfg.exp.num_envs,
             "seed": cfg.exp.seed,
         },
+        # fps (environment steps/s) is reported because it is the historical
+        # axis, but it is NOT the objective: widening the rollout raises env
+        # steps and gradient steps per update by the same factor, so it moves
+        # fps while leaving learning rate per second unchanged. Read
+        # wm_grad_steps_per_s. See docs/sab_context/open_choices.md #3a.
         "fps": round(frames / total_train_s, 1),
+        "updates_per_s": round(n_updates / total_train_s, 4),
+        "wm_grad_steps": wm_grad_steps,
+        "wm_grad_steps_per_s": round(wm_grad_steps / total_train_s, 4),
         "total_train_s": round(total_train_s, 3),
         "update_times_s": [round(t, 3) for t in update_times],
         "timings": timer.report(),
