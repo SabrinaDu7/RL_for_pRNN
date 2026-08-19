@@ -54,18 +54,18 @@ serial world model, RTX 4060, idle GPU.
 |---|---|---|---|
 | baseline | today's production default (pooled + eager) | **1.19** | — |
 | | serial instead of pooled | 3.53 | **methodological** — pooling is deliberate in the multi-room design (§7) |
-| ✅ | `predNet.compile_cell=True` on top of serial | **4.72** | **ready** — 1.42× measured, graph-free, default off (§9d) |
+| ✅ | `predNet.compile_cell=layer` on top of serial | **8.22** | **ready** — 2.47× measured, graph-free (`cudagraphs=False`), default off (§9d) |
 | ✅ | run 2–4 seeds concurrently on one GPU | ×1.70 – ×2.47 aggregate | **ready** — no code change; also buys the replication every result doc says is missing (§9b) |
 | ⏸ | `predNet.cuda_graph=True` | 10.19 | **on hold** — not judgeable yet (banner above) |
 | ⏸ | `num_envs` 8 → 64 | 4.55 eager / 37.50 graphed | **not recommended eager** — 1.25× and plateaus, at 4× policy dilution (§9c) |
 
-**The single recommendation I'd make today: `compile_cell=True`**, after a
-learning gate. It is a standard PyTorch feature, it changes no memory
-management, and it is worth 1.42×.
+**The single recommendation I'd make today: `compile_cell=layer`**, after a
+learning gate. It is a standard PyTorch feature, it captures nothing and records
+no memory pool, and it is worth **2.47×** — about 80% of what graphing gives.
 
-**The honest headline is that the large lever is the one on hold.** Graphing is
-8.59× and everything graph-free together is ~1.4× per run (×2.5 aggregate across
-seeds). That gap is the price of the checkability decision — which is a
+**The gap the hold opens is now small.** Graphing is 8.59×; compiling the loop
+is 2.47× per run (×2.5 aggregate across seeds) and needs no review of CUDA
+memory semantics. That gap is the price of the checkability decision — which is a
 defensible price, and is recorded here so it can be revisited with evidence
 rather than by argument.
 
@@ -701,7 +701,48 @@ cuda          198.1        142.7     1.39x
 in the 2026-07 perf memory, which recorded a `reduce-overhead` probe that
 *hung* and suggested "try default mode": default mode works.
 
-### Measured end-to-end: 1.42x, and it is now a flag
+### Compiling the LOOP, not the cell: 2.47x end-to-end
+
+The cell is the wrong unit. Compiling the **whole 256-step loop** lets dynamo
+unroll it into one graph and Inductor fuse across timesteps — the direct torch
+analogue of `jax.lax.scan` + XLA. Isolated layer, fwd+bwd, L=256, CUDA **[live]**:
+
+```
+mode             ms/call   speedup   first call
+eager              189.4     1.00x       0.4 s
+cell               166.5     1.14x       1.3 s
+whole-scan          48.7     3.89x      88.6 s
+```
+
+End-to-end via `predNet.compile_cell=layer`, 8 updates + 3 warmup **[live]**:
+
+```
+mode      GRAD/s   s/upd  wm_s/upd  prnn_loss[-1]
+eager       3.33   2.402     1.715       0.017239
+cell        4.72   1.694     1.087       0.016526
+layer       8.22   0.974     0.421       0.018007      2.47x
+```
+
+**2.47x on gradient steps per second, graph-free**, world-model stage 4.07x.
+That is ~80% of what `cuda_graph` delivers (10.19 grad/s) with none of its
+mechanism — confirmed: `torch._inductor.config.triton.cudagraphs` is **False**
+in default mode, so nothing is captured and no memory pool is recorded.
+
+**Compile cost is one-time and bounded.** 7 recompilations fired, each ~89 s
+(~10 min total, 0.3% of a 58 h run), and they all completed during warmup:
+steady-state per-update times are flat at
+`[0.941, 0.934, 0.959, 1.046, 1.064, 0.962, 0.935, 0.945]` s. The triggers are a
+finite set — sequence-length mismatches (`pN.predict` is called from several
+sites) and `grad_mode` changes (the eval path runs under `no_grad`). ⚠️ Watch
+this on any config that introduces new sequence lengths; unbounded recompilation
+would be fatal, and `TORCH_LOGS=recompiles` is how to check.
+
+⚠️ `prnn_loss` at 6–8 updates differs across modes (0.017239 / 0.016526 /
+0.018007). That is noise at this horizon, but it does confirm the numerics are
+**not** identical — fusion reorders floating-point operations — so this needs a
+learning gate exactly like anything else.
+
+### Measured end-to-end: 1.42x for cell mode, and it is now a flag
 
 `predNet.compile_cell` (default `False`) wires this into `PRNNAdapter`.
 `tests/perf/benchmark.py`, 6 updates + 2 warmup (the extra warmup absorbs
@@ -723,9 +764,9 @@ operations, so it needs the same learning gate as anything else, and it adds
 compile time at startup. But it involves no recorded memory pool and no captured
 parameter addresses, so it does not carry the failure mode of §5.
 
-**Standing on the graph-free path:** `torch.compile` **1.42x (measured)** x
-concurrent seeds 2.47x aggregate (§9b) — against graphing's 8.59x on a single
-run. The gap is the cost of the checkability decision, stated so it can be
+**Standing on the graph-free path:** `compile_cell=layer` **2.47x (measured)**
+x concurrent seeds 2.47x aggregate (§9b) — against graphing's 8.59x on a single
+run. Compiling the loop closes most of the gap the checkability decision opened. The gap is the cost of the checkability decision, stated so it can be
 revisited with evidence rather than by argument.
 
 ## 10. Reproducing

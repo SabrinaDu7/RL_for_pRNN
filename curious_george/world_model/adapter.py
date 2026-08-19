@@ -257,7 +257,7 @@ class PRNNAdapter:
         pastSR: bool,
         cuda_graph: bool = False,
         batched_curiosity: bool = False,
-        compile_cell: bool = False,
+        compile_cell: bool | str = False,
     ):
         self.pN = predictive_net
         self.device = device
@@ -297,9 +297,26 @@ class PRNNAdapter:
         # this needs the same learning gate as any other change. It carries no
         # captured parameter addresses, which is what separates it from
         # predNet.cuda_graph.
-        if bool(compile_cell) and self.device.type == "cuda":
-            cell = self.pN.pRNN.rnn.cell
-            cell.forward = torch.compile(cell.forward)
+        # "layer" compiles the WHOLE 256-step loop, which dynamo unrolls into
+        # one graph - the torch analogue of jax.lax.scan + XLA fusion, and far
+        # better than fusing the cell alone: 3.89x vs 1.14x on the isolated
+        # layer. "cell" fuses only the LayerNorm chain inside one step.
+        #
+        # Verified graph-free: torch._inductor.config.triton.cudagraphs is
+        # False in DEFAULT mode, so nothing is captured and no memory pool is
+        # recorded. That is the whole point of preferring this to cuda_graph.
+        #
+        # ⚠️ "layer" specialises on sequence length (dynamic=False). pN.predict
+        # is called from several sites, and a new length costs a fresh ~89 s
+        # compile. Measure recompiles before trusting it in production.
+        self.compile_mode = str(compile_cell) if compile_cell else ""
+        if compile_cell and self.device.type == "cuda":
+            if self.compile_mode == "layer":
+                rnn = self.pN.pRNN.rnn
+                rnn.forward = torch.compile(rnn.forward, dynamic=False)
+            else:
+                cell = self.pN.pRNN.rnn.cell
+                cell.forward = torch.compile(cell.forward)
 
     def seq2pred(self, obs_dicts, act_np):
         """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item
