@@ -2,6 +2,22 @@
 
 # Speed: why training is not instantaneous, what was fixed, and what to do next
 
+> 🔴 **SUPERSEDED IN PART, 2026-08-19 — read
+> [`exp_speed_cuda_graph_2026-08-19.md`](exp_speed_cuda_graph_2026-08-19.md) first.**
+> Three claims below were measured in the `batched_wm=True` (pooled) regime and
+> do not hold in the serial regime the repo's own sweep says is required:
+>
+> - "the existing `cuda_graph` flag … is aimed at the wrong term" (§6) — under
+>   **serial** world-model training that step is **69.9%** of an update, not
+>   12–22%, and graphing it measures **8.59x on gradient steps/s**.
+> - the "~2.1x realistic ceiling" (§4) — superseded; measured **31.6x** over
+>   today's production default by combining the graph with `num_envs`.
+> - the `cudaStreamSynchronize` open thread (§6) — **closed, it is a symptom**:
+>   269 syncs cost 1.8 ms of 884 ms CPU (0.2%), and `set_sync_debug_mode` finds
+>   zero data-dependent host syncs.
+>
+> §2, §3 and the retractions in §4 remain correct and load-bearing.
+
 Two documents split the project. `docs/results/README_object_experiments.md` is
 the entry point for the **science**; this is the entry point for the
 **engineering**. §1 restates the experiment structure so a reader gets both from
@@ -263,6 +279,15 @@ Note the existing `cuda_graph` flag graphs the **world-model trainStep**, which
 is 12–22% of an update and flat in batch. It is aimed at the wrong term; the
 rollout has no graph.
 
+> 🔴 **WRONG, corrected 2026-08-19.** "12–22% of an update" is measured with
+> `predNet.batched_wm=True`, which collapses B world-model gradient steps into
+> one. With `batched_wm=False` — the regime `docs/sab_context/open_choices.md`
+> §3a concludes is necessary to reach the reference loss — that same step is
+> **69.9%** of an update, and graphing it is **12.3x on the step and 8.59x on
+> gradient steps/s**. The flag was aimed at the right term; the measurement was
+> taken where that term had already been collapsed. See
+> `exp_speed_cuda_graph_2026-08-19.md` §2–§3.
+
 ### Open thread
 
 `cudaStreamSynchronize` appears **269 times ≈ 1.1 per step** after the fix. A
@@ -270,6 +295,14 @@ hard sync per step serialises CPU and GPU and would partly explain the persisten
 7.6× ratio. I checked `vector.py` and `adapter.py`; the D2H transfers there are
 per-*segment*, not per-step, so the source is **not yet identified**. Worth
 finding — it is cheap if it turns out to be one stray `.item()`.
+
+> ✅ **CLOSED 2026-08-19: it is a symptom, not a cause.** Reproduced exactly
+> (269 = 1.05/step, `tests/perf/profile_api.py`) — and it costs **1.8 ms of
+> 884 ms self-CPU, 0.2%**. The syncs return immediately because the GPU is
+> already drained. Independently, `torch.cuda.set_sync_debug_mode("warn")` over a
+> whole `collect_experiences` on the production path reports **zero**
+> data-dependent host syncs (`tests/perf/find_sync.py`). The cost is
+> `cudaLaunchKernel` (24,660 = 96/step = 207 ms) and Python dispatch.
 
 ### On the 30-min–1-hour run target
 
@@ -322,3 +355,5 @@ The bottleneck is **per-step Python and launch overhead**, identical whether the
 - **Nothing committed or pushed.** Branch `sdu/speed` carries one code change
   (`collector.py`, +26/−7) plus documentation. The parent branch still has 104
   unpushed commits and ~12 untracked files.
+  > ✅ **STALE, corrected 2026-08-19.** Committed and pushed as `031d18f`;
+  > `sdu/speed` tracks `origin/sdu/speed`, 0 commits ahead.
