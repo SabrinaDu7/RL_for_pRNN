@@ -19,7 +19,8 @@
 #      also graph-free. Worth confirming on a different GPU.
 #
 # This is a BENCHMARK job, not a training run: a few minutes per arm, no
-# checkpoints, no wandb. Usage:  sbatch slurm/graph_bench.sh
+# checkpoints, no wandb. It does NOT touch the cluster working tree.
+# Usage:  sbatch slurm/graph_bench.sh [git-ref]   (default origin/sdu/speed)
 #
 #SBATCH --job-name=graph_bench
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
@@ -43,9 +44,17 @@ export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}"
 export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
 export CG_DEVICE=cuda
 
-cd $HOME/experiments
-cp -r RL_for_pRNN $SLURM_TMPDIR/
+# CLONE a named ref rather than copying the working tree. Two reasons:
+#   - the cluster checkout carries uncommitted work (2026-08-19: a partial
+#     dedupe_d4 in envs/layouts.py on sdu/multi-env). Copying it would
+#     benchmark an unknown mixture; checking out over it would risk the work.
+#   - a result should name the commit that produced it.
+REF="${1:-origin/sdu/speed}"
+git -C $HOME/experiments/RL_for_pRNN fetch -q origin
+git clone -q --shared $HOME/experiments/RL_for_pRNN $SLURM_TMPDIR/RL_for_pRNN
 cd $SLURM_TMPDIR/RL_for_pRNN
+git checkout -q --detach "$REF"
+echo "benchmarking $(git rev-parse --short HEAD)  ($REF)"
 rm -rf .venv && uv venv .venv && source .venv/bin/activate && uv sync
 
 OUT=$SLURM_TMPDIR/graph_results
