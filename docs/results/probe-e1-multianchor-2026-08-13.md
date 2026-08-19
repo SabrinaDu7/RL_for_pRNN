@@ -17,9 +17,11 @@ a place cell fires at one room location and so appears around only one landmark.
 
 Pipeline, per checkpoint — `scripts/trace/e1_cell_figure.py`:
 
-1. Probe: one trajectory from every walkable cell × 1 head direction (172
-   trajectories × 256 steps), actions from a `RandomActionAgent`, independent of
-   the network. Replay the checkpoint, drop a 20-step onset transient.
+1. Probe: one trajectory from every walkable cell × 1 head direction, × 256
+   steps, actions from a `RandomActionAgent`, independent of the network.
+   Replay the checkpoint, drop a 20-step onset transient. The trajectory count
+   is the room's walkable-cell count — 172 in the L-room, 196 in the square
+   room — and is printed on every figure.
 2. Rate maps: mean `h` per 14×14 bin, bins under 20 samples masked.
 3. Anchors: the landmarks' centroids, read from the env's `Landmark` objects in
    `SHAPES` order — NOT recovered by colour, which reorders between rooms.
@@ -172,6 +174,7 @@ uv run python scripts/trace/ovc_power_figure.py
 Every figure writes a sibling `.json` carrying the checkpoint path, env, room
 description, landmark list, chosen units and the population fraction.
 
-⚠️ These figures use a **172-trajectory** probe (`--n-dirs 1`) while
-`ovc_eval.py` defaults to 344 (`n_dirs=2`). The probe size is printed on each
-figure; it is not matched between the two paths.
+⚠️ These figures probe **one head direction** per walkable cell (`--n-dirs 1`)
+while `ovc_eval.py` defaults to two (`n_dirs=2`), so that path collects twice as
+many trajectories. The probe size is printed on each figure; it is not matched
+between the two paths, and it is not the same in the two room geometries (§1).
