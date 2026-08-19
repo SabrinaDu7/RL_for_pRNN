@@ -623,6 +623,67 @@ i.e. the prnn hot-loop op reduction in §9, or a genuinely fused RNN cell. The
 graphed step is 16.1 ms for 256 sequential timesteps = 63 us/timestep, which at
 ~16 ops/timestep is already near replay cost.
 
+## 9d. `torch.compile` — the graph-free lever, and where the op census actually led
+
+The §9 hot-loop census pointed at ops. **Three hypotheses drawn from it were
+each refuted by measurement**, recorded here so nobody re-runs the dead ends:
+
+| hypothesis | verdict |
+|---|---|
+| cat-of-one-element + permutes are ~30% of the loop's ops | **wrong** — 2.0 of 161 ops/step = **1%** |
+| a numpy `float64` `mu` leaks into the LayerNorm parameter and forces conversions | **wrong** — every parameter is `float32`; `torch.zeros(n) + numpy.float64` stays `float32` |
+| the per-timestep `.t()` makes `torch.mm` materialise a contiguous copy | **wrong** — `mm(x, W.t())` emits **zero** `_to_copy`/`copy_`/`empty_strided`, and `F.linear` is *slower* (60.8 vs 43.2 us/call, 17 vs 13 ops) |
+
+The `aten::to`/`_to_copy` could not be attributed at all: a Python-level
+`Tensor.to` patch sees none and `TorchDispatchMode` sees none, so they originate
+below both.
+
+**The deciding measurement was ranking by TIME rather than COUNT** — which is
+what the op census should have done from the start (fwd+bwd, L=256, CPU,
+123.4 ms total aten self-CPU) **[live]**:
+
+```
+  mm            5.0/step   32.89 ms   26.6%      <- irreducible arithmetic
+  add_          6.0/step   15.02 ms   12.2%
+  mul/add/sum/div/div_/std/mean  (the LayerNorm chain)   ~28%
+  the whole conversion/stride family, 71 calls/step      12.9%
+```
+
+There is **no single hot spot**. It is dispatch-bound across many tiny ops,
+which is precisely why op-shuffling cannot pay and why the addressable move is
+to **fuse the cell** or remove launch overhead outright.
+
+### The measurement that follows from that
+
+`torch.compile` in **default** mode (fusion; NOT `reduce-overhead`, which is
+CUDA graphs under another name) applied to `net.rnn.cell.forward` **[live]**:
+
+```
+thetaRNNLayer fwd+bwd, L=256, h=500
+device     eager ms  compiled ms  speedup
+cpu           121.8        120.7     1.01x
+cuda          198.1        142.7     1.39x
+```
+
+**1.39x on the world-model step on GPU, graph-free.** This also closes an item
+in the 2026-07 perf memory, which recorded a `reduce-overhead` probe that
+*hung* and suggested "try default mode": default mode works.
+
+Projected end-to-end at `num_envs=8` serial: the WM step 0.198 → 0.142 s takes
+`8 x 0.142 + 0.53 = 1.67 s/update` = **~4.8 grad/s against the measured eager
+3.68** ≈ **1.3x**. ⚠️ **Projected, not measured end-to-end** — wiring
+`torch.compile` into `PRNNAdapter` is a code change that has not been made.
+
+⚠️ It is **not free of semantics risk**: fusion can reorder floating-point
+operations, so it needs the same learning gate as anything else, and it adds
+compile time at startup. But it involves no recorded memory pool and no captured
+parameter addresses, so it does not carry the failure mode of §5.
+
+**Standing on the graph-free path:** `torch.compile` ~1.3x (projected) x
+concurrent seeds 2.47x aggregate (§9b) — against graphing's 8.59x on a single
+run. The gap is the cost of the checkability decision, stated so it can be
+revisited with evidence rather than by argument.
+
 ## 10. Reproducing
 
 All of these need the GPU otherwise idle; check

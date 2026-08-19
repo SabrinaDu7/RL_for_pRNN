@@ -1,16 +1,22 @@
 #!/bin/bash
-# Does the CUDA-graph world-model result transfer off the RTX 4060?
+# Do the 2026-08-19 speed results transfer off the RTX 4060?
 #
 # Every number in docs/exp_speed_cuda_graph_2026-08-19.md is dev-box (RTX 4060,
-# 8 logical CPUs, 4 torch threads). Two of its conclusions are hardware-shaped
-# and MUST be re-measured before the cluster runs adopt them:
+# 8 logical CPUs, 4 torch threads). This re-measures them on cluster hardware.
 #
-#   1. The graph win (12.3x on the world-model step) should GROW on a faster
-#      GPU: the workload is CPU/launch-bound, so a faster GPU widens the
-#      CPU:CUDA gap the graph removes. Prediction, not a measurement.
-#   2. Concurrency was capped at 2.47x aggregate by the dev box's 8 CPUs, NOT by
-#      the GPU. A node with more cores per GPU should scale further. This is the
-#      one number most likely to be wrong off-box.
+# ORDERING REFLECTS A DECISION: CUDA graphing is ON HOLD (Sabrina, 2026-08-19 -
+# not judgeable by its owner yet), so the GRAPH-FREE arms run FIRST and are the
+# point of this job. The graph arms still run, last, because they are cheap and
+# the data is what a later review would need - but nothing here recommends them.
+#
+# The two conclusions most likely to be wrong off-box:
+#
+#   1. Concurrency capped at 2.47x aggregate on the dev box because of 8 CPUs,
+#      NOT the GPU (884 ms self-CPU vs 91 ms self-CUDA). A node with more cores
+#      per GPU should scale further. This is the single most valuable number
+#      here, and it needs no graphing at all.
+#   2. torch.compile default mode gave 1.39x on the world-model step locally,
+#      also graph-free. Worth confirming on a different GPU.
 #
 # This is a BENCHMARK job, not a training run: a few minutes per arm, no
 # checkpoints, no wandb. Usage:  sbatch slurm/graph_bench.sh
@@ -49,6 +55,16 @@ BASE="--override env=lroom_multi --override run=multienv --override exp.layouts=
 echo "### gate: the graph must be correct before its speed means anything"
 uv run python -m pytest tests/test_cuda_graph_wm.py tests/test_cuda_graph_diag_guard.py \
     tests/golden_omt -q 2>&1 | tail -3
+
+echo "### 0. GRAPH-FREE: num_envs with SERIAL wm, eager (dev box: 3.68 / 4.60 / 4.55 - plateaus)"
+for B in 8 32 64; do
+    F=$((B*256)); PB=$((F/4))
+    echo "=== eager num_envs=$B ==="
+    uv run python tests/perf/benchmark.py --updates 4 --warmup-updates 1 --out $OUT/eager_envs_$B.json \
+        $BASE --override predNet.batched_wm=False --override predNet.cuda_graph=False \
+        --override exp.num_envs=$B --override rl.frames=$F --override rl.ppo_batch_size=$PB \
+        2>&1 | tail -2
+done
 
 echo "### 1. the four world-model regimes (dev box: 1.19 / 3.53 / 10.19 / 1.14 grad/s)"
 for arm in "A_pooled_nograph True False" "B_serial_nograph False False" \
