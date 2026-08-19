@@ -25,7 +25,7 @@
 #SBATCH --job-name=graph_bench
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
 #SBATCH --error=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.err
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
@@ -65,7 +65,16 @@ echo "benchmarking $(git rev-parse --short HEAD)  (origin/$BRANCH)"
 rm -rf .venv && uv venv .venv && source .venv/bin/activate && uv sync
 
 OUT=$SLURM_TMPDIR/graph_results
-mkdir -p $OUT
+DEST_DIR="$SCRATCH/pRNN/$JOB_ID"
+mkdir -p $OUT $DEST_DIR
+
+# Copy results out AS THEY ARE PRODUCED. Job 10417306 was killed by the wall
+# clock during the last section, and because the only rsync was at the end,
+# $SLURM_TMPDIR was wiped and every JSON from 2 hours of GPU was lost. A
+# benchmark that only persists on success is a benchmark you cannot trust to
+# finish.
+save () { rsync -a "$OUT/" "$DEST_DIR/" 2>/dev/null || true; }
+trap save EXIT
 BASE="--override env=lroom_multi --override run=multienv --override exp.layouts=one"
 
 # Gate, but NON-FATAL and without golden_omt. Two reasons, both learned from
@@ -87,6 +96,7 @@ for B in 8 32 64; do
         $BASE --override predNet.batched_wm=False --override predNet.cuda_graph=False \
         --override exp.num_envs=$B --override rl.frames=$F --override rl.ppo_batch_size=$PB \
         2>&1 | tail -2
+    save
 done
 
 echo "### 1. the four world-model regimes (dev box: 1.19 / 3.53 / 10.19 / 1.14 grad/s)"
@@ -97,6 +107,7 @@ for arm in "A_pooled_nograph True False" "B_serial_nograph False False" \
     uv run python tests/perf/benchmark.py --updates 6 --warmup-updates 1 --out $OUT/$1.json \
         $BASE --override predNet.batched_wm=$2 --override predNet.cuda_graph=$3 \
         2>&1 | tail -2
+    save
 done
 
 echo "### 2. num_envs with serial WM + graph (dev box: 10.88 / 27.21 / 37.50)"
@@ -107,6 +118,7 @@ for B in 8 32 64 128; do
         $BASE --override predNet.batched_wm=False --override predNet.cuda_graph=True \
         --override exp.num_envs=$B --override rl.frames=$F --override rl.ppo_batch_size=$PB \
         2>&1 | tail -2
+    save
 done
 
 echo "### 3. trainStep batch scaling - where this GPU's knee is (4060: flat to 128)"
@@ -157,7 +169,5 @@ for N in [2,4,8]:
               f"   x{sum(v)/solo:.2f} vs solo   retained {100*st.median(v)/solo:.0f}%")
 PY
 
-DEST_DIR="$SCRATCH/pRNN/$JOB_ID"
-mkdir -p $DEST_DIR
-rsync -a $OUT/ $DEST_DIR/
+save
 echo "results in $DEST_DIR"
