@@ -22,6 +22,42 @@ from curious_george.utils.checkpoints import StatusCkptKeys
 from curious_george.utils.timing import timer
 
 
+def _skip_model_move_diag(cfg) -> bool:
+    """Whether to skip the diagnostics that move the pRNN off-device.
+
+    Under `predNet.cuda_graph` they MUST be skipped. A captured CUDA graph
+    writes to the parameter addresses it saw at capture time;
+    `on_device([pN, ...], "cpu")` replaces those tensors, and the allocation
+    churn inside the eval fragments memory so a re-captured graph's private
+    pool aliases live tensors (e.g. `exps.obs.direction`) - a use-after-free
+    that killed two cluster runs with `IndexError: index 184 out of bounds`.
+    The parameter-address fingerprint in `_GraphWMSegmentTrainer` covers the
+    stale-pointer path but NOT this one: the residual crash had no device move
+    between it and the failure, so re-capture into fragmented memory is itself
+    the fault. Guarding `PRNNAdapter.to()` is also insufficient - `on_device`
+    calls `world_model.device._move()` straight on the PredictiveNet.
+    Reproduced (2026-07-22): crash at update 427 with the swaps, clean 700+
+    without; the fix validated the crashing config to 1200 updates.
+
+    Only the sample-trajectory figure and the spatial sRSA/SI curves are lost.
+    Every scalar metric - pRNN loss, curious reward, policy loss, FPS,
+    behaviour MI - moves no model and still logs every update, and the spatial
+    curves are recoverable offline from archived checkpoints with
+    `scripts/multienv/checkpoint_curve.py --spatial`, which is how a graphed
+    run's sRSA/SWdist gate is discharged.
+    """
+    if not cfg.predNet.get("cuda_graph", False):
+        return False
+    print(
+        "[cuda_graph] skipping model-moving diagnostics (sample-trajectory "
+        "figure + spatial eval): device moves invalidate captured graphs. "
+        "Scalar metrics still logged; recover spatial curves from archived "
+        "checkpoints with scripts/multienv/checkpoint_curve.py --spatial.",
+        flush=True,
+    )
+    return True
+
+
 def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> None:
     """sRSA + SWdist on- and/or off-policy (CPU; placement restored by contexts).
 
@@ -143,6 +179,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
 
     schedule = TrainingSchedule.from_config(cfg)
     cadence = TrainingCadence.from_config(cfg, start_step=num_frames)
+    skip_model_move_diag = _skip_model_move_diag(cfg)
     print(schedule.summary())
     if num_frames:
         print(f"  resuming at {num_frames} steps -> {schedule.total_steps - num_frames} to go")
@@ -175,7 +212,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             archive_due = cadence.archive.fire(num_frames)
 
             # --- periodic plotting (expensive: figure + GPU<->CPU model swap)
-            if plot_due:
+            if plot_due and not skip_model_move_diag:
                 # plotSampleTrajectory runs predict on CPU tensors; pin the
                 # models to CPU for the call (placement restored on exit).
                 with timer("log/sample_trajectory"):
@@ -201,7 +238,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
 
             # --- periodic analysis ----------------------------------------
             if analysis_due:
-                if prnn_eval:
+                if prnn_eval and not skip_model_move_diag:
                     with timer("analysis/spatial"):
                         run_spatial_analysis(cfg, comps, run_ctx.wandb_log)
                 if cfg.exp.analyze_agent_behav:
