@@ -17,3 +17,4 @@ seqdur: 256 # Only relevant if train is on
 batched_wm: False # One pooled gradient step over all rollout segments stacked (B, L) instead of B sequential steps. Optimization-semantics change: curve-gate before enabling by default
 cuda_graph: False # CUDA-graph the per-segment world-model trainStep (fwd+bwd+RMSprop). Keeps B sequential steps (same dynamics as serial), CUDA-only; requires a fresh run (empty optimizer state)
 batched_curiosity: False # One batched inference pass for equal-length segments; changes dropout/noise RNG ordering, intended for high-throughput runs
+compile_cell: False # torch.compile (DEFAULT mode, fusion - NOT reduce-overhead, which is CUDA graphs) on the recurrent cell. CUDA-only: measured 1.39x on the world-model step, 1.01x on CPU. May reorder float ops, so curve-gate it

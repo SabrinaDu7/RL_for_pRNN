@@ -669,17 +669,29 @@ cuda          198.1        142.7     1.39x
 in the 2026-07 perf memory, which recorded a `reduce-overhead` probe that
 *hung* and suggested "try default mode": default mode works.
 
-Projected end-to-end at `num_envs=8` serial: the WM step 0.198 → 0.142 s takes
-`8 x 0.142 + 0.53 = 1.67 s/update` = **~4.8 grad/s against the measured eager
-3.68** ≈ **1.3x**. ⚠️ **Projected, not measured end-to-end** — wiring
-`torch.compile` into `PRNNAdapter` is a code change that has not been made.
+### Measured end-to-end: 1.42x, and it is now a flag
+
+`predNet.compile_cell` (default `False`) wires this into `PRNNAdapter`.
+`tests/perf/benchmark.py`, 6 updates + 2 warmup (the extra warmup absorbs
+compile time), serial WM, no graph, `num_envs=8`, idle GPU **[live]**:
+
+```
+compile_cell   GRAD/s   s/upd  wm_s/upd  prnn_loss[-1]  entropy[-1]
+False            3.33   2.402     1.715       0.017239       1.9638   x1.00
+True             4.72   1.694     1.087       0.016526       1.9219   x1.42
+```
+
+**1.42x on gradient steps per second**, ahead of the ~1.3x projected from the
+isolated layer; the world-model stage alone goes 1.715 → 1.087 s/update (1.58x).
+`prnn_loss` and entropy are close at 6 updates, which is far too few to gate on —
+it is reported to show nothing exploded, not as evidence of equivalence.
 
 ⚠️ It is **not free of semantics risk**: fusion can reorder floating-point
 operations, so it needs the same learning gate as anything else, and it adds
 compile time at startup. But it involves no recorded memory pool and no captured
 parameter addresses, so it does not carry the failure mode of §5.
 
-**Standing on the graph-free path:** `torch.compile` ~1.3x (projected) x
+**Standing on the graph-free path:** `torch.compile` **1.42x (measured)** x
 concurrent seeds 2.47x aggregate (§9b) — against graphing's 8.59x on a single
 run. The gap is the cost of the checkability decision, stated so it can be
 revisited with evidence rather than by argument.

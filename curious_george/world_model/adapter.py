@@ -257,6 +257,7 @@ class PRNNAdapter:
         pastSR: bool,
         cuda_graph: bool = False,
         batched_curiosity: bool = False,
+        compile_cell: bool = False,
     ):
         self.pN = predictive_net
         self.device = device
@@ -280,6 +281,25 @@ class PRNNAdapter:
         self.cuda_graph = bool(cuda_graph) and self.device.type == "cuda"
         self._graph_trainer: _GraphWMSegmentTrainer | None = None
         self.batched_curiosity = bool(batched_curiosity)
+
+        # predNet.compile_cell: fuse the recurrent cell with torch.compile.
+        # The 256-step loop is dispatch-bound across many tiny ops - ranked by
+        # TIME, `mm` is 26.6% and the LayerNorm chain ~28%, with no single hot
+        # spot (docs/exp_speed_cuda_graph_2026-08-19.md 9d). Fusing the cell
+        # collapses that chain into one kernel: measured 1.39x on the
+        # world-model step on CUDA, 1.01x on CPU, so it is CUDA-only.
+        #
+        # DEFAULT mode deliberately, not "reduce-overhead" - that mode IS CUDA
+        # graphs, and would silently reintroduce the captured-memory-pool
+        # failure this flag exists to avoid.
+        #
+        # NOT semantics-free: fusion may reorder floating-point operations, so
+        # this needs the same learning gate as any other change. It carries no
+        # captured parameter addresses, which is what separates it from
+        # predNet.cuda_graph.
+        if bool(compile_cell) and self.device.type == "cuda":
+            cell = self.pN.pRNN.rnn.cell
+            cell.forward = torch.compile(cell.forward)
 
     def seq2pred(self, obs_dicts, act_np):
         """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item

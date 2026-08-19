@@ -122,6 +122,7 @@ class PredictivePPOAlgo:
         batched_wm=False,  # appended last: positional callers exist (tests)
         cuda_graph=False,
         batched_curiosity=False,
+        compile_cell=False,
         adam_betas=(0.9, 0.999),
     ):
         # env may be a single shell, a list of shells (parallel collection),
@@ -180,6 +181,7 @@ class PredictivePPOAlgo:
                 pastSR,
                 cuda_graph=cuda_graph,
                 batched_curiosity=batched_curiosity,
+                compile_cell=compile_cell,
             )
             if self.pN
             else None
