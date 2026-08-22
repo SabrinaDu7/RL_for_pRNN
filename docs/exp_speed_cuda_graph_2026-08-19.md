@@ -924,6 +924,66 @@ the 94.4M point. The full budget is still out of reach — 1,920,000 grad steps 
 5.06 h even at this rate — so a run aimed at the E1 object question, whose
 fraction kept rising past 94M, still needs the long budget.
 
+## 9g. Getting a run under 2 hours — and the thing that nearly got traded away
+
+**The full budget cannot fit, and no engineering changes that.** 491.5M env steps
+is 1,920,000 world-model gradient steps; 2 h needs 267 grad/s against a ceiling
+of ~62 set by the trainStep itself (§9e). A 4.3x gap.
+
+So the run is sized to what 2 h reaches, using the project's own plateau data
+(`probe-remapping-2026-08-13.md` §3): per-room sRSA 0.7382 at 52.4M env steps,
+**0.7870 at 73.4M**, 0.7905 at 94.4M. Clearing 73.4M reproduces the plateau.
+
+### Believe the run, not the benchmark
+
+`tests/perf/benchmark.py` reported **106.74 grad/s**; the real production run
+sustains **19,286 env steps/s = 75.3 grad/s**. A 4-update benchmark excludes
+archiving, checkpoint saves and multi-room layout resampling. Sizing the budget
+off the benchmark would have overrun by 30%.
+
+The archive cadence is part of the budget too: `archive_every_steps=2097152`
+gives 79 checkpoints, and scoring 79 with `--spatial` does not fit. Found the
+hard way — the local gate produced **142** archives and its scoring had to be
+killed and re-run on a filtered subset.
+
+### ⚠️ The policy dilution, which is the real risk in all of this
+
+Scaling `ppo_batch_size` with `frames` holds policy gradient steps per *update*
+fixed at 16. That is **not** neutral:
+
+```
+                              wm steps/env step      policy steps/env step
+reference (multienv default)      1 per 2048             1 per 128
+production (serial, B=128)        1 per  256             1 per 2048   <- 16x diluted
+```
+
+The production config does **8x more world-model training and 8x less policy
+training per unit of experience** than the reference. And the local gate's
+long-horizon numbers match that prediction exactly: at ~74M env steps the
+production arm had **better** prediction loss (0.0019 vs the reference's 0.0039
+at 94.4M) but **worse** sRSA (0.6930 vs 0.7870) and SWdist (0.0794 vs 0.0334).
+More world-model training, worse exploration-dependent metrics.
+
+⚠️ **That comparison is CONFOUNDED and must not be quoted as a result**: the gate
+ran `layouts=one` while the reference is 3-room and pooled. Three differences at
+once. Job 10444390 runs the 16x config on `layouts=rooms` to test it properly.
+
+**Measured cost of undoing the dilution**, `num_envs=128`:
+
+```
+ ppo_batch  policy/upd  1 per N env  dilution   grad/s   2h reaches
+      8192          16         2048       16x    89.46      109.9M
+      2048          64          512        4x    80.18       98.5M
+      1024         128          256        2x    70.21       86.2M
+       512         256          128        1x    55.05       67.6M
+```
+
+`slurm/train_fast.sh` takes **1024**: 2x dilution rather than 16x, and 86.2M env
+steps still clears the 73.4M plateau. The last 1.27x of speed would cost 8x more
+dilution. **When speed and dynamics conflict, dynamics win** — that is the
+brief, and it is the whole reason this section exists rather than a table
+reporting 105 grad/s and stopping.
+
 ## 10. Reproducing
 
 All of these need the GPU otherwise idle; check
