@@ -45,6 +45,31 @@ difference as an effect.
 E is mine to recommend once §6 passes. M is Sabrina's call and needs its own
 learning gate.
 
+## The 2-hour configuration
+
+```bash
+sbatch slurm/train_fast.sh rooms lroom_multi      # ~1.8 h end to end on an L40S
+```
+
+```
+predNet.batched_wm=False      serial: 1 wm gradient step per 256 env steps
+predNet.cuda_graph=True       removes dispatch + launch  (§9e)
+predNet.compile_cell=layer    fuses the 256-step loop; COMPOSES with the graph (§9f)
+exp.num_envs=128              amortises the rollout over 128 gradient steps
+rl.ppo_batch_size=1024        NOT frames/4 — see §9g, this is the trap
+rl.episodes_total=330000      = the gradient-step budget = 84.5M env steps
+--gres=gpu:l40s:1             GPU type is worth 1.7x (§9f)
+```
+
+Against the production default of 1.19 grad/s this is ~59× on cluster hardware,
+turning a ~60 h run into ~1.8 h. **What was traded, explicitly:** the run stops
+at 84.5M environment steps rather than 491.5M — past the 73.4M sRSA plateau, but
+a run aimed at the E1 object question still needs the long budget (§9g).
+
+⚠️ Every claim here is a speed claim. The learning gate is §6 and §9g; the
+`ppo_batch_size` decision exists *because* speed and dynamics conflicted, and
+dynamics won.
+
 ## What to actually do, given the graphing hold
 
 Everything below is on **world-model gradient steps per second**, `num_envs=8`,
