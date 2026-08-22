@@ -1,7 +1,7 @@
 #!/bin/bash
 # Production multi-room training, tuned to finish inside 2 hours.
 #
-#   sbatch slurm/train_fast.sh [layouts] [envcfg] [branch]
+#   sbatch slurm/train_fast.sh [layouts] [envcfg] [branch] [seed]
 #     layouts: one | rooms | pool      (default rooms)
 #     envcfg : lroom_multi | squareroom_multi
 #
@@ -41,7 +41,11 @@
 
 set -eo pipefail
 LAYOUTS="${1:-rooms}"; ENVCFG="${2:-lroom_multi}"; BRANCH="${3:-sdu/speed}"
-echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG"
+# $4 = seed. Replication is the point: every result document in this repo
+# says "n = 1 seed per arm. No replication." A preset that cannot express a
+# second seed guarantees that stays true.
+SEED="${4:-2}"
+echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 module --force purge && module load python/3.10
@@ -159,7 +163,7 @@ uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.analyze_agent_behav=False \
     logging.analysis_every_steps=0 logging.plot_every_steps=0 \
-    exp.exp_name=fast-$LAYOUTS > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
 # hydra config dump instead of the error - the same way job 10416788's gate
@@ -171,7 +175,7 @@ save
 # Spatial curves are skipped in-run under cuda_graph (the eval moves the model
 # and would invalidate captured graphs), so score the archives offline here -
 # same numbers, computed after rather than during.
-RUN=$(ls -dt outputs/fast-${LAYOUTS}_* 2>/dev/null | head -1)
+RUN=$(ls -dt outputs/fast-${LAYOUTS}-s${SEED}_* 2>/dev/null | head -1)
 if [ -n "$RUN" ]; then
   echo "=== offline spatial scoring of $RUN ==="
   uv run python scripts/multienv/checkpoint_curve.py --run "$RUN" \
