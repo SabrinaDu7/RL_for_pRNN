@@ -3,6 +3,7 @@
 #
 #   sbatch slurm/train_fast.sh [layouts] [envcfg] [branch] [seed]
 #     layouts: single | one | rooms | pool   (default rooms)
+#     $5 = entropy_coef (default 0.01; the 2026-07 reference used 0)
 #              single = the original one-room MiniGrid-LRoom-v0 (env=lroom),
 #                       for eyeballing against older single-room runs
 #     envcfg : lroom_multi | squareroom_multi
@@ -24,9 +25,13 @@
 #   - job 10444214 died at wandb init on a compute node. main_train.py now
 #     degrades to no-wandb instead of aborting, so that cannot kill a run.
 #   - job 10444320 died in kaleido, because wandb_log=false routes behaviour
-#     analysis into save_analysis_of_agent_behav -> plotly -> a headless
-#     browser. With wandb ON and plot_every_steps=0, log_behavior returns after
-#     the MI scalar and never touches plotly.
+#     analysis into save_analysis_of_agent_behav -> fig.write_image() -> a
+#     headless browser. That path is ONLY reachable with wandb off. With wandb
+#     on, plotSampleTrajectory logs wandb.Image(plt.gcf()) - matplotlib, no
+#     browser - and log_behavior uses wandb.Plotly, which ships JSON. So
+#     plot_every_steps is on: "Observation Sequence" (the prediction images)
+#     plus the OPA figures, the same keys the 2026-07 reference logged.
+#     Verified locally: all four figure keys reach wandb, exit 0.
 #   - the spatial eval moves the pRNN off-device, which was unsafe under a
 #     captured graph. The final config does not use cuda_graph, so it is safe.
 # The offline scoring at the end still runs: wandb is the live view, the
@@ -63,6 +68,13 @@ fi
 # says "n = 1 seed per arm. No replication." A preset that cannot express a
 # second seed guarantees that stays true.
 SEED="${4:-2}"
+# $5 = rl.entropy_coef. Configs/run/multienv.yaml sets 0.01 ("nothing
+# resisted policy collapse at 0.0"), but the single-room reference run
+# pRNN_curious_26-07-23-10-06-25 used 0, and at 0.01 the bonus is 0.0198
+# against an advantage scale of 0.0369 - over half the learning signal - so
+# policy_entropy pins near maximum and MI_policy collapses to ~0.015 against
+# that run's 0.28. Being able to set it is the point.
+ENT="${5:-0.01}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
@@ -176,11 +188,11 @@ PPO_BATCH=1024
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=8 predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
-    rl.episodes_total=400000 \
+    rl.episodes_total=400000 rl.entropy_coef=$ENT \
     logging.wandb_log=true \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
-    logging.analysis_every_steps=8388608 logging.plot_every_steps=0 \
-    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+    logging.analysis_every_steps=8388608 logging.plot_every_steps=8388608 \
+    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
 # hydra config dump instead of the error - the same way job 10416788's gate
@@ -192,7 +204,7 @@ save
 # Spatial curves are skipped in-run under cuda_graph (the eval moves the model
 # and would invalidate captured graphs), so score the archives offline here -
 # same numbers, computed after rather than during.
-RUN=$(ls -dt outputs/fast-${LAYOUTS}-s${SEED}_* 2>/dev/null | head -1)
+RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}-s${SEED}_* 2>/dev/null | head -1)
 # checkpoint_curve.py is the multi-room scorer and takes --layouts; skip it
 # for the single-room shape, where sRSA/SWdist are logged live to wandb by
 # the ordinary single-room eval path instead.
