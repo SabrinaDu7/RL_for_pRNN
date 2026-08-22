@@ -1154,6 +1154,45 @@ degrades the place code (§9h). The pooled path the science needs is the one the
 graph cannot accelerate. That is the honest end of the graphing thread: it was
 the fastest thing measured and it is not what shipped.
 
+## 9j. Replicated, n = 3
+
+`sbatch slurm/train_fast.sh rooms lroom_multi sdu/speed {2,3,4}` — three seeds,
+all COMPLETED, all under two hours, within 44 s of each other **[live]**:
+
+```
+10445207  01:46:51      10445463  01:47:35      10445464  01:47:34
+```
+
+Per-room sRSA against the committed 3-room reference:
+
+```
+    env step    seed2    seed3    seed4     mean      sd   reference
+   8,388,608   0.4427   0.4530   0.4613   0.4523  0.0076   0.4562 @10.5M
+  33,554,432   0.6548   0.6321   0.7102   0.6657  0.0328   0.6690 @31.5M
+  50,331,648   0.7411   0.6975   0.7806   0.7397  0.0339   0.7382 @52.4M
+  75,497,472   0.7890   0.7702   0.8235   0.7942  0.0221   0.7870 @73.4M
+  92,274,688   0.7907   0.7801   0.8332   0.8013  0.0230   0.7905 @94.4M
+ 100,663,296   0.8025   0.8040   0.8334   0.8133  0.0142        —
+```
+
+**The mean matches the reference at every comparable point, inside one standard
+deviation**: 0.4523 vs 0.4562, 0.6657 vs 0.6690, 0.7397 vs 0.7382, 0.7942 vs
+0.7870, 0.8013 vs 0.7905. Monotone in the mean, no collapse.
+
+SWdist at 100.7M is **0.0444 ± 0.0014** against the reference's 0.0379 at 94.4M
+— 17% high, inside the ±27% coefficient of variation `open_choices.md` §1c
+documents for that metric.
+
+This is also the first result in the project carried at **n = 3** rather than
+n = 1, which every result document flags as its own principal bound. It was
+affordable only because a run is now 1 h 47 m: three seeds cost 5.3 h of GPU
+where one run used to cost ~11.5 h.
+
+⚠️ Bounds that remain: three seeds of one configuration on one GPU type
+(L40S), against a **single-seed** reference. The reference itself has no error
+bar, so "matches" means "the three-seed mean lands on the reference point", not
+"the two distributions were compared".
+
 ## 10. Reproducing
 
 All of these need the GPU otherwise idle; check
