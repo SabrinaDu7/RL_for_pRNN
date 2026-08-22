@@ -18,3 +18,4 @@ batched_wm: False # One pooled gradient step over all rollout segments stacked (
 cuda_graph: False # CUDA-graph the per-segment world-model trainStep (fwd+bwd+RMSprop). Keeps B sequential steps (same dynamics as serial), CUDA-only; requires a fresh run (empty optimizer state)
 batched_curiosity: False # One batched inference pass for equal-length segments; changes dropout/noise RNG ordering, intended for high-throughput runs
 compile_cell: False # torch.compile (DEFAULT mode, fusion - NOT reduce-overhead, which is CUDA graphs) on the recurrent cell. CUDA-only: measured 1.39x on the world-model step, 1.01x on CPU. May reorder float ops, so curve-gate it
+wm_segment_stride: 1 # serial world model: train on every k-th episode segment. k sets gradient steps per unit of EXPERIENCE (1 per k*seqdur env steps). k = frames//seqdur reproduces the pooled/reference ratio while keeping the serial path that cuda_graph accelerates. 1 = every segment (current behaviour)

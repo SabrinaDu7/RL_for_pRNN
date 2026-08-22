@@ -106,18 +106,31 @@ FRAMES=$((NUM_ENVS*256))
 # speed would cost 8x more dilution, and the brief is explicitly to not
 # sacrifice the learning dynamics.
 PPO_BATCH=1024
+# wm_segment_stride=8 trains the world model on every 8th segment: 16 steps per
+# update = 1 per 2048 environment steps, EXACTLY the reference series' ratio.
+#
+# This is a correction, not a tuning knob. Job 10444495 ran stride 1 (1 step per
+# 256 env steps, 8x the reference) and its per-room sRSA PEAKED at 0.7732 by
+# 25.2M steps - 98% of the reference plateau in a third of the experience - then
+# FELL to 0.5581 by 83.9M while prediction loss kept improving. Loss down, place
+# code down: over-training the predictor relative to experience. SWdist also ran
+# 2.3x the reference throughout.
+#
+# Striding also makes the run FASTER, because the world model is most of an
+# update: 17,815 -> 28,560 environment steps/s measured locally.
 # rl.episodes_total IS the world-model gradient-step budget under serial
 # training (schedule.py: total_wm_steps = total_steps/seqdur = episodes_total).
-# 330,000 grad steps = 84.5M environment steps.
+# 400,000 episodes = 102.4M environment steps (NOTE: with a stride, episodes
+# no longer equal world-model gradient steps - 102.4M/2048 = 50,000 of those).
 #
 # Sized from the MEASURED PRODUCTION RATE, not the benchmark. tests/perf
 # benchmarks reported 106.74 grad/s at 4 updates; a real run sustains
 # 19,286 env steps/s = 75.3 grad/s, because a benchmark excludes archiving,
 # checkpoint saves and the multi-room layout resampling. Believe the run.
-#   setup ~10 min + 330,000/59.1 = 93 min training + ~12 min offline scoring
-#   = ~1.92 h end to end.
-# 84.5M env steps clears the 73.4M point where the committed reference series
-# plateaus (per-room sRSA 0.7870).
+#   setup ~10 min + 102.4M/~45,000 env steps/s = ~38 min training
+#   + ~12 min offline scoring = ~1.0 h end to end.
+# 102.4M env steps clears BOTH the 73.4M plateau (per-room sRSA 0.7870) and the
+# 94.4M point (0.7905).
 #
 # archive_every_steps=8388608 gives 12 archives. At 2097152 it was 79, and
 # scoring 79 checkpoints with --spatial does not fit in the window - the
@@ -132,8 +145,9 @@ PPO_BATCH=1024
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     predNet.batched_wm=False predNet.cuda_graph=True predNet.compile_cell=layer \
+    predNet.wm_segment_stride=8 \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
-    rl.episodes_total=330000 \
+    rl.episodes_total=400000 \
     logging.wandb_log=false \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.analyze_agent_behav=False \
