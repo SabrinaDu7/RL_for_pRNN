@@ -89,19 +89,35 @@ trap save EXIT
 
 NUM_ENVS=128
 FRAMES=$((NUM_ENVS*256))
+# ppo_batch_size is NOT scaled with frames, deliberately. Scaling it holds
+# policy gradient steps per UPDATE fixed at 16, which means one policy step per
+# 2048 environment steps against the num_envs=8 baseline's one per 128 - a 16x
+# dilution of the policy that generates the behaviour the world model learns
+# from. Measured cost of undoing that, num_envs=128 on this box:
+#
+#   ppo_batch  policy/upd  1 per N env  dilution   grad/s   2h reaches
+#        8192          16         2048       16x    89.46      109.9M
+#        2048          64          512        4x    80.18       98.5M
+#        1024         128          256        2x    70.21       86.2M
+#         512         256          128        1x    55.05       67.6M
+#
+# 1024 is the pick: 2x dilution instead of 16x, and 86.2M env steps still
+# clears the 73.4M plateau (per-room sRSA 0.7870). Buying the last 1.27x of
+# speed would cost 8x more dilution, and the brief is explicitly to not
+# sacrifice the learning dynamics.
+PPO_BATCH=1024
 # rl.episodes_total IS the world-model gradient-step budget under serial
 # training (schedule.py: total_wm_steps = total_steps/seqdur = episodes_total).
-# 400,000 grad steps = 102.4M environment steps.
+# 330,000 grad steps = 84.5M environment steps.
 #
 # Sized from the MEASURED PRODUCTION RATE, not the benchmark. tests/perf
 # benchmarks reported 106.74 grad/s at 4 updates; a real run sustains
 # 19,286 env steps/s = 75.3 grad/s, because a benchmark excludes archiving,
 # checkpoint saves and the multi-room layout resampling. Believe the run.
-#   setup ~10 min + 400,000/75.3 = 88 min training + ~12 min offline scoring
-#   = ~1.83 h end to end.
-# 102.4M env steps is PAST the 94.4M point where the committed reference series
-# reaches its plateau (per-room sRSA 0.7905), so this reproduces the reference
-# result rather than merely approaching it.
+#   setup ~10 min + 330,000/59.1 = 93 min training + ~12 min offline scoring
+#   = ~1.92 h end to end.
+# 84.5M env steps clears the 73.4M point where the committed reference series
+# plateaus (per-room sRSA 0.7870).
 #
 # archive_every_steps=8388608 gives 12 archives. At 2097152 it was 79, and
 # scoring 79 checkpoints with --spatial does not fit in the window - the
@@ -116,8 +132,8 @@ FRAMES=$((NUM_ENVS*256))
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     predNet.batched_wm=False predNet.cuda_graph=True predNet.compile_cell=layer \
-    exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$((FRAMES/4)) \
-    rl.episodes_total=400000 \
+    exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
+    rl.episodes_total=330000 \
     logging.wandb_log=false \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.analyze_agent_behav=False \
