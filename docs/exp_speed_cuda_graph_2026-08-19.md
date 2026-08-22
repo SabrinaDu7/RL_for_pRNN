@@ -55,6 +55,7 @@ serial world model, RTX 4060, idle GPU.
 | baseline | today's production default (pooled + eager) | **1.19** | — |
 | | serial instead of pooled | 3.53 | **methodological** — pooling is deliberate in the multi-room design (§7) |
 | ✅ | `predNet.compile_cell=layer` on top of serial | **8.22** | **ready** — 2.47× measured, graph-free (`cudagraphs=False`), default off (§9d) |
+| 🚀 | **graph + compile + `num_envs=128`** on an L40S | **105.42** | **89× the current default** — the two fusion mechanisms compose (§9f); 153.6M env steps in under 2 h |
 | ✅ | run 2–4 seeds concurrently on one GPU | ×1.70 – ×2.47 aggregate | **ready** — no code change; also buys the replication every result doc says is missing (§9b) |
 | 🎯 | **batch N seeds into one kernel** (`vmap` over replicas) | up to **×103 per-sample** on the matmul | **the largest available win** — the weight read is already paid (§9e). Needs functionalising the WM step, and a logging design |
 | ⏸ | `predNet.cuda_graph=True` | 10.19 | **on hold** — not judgeable yet (banner above) |
@@ -867,6 +868,61 @@ already paid; 128 seeds ride the same 12–15 us call. Running seeds in parallel
 is not a cheap way to get statistics — it is the only way to use hardware the
 project is already paying for. See §9b for the concurrency measurements and
 their CPU cap.
+
+## 9f. The two fusion mechanisms COMPOSE — 105 grad/s, and the 2 h target
+
+`cuda_graph` and `compile_cell=layer` had never been run together on any
+machine. They stack, and nearly double. Mila **NVIDIA L40S**, 16 CPUs, serial
+world model, idle GPU **[live]** (`slurm/push2h.sh`, job 10443902):
+
+```
+arm                          GRAD/s   s/upd   plateau
+graph + compile, num_envs=128 105.42   1.214     0.76h
+graph + compile, num_envs=64   80.32   0.797     0.99h
+graph only,      num_envs=512  59.48   8.608     1.34h
+graph only,      num_envs=128  52.45   2.441     1.52h
+compile only,    num_envs=128  32.93   3.888     2.42h
+compile only,    num_envs=8     13.54   0.591     5.88h
+```
+
+**105.42 grad steps/s against today's production default of 1.19 — 89x**, and
+2.0x over the graph alone. They compose because they remove *different* costs:
+`compile_cell=layer` fuses many small kernels into fewer bigger ones (attacking
+the 132.8 us of GPU time and the kernel count), while `cuda_graph` removes the
+dispatch and launch of whatever kernels remain (attacking the 1041 us of CPU).
+§9e predicted exactly this by separating those layers.
+
+### ⚠️ GPU TYPE IS LOAD-BEARING — a 1.7x spread
+
+The same `graph + num_envs=128` config, measured on two Mila nodes:
+
+```
+Quadro RTX 8000 (Turing, cn-c009)   30.88 grad/s   plateau 2.58h   MISSES 2h
+NVIDIA L40S     (Ada,    cn-l009)   52.45 grad/s   plateau 1.52h   fits
+```
+
+A production job that does not pin the GPU type silently misses the target
+depending on which node Slurm picks. `slurm/train_fast.sh` requests
+`--gres=gpu:l40s:1` for this reason. **Do not compare numbers across cluster
+jobs without checking the node** — the earlier `graph_bench_10420332` figures
+are RTX 8000 and are NOT comparable with these.
+
+### What 2 hours now buys
+
+Under serial training `rl.episodes_total` **is** the gradient-step budget
+(`schedule.py`: `total_wm_steps = total_steps / seqdur = episodes_total`). At
+105.42 grad/s:
+
+```
+600,000 gradient steps = 153.6M env steps  = 1.58 h training
+                                             + ~5 min setup + ~10 min scoring
+                                           = under 2 h end to end
+```
+
+That is **31% of the full 491.5M budget**, past the 73.4M sRSA plateau and past
+the 94.4M point. The full budget is still out of reach — 1,920,000 grad steps is
+5.06 h even at this rate — so a run aimed at the E1 object question, whose
+fraction kept rising past 94M, still needs the long budget.
 
 ## 10. Reproducing
 
