@@ -48,36 +48,41 @@ learning gate.
 ## The 2-hour configuration
 
 ```bash
-sbatch slurm/train_fast.sh rooms lroom_multi      # ~1.8 h end to end on an L40S
+sbatch slurm/train_fast.sh rooms lroom_multi [branch] [seed]
 ```
 
+**Measured: `COMPLETED | 01:46:51`, reproducing the reference learning curve
+point for point (§9i).**
+
 ```
-predNet.batched_wm=False      serial: 1 wm gradient step per 256 env steps
-predNet.cuda_graph=True       removes dispatch + launch  (§9e)
-predNet.compile_cell=layer    fuses the 256-step loop; COMPOSES with the graph (§9f)
-exp.num_envs=128              amortises the rollout over 128 gradient steps
-rl.ppo_batch_size=1024        NOT frames/4 — see §9g, this is the trap
-rl.episodes_total=330000      = the gradient-step budget = 84.5M env steps
+predNet.batched_wm=True       pooled world-model steps
+predNet.wm_pool_group=8       ...in groups of 8: 16 steps/update = 1 per 2048
+                              env steps, the reference COUNT and QUALITY (§9h)
+predNet.compile_cell=layer    fuses the 256-step recurrence, 3.89x on the layer
+exp.num_envs=128              rollout cost per update is flat 8 -> 256
+rl.ppo_batch_size=1024        NOT frames/4 — holds policy dilution to 2x (§9g)
+rl.episodes_total=400000      102.4M env steps, past the 94.4M plateau point
 --gres=gpu:l40s:1             GPU type is worth 1.7x (§9f)
-logging.analysis_every_steps=0 / exp.analyze_agent_behav=False
+logging.wandb_log=false, analysis_every_steps=0, analyze_agent_behav=False
+                              in-run diagnostics off; scored offline from the
+                              archives at the end of the job
 ```
 
-**This configuration is graph-safe by construction, not by the guard.** The
-2026-07 corruption came from `on_device([pN, ...], "cpu")` inside the periodic
-diagnostics moving the pRNN out from under a captured graph (§5). Here those
-diagnostics never run at all — spatial curves are scored offline from the
-archives after training — so there is no device move to invalidate anything.
-`_skip_model_move_diag` remains as defence for anyone who turns analysis back
-on, but this preset does not depend on it.
+**`predNet.cuda_graph` is NOT set.** It was the fastest thing measured — 105
+grad/s, 2x the next best — but it only accelerates the *serial* path, and serial
+takes 8x more world-model steps per unit of experience than the reference, which
+degrades the place code (§9h). The pooled path the science needs is the one the
+graph cannot accelerate. Sections 1–9f remain the record of that investigation;
+9h–9i are where it ends.
 
-Against the production default of 1.19 grad/s this is ~59× on cluster hardware,
-turning a ~60 h run into ~1.8 h. **What was traded, explicitly:** the run stops
-at 84.5M environment steps rather than 491.5M — past the 73.4M sRSA plateau, but
-a run aimed at the E1 object question still needs the long budget (§9g).
+Speed at **matched dynamics**: 2,447 → 17,965 environment steps/s = **7.3x**.
+100.7M env steps goes from ~11.5 h to 1 h 47 m.
 
-⚠️ Every claim here is a speed claim. The learning gate is §6 and §9g; the
-`ppo_batch_size` decision exists *because* speed and dynamics conflicted, and
-dynamics won.
+**What was traded, explicitly:** the run covers 102.4M environment steps rather
+than 491.5M. That is past the 73.4M sRSA plateau and past 94.4M, but a run aimed
+at the E1 object question — whose fraction kept rising to 482M — still needs the
+long budget. At this throughput that full budget is ~7.6 h, not 2 h, and §9g
+shows why no engineering closes that gap.
 
 ## What to actually do, given the graphing hold
 
