@@ -2,7 +2,9 @@
 # Production multi-room training, tuned to finish inside 2 hours.
 #
 #   sbatch slurm/train_fast.sh [layouts] [envcfg] [branch] [seed]
-#     layouts: one | rooms | pool      (default rooms)
+#     layouts: single | one | rooms | pool   (default rooms)
+#              single = the original one-room MiniGrid-LRoom-v0 (env=lroom),
+#                       for eyeballing against older single-room runs
 #     envcfg : lroom_multi | squareroom_multi
 #
 # WHY THIS FITS IN 2 H, and what was traded to get there:
@@ -46,6 +48,17 @@
 
 set -eo pipefail
 LAYOUTS="${1:-rooms}"; ENVCFG="${2:-lroom_multi}"; BRANCH="${3:-sdu/speed}"
+# layouts=single means the ORIGINAL single-room env (env=lroom,
+# MiniGrid-LRoom-v0), not a one-element multi-room set. That is the shape older
+# runs used, so it is what a human can eyeball against them on wandb. It has no
+# exp.layouts key at all, and needs device_env turned on explicitly because
+# Configs/env/lroom.yaml defaults it False.
+if [ "$LAYOUTS" = "single" ]; then
+  ENVCFG=lroom
+  LAYOUT_OVERRIDES="exp.device_env=True"
+else
+  LAYOUT_OVERRIDES="exp.layouts=$LAYOUTS"
+fi
 # $4 = seed. Replication is the point: every result document in this repo
 # says "n = 1 seed per arm. No replication." A preset that cannot express a
 # second seed guarantees that stays true.
@@ -160,7 +173,7 @@ PPO_BATCH=1024
 # the policy generates the behaviour the world model learns from. 512 is 64x
 # diluted against the num_envs=8 baseline. 1.29x more steps is not worth 4x
 # more dilution; 128 already fits inside 2 h.
-uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
+uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=8 predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=400000 \
@@ -180,7 +193,10 @@ save
 # and would invalidate captured graphs), so score the archives offline here -
 # same numbers, computed after rather than during.
 RUN=$(ls -dt outputs/fast-${LAYOUTS}-s${SEED}_* 2>/dev/null | head -1)
-if [ -n "$RUN" ]; then
+# checkpoint_curve.py is the multi-room scorer and takes --layouts; skip it
+# for the single-room shape, where sRSA/SWdist are logged live to wandb by
+# the ordinary single-room eval path instead.
+if [ -n "$RUN" ] && [ "$LAYOUTS" != "single" ]; then
   echo "=== offline spatial scoring of $RUN ==="
   uv run python scripts/multienv/checkpoint_curve.py --run "$RUN" \
       --env $ENVCFG --layouts $LAYOUTS --spatial 2>&1 | tail -25
