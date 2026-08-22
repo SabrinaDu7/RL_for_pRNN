@@ -1018,6 +1018,74 @@ dilution. **When speed and dynamics conflict, dynamics win** — that is the
 brief, and it is the whole reason this section exists rather than a table
 reporting 105 grad/s and stopping.
 
+## 9h. The speed work found a science result: the world model can be over-trained
+
+Job 10444495 hit the speed target — **COMPLETED in 1 h 33 m** against ~60 h — and
+then failed the dynamics constraint in an informative way. Offline scoring of
+its archives against the committed 3-room reference series **[live]**:
+
+```
+    env step      loss     sRSA   SWdist    reference (same metric)
+   8,388,608  0.005478   0.5865   0.0226    10.5M: sRSA 0.4562  SWd 0.0181
+  16,777,216  0.004821   0.7101   0.0538
+  25,165,824  0.004027   0.7732   0.0764    31.5M: sRSA 0.6690  SWd 0.0242
+  33,554,432  0.003834   0.7694   0.0514
+  41,943,040  0.003903   0.7312   0.0690
+  50,331,648  0.003949   0.6957   0.0823    52.4M: sRSA 0.7382  SWd 0.0306
+  58,720,256  0.003474   0.6770   0.0633
+  67,108,864  0.003658   0.6027   0.0724    73.4M: sRSA 0.7870  SWd 0.0334
+  75,497,472  0.003479   0.6723   0.0672
+  83,886,080  0.003463   0.5581   0.0805
+```
+
+Two things at once:
+
+1. **It reaches the reference plateau in a third of the experience.** sRSA
+   **0.7732 at 25.2M** env steps against the reference's 0.7870 at 73.4M — 98%
+   of the plateau value, 2.9x sooner.
+2. **Then it degrades.** sRSA falls to **0.5581 by 83.9M — 72% of its own peak —
+   while prediction loss keeps improving** (0.0055 → 0.0035). SWdist runs 2.3x
+   the reference throughout.
+
+**Loss down, place code down, is over-training the predictor.** It echoes a
+result already in this project: L2 weight decay collapsed the place code
+(r 0.97 → 0.73) while prediction stayed healthy
+(`exp_trace_cell_scenarios_2026-08-11.md`).
+
+### The cause is a ratio nobody had named
+
+```
+                       wm gradient steps per unit of EXPERIENCE
+serial (stride 1)      1 per seqdur   =  1 per 256 env steps
+pooled (reference)     1 per frames   =  1 per 2048 env steps
+```
+
+Serial training — which is what `cuda_graph` accelerates, since the graph never
+engages on the pooled path (§2) — trains the world model **8x more per unit of
+experience** than the reference. The speed work adopted serial for its
+graph-ability and silently changed that ratio.
+
+### `predNet.wm_segment_stride`
+
+Trains on every k-th segment, so k sets the ratio directly.
+`stride=8` reproduces the reference exactly while keeping the serial path.
+Verified **[live]**: 128 → 16 world-model steps per update, 1 per 2048 env
+steps. It is also **faster**, because the world model is most of an update:
+
+```
+ stride  wm steps/upd  1 per N env    s/upd   env steps/s
+      1           128          256    1.839        17,815
+      8            16         2048    1.147        28,560
+```
+
+⚠️ Not identical to pooling — a pooled step averages the gradient over all
+segments, a strided serial step uses one. Same step count per experience,
+higher variance. Default is `stride=1`, i.e. unchanged behaviour.
+
+**This is the payoff of insisting on the metric gate.** A speed project that
+reported "1 h 33 m, 59x" and stopped would have shipped a configuration that
+quietly degrades the representation the whole project exists to study.
+
 ## 10. Reproducing
 
 All of these need the GPU otherwise idle; check
