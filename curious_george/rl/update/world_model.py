@@ -14,6 +14,7 @@ def train_world_model_on_episodes(
     *,
     batched: bool = False,
     segment_stride: int = 1,
+    pool_group: int = 0,
 ) -> None:
     """Train the pRNN on each episode segment of the (preprocessed) rollout.
 
@@ -58,7 +59,9 @@ def train_world_model_on_episodes(
             and len(done_indices) > 2
             and len(seg_lengths) == 1
         ):
-            adapter.train_on_episodes_batched(exps, done_indices, last_observations)
+            adapter.train_on_episodes_batched(
+                exps, done_indices, last_observations, group=pool_group
+            )
             return
         stride = max(1, int(segment_stride))
         for idx in range(1, len(done_indices), stride):

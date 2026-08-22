@@ -106,18 +106,26 @@ FRAMES=$((NUM_ENVS*256))
 # speed would cost 8x more dilution, and the brief is explicitly to not
 # sacrifice the learning dynamics.
 PPO_BATCH=1024
-# wm_segment_stride=8 trains the world model on every 8th segment: 16 steps per
-# update = 1 per 2048 environment steps, EXACTLY the reference series' ratio.
+# wm_pool_group=8: 16 world-model steps per update, EACH POOLED OVER 8 SEGMENTS.
+# That is 1 step per 2048 environment steps - the reference series' step COUNT -
+# with the reference's gradient QUALITY. Arrived at by elimination, on measured
+# cluster runs:
 #
-# This is a correction, not a tuning knob. Job 10444495 ran stride 1 (1 step per
-# 256 env steps, 8x the reference) and its per-room sRSA PEAKED at 0.7732 by
-# 25.2M steps - 98% of the reference plateau in a third of the experience - then
-# FELL to 0.5581 by 83.9M while prediction loss kept improving. Loss down, place
-# code down: over-training the predictor relative to experience. SWdist also ran
-# 2.3x the reference throughout.
+#   serial, every segment    1 step /  256 env steps, 1 segment  job 10444495
+#     -> OVER-TRAINS: sRSA peaks 0.7732 @25.2M then falls to 0.5581 @83.9M
+#        while loss keeps improving; SWdist 2.3x the reference
+#   serial, stride 8         1 step / 2048 env steps, 1 segment  job 10444819
+#     -> right COUNT, 8x the gradient variance. sRSA rises monotonically and
+#        SWdist is BETTER than reference (0.008-0.019 vs 0.018-0.038), but it
+#        reaches only 0.6383 against 0.7905 at the same step count
+#   pool all 128             1 step /32768 env steps, 128 segs
+#     -> 16x too few steps
+#   pool in GROUPS OF 8      1 step / 2048 env steps, 8 segments  <- this
 #
-# Striding also makes the run FASTER, because the world model is most of an
-# update: 17,815 -> 28,560 environment steps/s measured locally.
+# This drops cuda_graph, which never engages on the pooled path
+# (PRNNAdapter._use_graph_wm is consulted only in train_on_episode).
+# compile_cell=layer still applies - it compiles pRNN.rnn.forward, which both
+# paths use. Cost: 28,560 -> 16,029 env steps/s locally, still inside 2 h.
 # rl.episodes_total IS the world-model gradient-step budget under serial
 # training (schedule.py: total_wm_steps = total_steps/seqdur = episodes_total).
 # 400,000 episodes = 102.4M environment steps (NOTE: with a stride, episodes
@@ -144,8 +152,7 @@ PPO_BATCH=1024
 # diluted against the num_envs=8 baseline. 1.29x more steps is not worth 4x
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
-    predNet.batched_wm=False predNet.cuda_graph=True predNet.compile_cell=layer \
-    predNet.wm_segment_stride=8 \
+    predNet.batched_wm=True predNet.wm_pool_group=8 predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=400000 \
     logging.wandb_log=false \

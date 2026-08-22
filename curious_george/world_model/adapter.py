@@ -683,12 +683,31 @@ class PRNNAdapter:
         self.pN.trainStep(obs, act, return_stats=False)
         self.pN.numTrainingEpochs += 1
 
-    def train_on_episodes_batched(self, exps, done_indices: list[int], last_observations: list) -> None:
-        """ONE pooled pRNN gradient step over all equal-length episode
-        segments, stacked to (B, L): batched trainStep's loss is the mean of
-        the per-segment losses, so this replaces B sequential optimizer steps
-        with one step on the pooled gradient (optimization-semantics change -
-        flag-gated via predNet.batched_wm, curve-gate before defaulting on).
+    def train_on_episodes_batched(
+        self, exps, done_indices: list[int], last_observations: list,
+        *, group: int = 0,
+    ) -> None:
+        """Pooled pRNN gradient steps over equal-length episode segments,
+        stacked to (B, L). batched trainStep's loss is the mean of the
+        per-segment losses.
+
+        `group=0` pools ALL B segments into ONE step (the historical
+        predNet.batched_wm behaviour). `group=g` instead takes B/g steps, each
+        pooled over g segments - the middle design between one pooled step and
+        B serial ones.
+
+        Why the middle exists: the two extremes each get one thing wrong at
+        num_envs=128. Serial takes 128 steps per update = 1 per 256 env steps,
+        8x the reference's rate, and over-trains (job 10444495: sRSA peaks
+        0.7732 then falls to 0.5581). `wm_segment_stride=8` fixes the COUNT but
+        each step then sees ONE segment where the reference pools eight, i.e.
+        8x the gradient variance - and job 10444819 reached only sRSA 0.6383
+        against the reference 0.7905 at the SAME step count. Pooling all 128
+        gives one step per 32768 env steps, 16x too few.
+
+        `group=8` at num_envs=128 gives 16 steps per update, each pooled over 8
+        segments: the reference's step COUNT and its gradient QUALITY.
+
         Requires fast_speedhd and equal segment lengths (callers check)."""
         with timer("update/wm/format"):
             B = len(done_indices) - 1
@@ -721,8 +740,12 @@ class PRNNAdapter:
             # whole GPU for a branch that never changed the tensor.
 
         with timer("update/wm/train_step"):
-            self.pN.trainStep(obs_b, act_b, batched=True, return_stats=False)
-        self.pN.numTrainingEpochs += 1
+            g = int(group) if group and group > 0 else obs_b.size(0)
+            for i in range(0, obs_b.size(0), g):
+                self.pN.trainStep(
+                    obs_b[i : i + g], act_b[i : i + g], batched=True, return_stats=False
+                )
+                self.pN.numTrainingEpochs += 1
 
 
 class SingleSRTracker:

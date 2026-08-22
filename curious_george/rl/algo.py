@@ -124,6 +124,7 @@ class PredictivePPOAlgo:
         batched_curiosity=False,
         compile_cell=False,
         wm_segment_stride=1,
+        wm_pool_group=0,
         adam_betas=(0.9, 0.999),
     ):
         # env may be a single shell, a list of shells (parallel collection),
@@ -161,6 +162,7 @@ class PredictivePPOAlgo:
         self.prnn_seqdur = prnn_seqdur
         self.batched_wm = batched_wm
         self.wm_segment_stride = wm_segment_stride
+        self.wm_pool_group = wm_pool_group
         self.cuda_graph = cuda_graph
         self.pastSR = pastSR
         self.curious_agent = curious_agent
@@ -341,6 +343,7 @@ class PredictivePPOAlgo:
                 self.adapter, exps, done_indices, last_observations,
                 batched=self.batched_wm,
                 segment_stride=self.wm_segment_stride,
+                pool_group=self.wm_pool_group,
             )
 
         return logs.as_dict()
