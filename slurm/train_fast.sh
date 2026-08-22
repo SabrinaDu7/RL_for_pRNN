@@ -91,10 +91,21 @@ NUM_ENVS=128
 FRAMES=$((NUM_ENVS*256))
 # rl.episodes_total IS the world-model gradient-step budget under serial
 # training (schedule.py: total_wm_steps = total_steps/seqdur = episodes_total).
-# 650,000 grad steps at the measured 106.74 grad/s = 1.69 h of training, plus
-# ~5 min setup and ~10 min offline scoring => 1.94 h end to end.
-# That is 166.4M environment steps: 34% of the full budget, past the 73.4M sRSA
-# plateau and past the 94.4M point.
+# 400,000 grad steps = 102.4M environment steps.
+#
+# Sized from the MEASURED PRODUCTION RATE, not the benchmark. tests/perf
+# benchmarks reported 106.74 grad/s at 4 updates; a real run sustains
+# 19,286 env steps/s = 75.3 grad/s, because a benchmark excludes archiving,
+# checkpoint saves and the multi-room layout resampling. Believe the run.
+#   setup ~10 min + 400,000/75.3 = 88 min training + ~12 min offline scoring
+#   = ~1.83 h end to end.
+# 102.4M env steps is PAST the 94.4M point where the committed reference series
+# reaches its plateau (per-room sRSA 0.7905), so this reproduces the reference
+# result rather than merely approaching it.
+#
+# archive_every_steps=8388608 gives 12 archives. At 2097152 it was 79, and
+# scoring 79 checkpoints with --spatial does not fit in the window - the
+# archive cadence is part of the time budget, not free.
 #
 # num_envs=128 rather than 512 DELIBERATELY. Measured on an L40S, gc scales
 # 106.74 -> 125.35 -> 138.18 grad/s at 128/256/512, so 512 would buy 1.29x more
@@ -106,9 +117,9 @@ FRAMES=$((NUM_ENVS*256))
 uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     predNet.batched_wm=False predNet.cuda_graph=True predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$((FRAMES/4)) \
-    rl.episodes_total=650000 \
+    rl.episodes_total=400000 \
     logging.wandb_log=false \
-    logging.archive_every_steps=2097152 logging.save_every_steps=8388608 \
+    logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.analyze_agent_behav=False \
     logging.analysis_every_steps=0 logging.plot_every_steps=0 \
     exp.exp_name=fast-$LAYOUTS > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
