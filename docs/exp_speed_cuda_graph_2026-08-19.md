@@ -912,7 +912,8 @@ their CPU cap.
 
 `cuda_graph` and `compile_cell=layer` had never been run together on any
 machine. They stack, and nearly double. Mila **NVIDIA L40S**, 16 CPUs, serial
-world model, idle GPU **[live]** (`slurm/push2h.sh`, job 10443902):
+world model, idle GPU **[live]** (Mila job 10443902; results under
+`$SCRATCH/pRNN/push2h_10443902/`):
 
 ```
 arm                          GRAD/s   s/upd   plateau
@@ -1198,9 +1199,24 @@ bar, so "matches" means "the three-seed mean lands on the reference point", not
 All of these need the GPU otherwise idle; check
 `nvidia-smi --query-compute-apps=pid,used_memory --format=csv` first.
 
+⚠️ The one-off shell wrappers these commands used to live in
+(`slurm/graph_bench.sh`, `slurm/push2h.sh`, `tests/perf/wm_regime_arms.sh`,
+`tests/perf/cuda_graph_gate_runs.sh`) were **removed** — they wrapped
+benchmarks of the `cuda_graph` configuration that was ultimately rejected
+(§9h), and added nothing over the `benchmark.py` invocation they contained.
+The commands are inlined here instead. The scripts remain in git history at
+`85db7c7` if a number needs re-deriving exactly.
+
 ```bash
-# the four world-model regimes (section 3)
-bash tests/perf/wm_regime_arms.sh <outdir>
+# the four world-model regimes (section 3). Run them SEQUENTIALLY on an idle
+# GPU; D (pooled+graph) is the negative control and must match A, because the
+# graph never engages on the pooled path.
+for arm in "A True False" "B False False" "C False True" "D True True"; do
+  set -- $arm
+  uv run python tests/perf/benchmark.py --updates 6 --warmup-updates 1 --out <outdir>/$1.json \
+    --override env=lroom_multi --override run=multienv \
+    --override predNet.batched_wm=$2 --override predNet.cuda_graph=$3
+done
 
 # num_envs sweep on the serial+graphed path (section 9b)
 for B in 8 16 32 64 128 256; do F=$((B*256)); \
@@ -1213,15 +1229,21 @@ for B in 8 16 32 64 128 256; do F=$((B*256)); \
 uv run python tests/perf/sweep_trainstep_batch.py --device cuda \
     --batches 1,8,32,64,128,256,512,1024 --reps 5 --out <outdir>/trainstep_sweep.json
 
-# the learning gate (section 6); arg 1 = seconds per arm, arg 2 = log dir
-bash tests/perf/cuda_graph_gate_runs.sh 2400 <logdir>
+# the learning gate (section 6). Both arms CONCURRENTLY on purpose: the claim
+# is loss vs GRADIENT STEP, invariant to how fast either runs.
+for cg in False True; do
+  timeout 2400 uv run python main_train.py env=lroom_multi run=multienv exp.layouts=one \
+    predNet.batched_wm=False predNet.cuda_graph=$cg exp.seed=2 logging.wandb_log=false \
+    logging.analysis_every_steps=0 logging.plot_every_steps=0 \
+    logging.archive_every_steps=524288 exp.exp_name=gate-$cg &
+done; wait
 
 # then score BOTH arms the same way - flags matter, the run dir stores no config
 uv run python scripts/multienv/checkpoint_curve.py --run <run> \
     --env lroom_multi --layouts one --spatial
 
-# on Mila (benchmark job, not a training run)
-sbatch slurm/graph_bench.sh
+# the production run (section 9i); layouts: single | one | rooms | pool
+sbatch slurm/train_fast.sh rooms lroom_multi sdu/speed 2
 
 # op / API census on one rollout
 uv run python tests/perf/profile_api.py env=lroom_multi run=multienv
