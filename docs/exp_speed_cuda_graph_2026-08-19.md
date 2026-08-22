@@ -1086,6 +1086,69 @@ higher variance. Default is `stride=1`, i.e. unchanged behaviour.
 reported "1 h 33 m, 59x" and stopped would have shipped a configuration that
 quietly degrades the representation the whole project exists to study.
 
+## 9i. RESULT — the reference learning curve, in 1 h 47 m
+
+`sbatch slurm/train_fast.sh rooms lroom_multi`, job **10445207**, L40S,
+**COMPLETED in 01:46:51** including setup, training and offline scoring. Scored
+by the job itself with `checkpoint_curve.py --spatial` **[live]**:
+
+```
+    env step      loss     sRSA   SWdist   nearest committed reference
+   8,388,608  0.008327   0.4427   0.0272   10.5M: 0.4562 / 0.0181
+  16,777,216  0.006158   0.5630   0.0170
+  25,165,824  0.005952   0.5853   0.0179   31.5M: 0.6690 / 0.0242
+  33,554,432  0.005248   0.6548   0.0209
+  41,943,040  0.005041   0.7026   0.0244
+  50,331,648  0.004535   0.7411   0.0271   52.4M: 0.7382 / 0.0306
+  58,720,256  0.004498   0.7553   0.0387
+  67,108,864  0.004207   0.7749   0.0362   73.4M: 0.7870 / 0.0334
+  75,497,472  0.004081   0.7890   0.0433
+  83,886,080  0.004236   0.7886   0.0428
+  92,274,688  0.003883   0.7907   0.0476   94.4M: 0.7905 / 0.0379
+ 100,663,296  0.003724   0.8025   0.0425
+```
+
+**Matched against the reference at every comparable point:**
+
+```
+reference           this run          ratio
+0.4562 @ 10.5M      0.4427 @  8.4M    0.97
+0.6690 @ 31.5M      0.6548 @ 33.6M    0.98
+0.7382 @ 52.4M      0.7411 @ 50.3M    1.00
+0.7870 @ 73.4M      0.7890 @ 75.5M    1.00
+0.7905 @ 94.4M      0.7907 @ 92.3M    1.00
+```
+
+Monotone, no collapse. Prediction loss slightly **better** than the reference
+(0.003724 vs 0.003857 at ~94M). SWdist 0.0425 vs 0.0379 — 12% high, inside the
+±27% coefficient of variation `open_choices.md` §1c documents for that metric.
+
+**Speed, on environment throughput at matched dynamics:**
+
+```
+production default (pooled-all, num_envs=8, eager)    2,447 env steps/s
+this configuration                                   17,965 env steps/s     7.3x
+```
+
+- 100.7M environment steps: **~11.5 h → 1 h 47 m**
+- the full 491.5M budget: **~55.8 h → ~7.6 h** (still not a 2 h run, and §9g
+  explains why that is arithmetically impossible)
+
+### What actually did the work
+
+| | contribution |
+|---|---|
+| `compile_cell=layer` | fuses the 256-step recurrence — 3.89x on the layer, and it works on **both** the serial and pooled paths |
+| `num_envs=128` | amortises the rollout over many more world-model steps; rollout cost per update is flat across 8→256 |
+| `wm_pool_group=8` | **the correctness fix** — reference step count *and* reference gradient quality |
+| `ppo_batch_size=1024` | holds policy dilution to 2x rather than 16x |
+
+`cuda_graph` is **not** in the final configuration. It is worth 2x on the serial
+path, but serial changes world-model steps per unit of experience by 8x and
+degrades the place code (§9h). The pooled path the science needs is the one the
+graph cannot accelerate. That is the honest end of the graphing thread: it was
+the fastest thing measured and it is not what shipped.
+
 ## 10. Reproducing
 
 All of these need the GPU otherwise idle; check
