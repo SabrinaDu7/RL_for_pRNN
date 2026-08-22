@@ -17,6 +17,10 @@
 #    ⚠️ Still a SCIENTIFIC trade: the E1 object-cell fraction kept rising past
 #    94M (0.047 -> 0.067 at 482M), so a run aimed at the OBJECT question needs
 #    the long budget. This preset answers the map-formation question.
+# wandb is OFF here: the run scores its own archives offline at the end, and
+# job 10444214 died at wandb init on a compute node (logging.wandb_log defaults
+# to True and was not overridden).
+#
 # 3. GPU TYPE IS LOAD-BEARING. Same config, measured: L40S 52.45 grad/s vs
 #    Quadro RTX 8000 30.88 - a 1.7x spread that decides whether it fits
 #    (1.52 h vs 2.58 h). Hence the explicit l40s request; without it the run
@@ -39,6 +43,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 module --force purge && module load python/3.10
 export PATH="$HOME/.local/bin:$PATH"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export PYTHONUNBUFFERED=1
 export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}" UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache CG_DEVICE=cuda
 
 SRC=$HOME/experiments/RL_for_pRNN
@@ -74,9 +79,16 @@ uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     predNet.batched_wm=False predNet.cuda_graph=True predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$((FRAMES/4)) \
     rl.episodes_total=650000 \
+    logging.wandb_log=false \
     logging.archive_every_steps=2097152 logging.save_every_steps=8388608 \
     logging.analysis_every_steps=8388608 logging.plot_every_steps=0 \
-    exp.exp_name=fast-$LAYOUTS 2>&1 | tail -40
+    exp.exp_name=fast-$LAYOUTS > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+# Never pipe training output through `tail`. Job 10444214 died with exit 1 and
+# NO visible traceback because `| tail -40` showed the last 40 lines of the
+# hydra config dump instead of the error - the same way job 10416788's gate
+# failure was hidden. Full log to $DEST, excerpt printed here.
+grep -vE '^Processing|^\s*$' "$DEST/train.log" | tail -25
+[ -n "${TRAIN_RC:-}" ] && { echo "TRAINING FAILED rc=$TRAIN_RC"; tail -40 "$DEST/train.log"; exit $TRAIN_RC; }
 save
 
 # Spatial curves are skipped in-run under cuda_graph (the eval moves the model
