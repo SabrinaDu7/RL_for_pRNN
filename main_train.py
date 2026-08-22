@@ -6,6 +6,7 @@ logging in training/logging.py.
 """
 
 import warnings
+from dataclasses import replace
 
 import hydra
 import wandb
@@ -27,13 +28,27 @@ def my_app(cfg: DictConfig):
     print(OmegaConf.to_yaml(cfg))
 
     run_ctx = setup_run(cfg)
-    if cfg.logging.wandb_log:
-        init_wandb(cfg, run_ctx)
+    if run_ctx.wandb_log:
+        # A logging backend must not be able to kill a training run. Job
+        # 10444214 died 61 s in because wandb could not initialise on a compute
+        # node, losing the whole allocation for a metrics sink whose numbers
+        # are also recoverable offline from the archived checkpoints
+        # (scripts/multienv/checkpoint_curve.py). Degrade, do not abort.
+        try:
+            init_wandb(cfg, run_ctx)
+        except Exception as exc:  # noqa: BLE001 - any backend failure is survivable
+            print(
+                f"[wandb] init FAILED ({type(exc).__name__}: {exc}). "
+                "Continuing WITHOUT wandb; scalars are lost but checkpoints and "
+                "the offline spatial scoring are not.",
+                flush=True,
+            )
+            run_ctx = replace(run_ctx, wandb_log=False)
 
     comps = setup_training(cfg)
     run_training(cfg, run_ctx, comps)
 
-    if cfg.logging.wandb_log:
+    if run_ctx.wandb_log:
         wandb.finish()
 
 

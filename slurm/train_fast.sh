@@ -17,13 +17,18 @@
 #    ⚠️ Still a SCIENTIFIC trade: the E1 object-cell fraction kept rising past
 #    94M (0.047 -> 0.067 at 482M), so a run aimed at the OBJECT question needs
 #    the long budget. This preset answers the map-formation question.
-# wandb is OFF here (job 10444214 died at wandb init on a compute node), and
-# BECAUSE it is off, in-run analysis must be off too: with wandb_log=false
-# run_behavior_analysis takes the save_analysis_of_agent_behav branch, which
-# writes plotly figures through kaleido - a headless browser that does not
-# exist on a compute node. That killed job 10444320 twelve minutes in.
-# Nothing is lost: spatial curves are already skipped under cuda_graph and are
-# recovered from the archives at the end of this script.
+# wandb is ON, and in-run sRSA/SWdist analysis with it. Both were off in the
+# first working version for reasons that no longer hold:
+#   - job 10444214 died at wandb init on a compute node. main_train.py now
+#     degrades to no-wandb instead of aborting, so that cannot kill a run.
+#   - job 10444320 died in kaleido, because wandb_log=false routes behaviour
+#     analysis into save_analysis_of_agent_behav -> plotly -> a headless
+#     browser. With wandb ON and plot_every_steps=0, log_behavior returns after
+#     the MI scalar and never touches plotly.
+#   - the spatial eval moves the pRNN off-device, which was unsafe under a
+#     captured graph. The final config does not use cuda_graph, so it is safe.
+# The offline scoring at the end still runs: wandb is the live view, the
+# archives remain the checkable record.
 #
 # 3. GPU TYPE IS LOAD-BEARING. Same config, measured: L40S 52.45 grad/s vs
 #    Quadro RTX 8000 30.88 - a 1.7x spread that decides whether it fits
@@ -159,10 +164,9 @@ uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     predNet.batched_wm=True predNet.wm_pool_group=8 predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=400000 \
-    logging.wandb_log=false \
+    logging.wandb_log=true \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
-    exp.analyze_agent_behav=False \
-    logging.analysis_every_steps=0 logging.plot_every_steps=0 \
+    logging.analysis_every_steps=8388608 logging.plot_every_steps=0 \
     exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
