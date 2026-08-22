@@ -59,7 +59,16 @@ exp.num_envs=128              amortises the rollout over 128 gradient steps
 rl.ppo_batch_size=1024        NOT frames/4 — see §9g, this is the trap
 rl.episodes_total=330000      = the gradient-step budget = 84.5M env steps
 --gres=gpu:l40s:1             GPU type is worth 1.7x (§9f)
+logging.analysis_every_steps=0 / exp.analyze_agent_behav=False
 ```
+
+**This configuration is graph-safe by construction, not by the guard.** The
+2026-07 corruption came from `on_device([pN, ...], "cpu")` inside the periodic
+diagnostics moving the pRNN out from under a captured graph (§5). Here those
+diagnostics never run at all — spatial curves are scored offline from the
+archives after training — so there is no device move to invalidate anything.
+`_skip_model_move_diag` remains as defence for anyone who turns analysis back
+on, but this preset does not depend on it.
 
 Against the production default of 1.19 grad/s this is ~59× on cluster hardware,
 turning a ~60 h run into ~1.8 h. **What was traded, explicitly:** the run stops
