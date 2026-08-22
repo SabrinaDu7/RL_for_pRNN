@@ -26,8 +26,13 @@ class TrainingSchedule:
     episode_steps:      steps per trajectory (`predNet.seqdur`).
     frames_per_update:  environment steps collected per update (`rl.frames`).
     ppo_epochs/ppo_batch_size: the policy optimizer's minibatching.
-    pooled_world_model: `predNet.batched_wm` - one pooled world-model gradient
-                        step per update instead of one per episode segment.
+    pooled_world_model: `predNet.batched_wm` - pooled world-model gradient
+                        steps instead of one per episode segment.
+    pool_group:         `predNet.wm_pool_group` - pooled in groups of g, so
+                        segments/g steps per update rather than one. 0 = pool
+                        everything into a single step.
+    segment_stride:     `predNet.wm_segment_stride` - serial only, train on
+                        every k-th segment, so segments/k steps per update.
     """
 
     episodes_total: int
@@ -36,6 +41,8 @@ class TrainingSchedule:
     ppo_epochs: int
     ppo_batch_size: int
     pooled_world_model: bool
+    pool_group: int = 0
+    segment_stride: int = 1
 
     @classmethod
     def from_config(cls, cfg) -> "TrainingSchedule":
@@ -46,6 +53,8 @@ class TrainingSchedule:
             ppo_epochs=int(cfg.rl.ppo_epochs),
             ppo_batch_size=int(cfg.rl.ppo_batch_size),
             pooled_world_model=bool(cfg.predNet.get("batched_wm", False)),
+            pool_group=int(cfg.predNet.get("wm_pool_group", 0)),
+            segment_stride=int(cfg.predNet.get("wm_segment_stride", 1)),
         )
 
     @property
@@ -63,8 +72,19 @@ class TrainingSchedule:
 
     @property
     def world_model_steps_per_update(self) -> int:
-        """Pooling replaces one gradient step per episode segment with one."""
-        return 1 if self.pooled_world_model else self.episodes_per_update
+        """World-model optimizer steps per update, across all three regimes.
+
+        This number is the run's actual gradient-step budget and the startup
+        summary is what the configs tell readers to trust over their own
+        comments, so it must track `wm_pool_group` and `wm_segment_stride`. It
+        did not when those were added, and printed "1/update, POOLED" for a run
+        genuinely taking 16.
+        """
+        n = self.episodes_per_update
+        if self.pooled_world_model:
+            g = self.pool_group
+            return max(1, -(-n // g)) if g and g > 0 else 1
+        return max(1, -(-n // max(1, self.segment_stride)))
 
     @property
     def policy_steps_per_update(self) -> int:
@@ -78,6 +98,21 @@ class TrainingSchedule:
     def total_policy_steps(self) -> int:
         return self.policy_steps_per_update * self.total_updates
 
+    @property
+    def env_steps_per_world_model_step(self) -> int:
+        """The ratio that decides whether the world model is over- or
+        under-trained relative to experience (docs/exp_speed_cuda_graph
+        2026-08-19 9h). Printing it makes the regime legible at a glance."""
+        return self.frames_per_update // max(1, self.world_model_steps_per_update)
+
+    @property
+    def _wm_regime(self) -> str:
+        if self.pooled_world_model:
+            g = self.pool_group
+            return f", POOLED in groups of {g}" if g and g > 0 else ", POOLED (all)"
+        k = max(1, self.segment_stride)
+        return "" if k == 1 else f", SERIAL stride {k}"
+
     def summary(self) -> str:
         """Printed at startup: optimizer-step budgets are the thing that
         silently collapses when the rollout shape changes, so state them."""
@@ -89,8 +124,8 @@ class TrainingSchedule:
                 f"  {self.frames_per_update} steps/update "
                 f"({self.episodes_per_update} episodes) -> {self.total_updates} updates",
                 f"  world-model gradient steps: {self.total_world_model_steps} "
-                f"({self.world_model_steps_per_update}/update"
-                f"{', POOLED' if self.pooled_world_model else ''})",
+                f"({self.world_model_steps_per_update}/update{self._wm_regime}"
+                f") = 1 per {self.env_steps_per_world_model_step} env steps",
                 f"  policy gradient steps:      {self.total_policy_steps} "
                 f"({self.policy_steps_per_update}/update)",
             ]
