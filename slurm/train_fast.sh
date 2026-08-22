@@ -17,9 +17,13 @@
 #    ⚠️ Still a SCIENTIFIC trade: the E1 object-cell fraction kept rising past
 #    94M (0.047 -> 0.067 at 482M), so a run aimed at the OBJECT question needs
 #    the long budget. This preset answers the map-formation question.
-# wandb is OFF here: the run scores its own archives offline at the end, and
-# job 10444214 died at wandb init on a compute node (logging.wandb_log defaults
-# to True and was not overridden).
+# wandb is OFF here (job 10444214 died at wandb init on a compute node), and
+# BECAUSE it is off, in-run analysis must be off too: with wandb_log=false
+# run_behavior_analysis takes the save_analysis_of_agent_behav branch, which
+# writes plotly figures through kaleido - a headless browser that does not
+# exist on a compute node. That killed job 10444320 twelve minutes in.
+# Nothing is lost: spatial curves are already skipped under cuda_graph and are
+# recovered from the archives at the end of this script.
 #
 # 3. GPU TYPE IS LOAD-BEARING. Same config, measured: L40S 52.45 grad/s vs
 #    Quadro RTX 8000 30.88 - a 1.7x spread that decides whether it fits
@@ -105,7 +109,8 @@ uv run python main_train.py env=$ENVCFG run=multienv exp.layouts=$LAYOUTS \
     rl.episodes_total=650000 \
     logging.wandb_log=false \
     logging.archive_every_steps=2097152 logging.save_every_steps=8388608 \
-    logging.analysis_every_steps=8388608 logging.plot_every_steps=0 \
+    exp.analyze_agent_behav=False \
+    logging.analysis_every_steps=0 logging.plot_every_steps=0 \
     exp.exp_name=fast-$LAYOUTS > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
