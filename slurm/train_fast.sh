@@ -53,6 +53,30 @@ cd $SLURM_TMPDIR/RL_for_pRNN
 git fetch -q "$SRC" "refs/remotes/origin/$BRANCH"
 git checkout -q --detach FETCH_HEAD
 echo "training $(git rev-parse --short HEAD)"
+
+# .env is COMMITTED and carries a machine-specific absolute path
+# (RL_STORAGE="/home/sabrina/.../outputs"), so a clean clone on any other
+# machine tries to write to that user's home. Job 10444304 died on exactly
+# this: PermissionError: [Errno 13] Permission denied: '/home/sabrina'.
+# The older slurm scripts never hit it because they cp -r'd the cluster
+# checkout, whose .env had been edited locally; cloning a named ref for
+# traceability lost that override.
+# python-dotenv's load_dotenv() defaults to override=False, so an exported
+# variable wins over .env - no repo edit needed here.
+export RL_STORAGE="$SLURM_TMPDIR/RL_for_pRNN/outputs"
+mkdir -p "$RL_STORAGE"
+# Preflight: fail LOUDLY and immediately rather than 60 s into a GPU
+# allocation, and prove the path the code will actually use.
+uv run python -c "
+from curious_george.storage import get_storage_dir
+import os, sys
+d = get_storage_dir()
+print(f'storage dir -> {d}')
+os.makedirs(d, exist_ok=True)
+t = os.path.join(d, '.writetest')
+open(t, 'w').close(); os.remove(t)
+print('storage is writable')
+" || { echo 'PREFLIGHT FAILED: storage dir not writable'; exit 1; }
 rm -rf .venv && uv venv .venv && source .venv/bin/activate && uv sync
 
 DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p $DEST
