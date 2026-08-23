@@ -176,3 +176,67 @@ def test_distribution_validation_is_restored_after_capture():
     before = torch.distributions.Distribution._validate_args
     _run(True, _fixed_index_sets(1, 256, 2048))
     assert torch.distributions.Distribution._validate_args == before
+
+
+def test_graphed_policy_survives_spatial_evals():
+    """The policy graph has the same exposure as the world model's.
+
+    `evaluate_spatial_representation` appends `agent.acmodel` to the modules it
+    moves to CPU, so a captured PPO step is subject to exactly the failure that
+    made a graphed world-model run train on nothing: `Module._apply` replaces
+    `param.data` and buffers and mutates `param.grad` in place, and a graph
+    holds all of them by address. Asserting "finite" would not catch it - the
+    weights must move EXACTLY as eager moves them, across the eval.
+    """
+    from curious_george.rl.update.losses import LOSSES
+    from curious_george.rl.update.updater import _index_policy_batch
+    from curious_george.world_model.device import on_device
+
+    sets = _fixed_index_sets(STEPS, 256, 2048)
+    results = {}
+    for graphed in (False, True):
+        algo, acmodel, _ = _algo(graphed)
+        exps, _ = algo.collect_experiences()
+        for k in ("done_indices", "last_observations"):
+            if k in exps:
+                del exps[k]
+        lk = dict(clip_eps=algo.clip_eps, entropy_coef=algo.entropy_coef,
+                  value_loss_coef=algo.value_loss_coef)
+        dev = algo.device
+        trainer = None
+        if graphed:
+            from curious_george.rl.update.policy_graph import GraphPolicyTrainer
+
+            trainer = GraphPolicyTrainer(
+                acmodel, algo.optimizer, loss_fn=LOSSES[algo.loss_name],
+                loss_kwargs=lk, max_grad_norm=algo.max_grad_norm,
+            )
+            trainer.bind(exps)
+        else:
+            # capturable in both arms, so only the mechanism is under test
+            algo.optimizer = _make_capturable(algo.optimizer)
+
+        deltas = []
+        for inds in sets:
+            idx = torch.as_tensor(inds, device=dev, dtype=torch.long)
+            before = _weights(acmodel)
+            if graphed:
+                trainer.step(idx)
+            else:
+                sb = _index_policy_batch(exps, idx, acmodel)
+                dist, value = acmodel(sb.obs, SR=sb.SR)
+                loss, _ = LOSSES[algo.loss_name](dist, value, sb, **lk)
+                algo.optimizer.zero_grad(set_to_none=False)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(acmodel.parameters(), algo.max_grad_norm)
+                algo.optimizer.step()
+            deltas.append((_weights(acmodel) - before).norm().item())
+            with on_device([acmodel], "cpu"):  # the analysis event
+                pass
+        results[graphed] = deltas
+
+    for k, (e, g) in enumerate(zip(results[False], results[True])):
+        assert g == pytest.approx(e, rel=1e-4), (
+            f"step {k} after an eval: graphed moved the weights by {g:.6e}, "
+            f"eager by {e:.6e} - the policy graph is training on stranded memory"
+        )
