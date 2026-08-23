@@ -140,6 +140,29 @@ FRAMES=$((NUM_ENVS*256))
 # speed would cost 8x more dilution, and the brief is explicitly to not
 # sacrifice the learning dynamics.
 PPO_BATCH=1024
+EPISODES=400000                 # = world-model gradient-step budget / pool group
+SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
+TOTAL_STEPS=$((EPISODES*SEQDUR))
+
+# Cadences are DERIVED from a count of events, not written as raw step numbers.
+# The quantity anyone actually reasons about is "how many points do I want on
+# the curve"; a literal like 8388608 hides that and silently rescales the
+# moment the budget changes.
+#
+# N_ANALYSIS=100 rather than the 12 an 8388608 literal gave: sRSA is noisy at
+# this sample size (untrained 0.062 +/- 0.040; a trained single-room run swung
+# 0.45-0.63 between adjacent events), so 12 points cannot separate a trend from
+# the estimator. The 2026-07 reference logged ~50 over a 5x shorter run.
+N_ANALYSIS=100
+N_PLOT=12                       # figures are heavy; far fewer than the scalars
+ANALYSIS_EVERY=$((TOTAL_STEPS/N_ANALYSIS))
+PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
+
+# exp.offpolicy_prnn_eval logs sRSA_offPolicy from a RANDOM agent beside the
+# on-policy one. Without it a falling sRSA is ambiguous: the map may have
+# degraded, or the policy may simply have sharpened and stopped visiting much
+# of the room. The random walker's coverage does not change with training, so
+# the pair separates those.
 # wm_pool_group=8: 16 world-model steps per update, EACH POOLED OVER 8 SEGMENTS.
 # That is 1 step per 2048 environment steps - the reference series' step COUNT -
 # with the reference's gradient QUALITY. Arrived at by elimination, on measured
@@ -188,10 +211,11 @@ PPO_BATCH=1024
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=8 predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
-    rl.episodes_total=400000 rl.entropy_coef=$ENT \
+    rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
     logging.wandb_log=true \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
-    logging.analysis_every_steps=8388608 logging.plot_every_steps=8388608 \
+    exp.offpolicy_prnn_eval=True \
+    logging.analysis_every_steps=$ANALYSIS_EVERY logging.plot_every_steps=$PLOT_EVERY \
     exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
