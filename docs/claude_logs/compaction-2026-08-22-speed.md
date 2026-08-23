@@ -1,0 +1,225 @@
+2026-08-22 · branch `sdu/speed`
+
+# Speed: a 7.3× training speedup, two ratios nobody had named, and eight failures
+
+Primary read: [`../exp_speed_cuda_graph_2026-08-19.md`](../exp_speed_cuda_graph_2026-08-19.md).
+That is the measured record; this is the state of play, the failure modes, and
+what is in flight.
+
+---
+
+## 1. The headline
+
+```bash
+sbatch slurm/train_fast.sh rooms lroom_multi        # ~1h47m, n=3
+```
+
+**Multi-room training reproduces the committed reference learning curve in
+1 h 47 m instead of ~11.5 h**, replicated across three seeds
+(`01:46:51 / 01:47:35 / 01:47:34`, jobs 10445207 / 10445463 / 10445464):
+
+```
+reference           three-seed mean      sd
+0.4562 @ 10.5M      0.4523 @  8.4M    0.0076
+0.6690 @ 31.5M      0.6657 @ 33.6M    0.0328
+0.7382 @ 52.4M      0.7397 @ 50.3M    0.0339
+0.7870 @ 73.4M      0.7942 @ 75.5M    0.0221
+0.7905 @ 94.4M      0.8013 @ 92.3M    0.0230
+```
+
+Every point inside one sd. **2,447 → 17,965 environment steps/s at matched
+dynamics.** First result in the project carried at n=3 rather than n=1 — which
+was affordable *because* the run got fast.
+
+What did it, in order of contribution:
+
+| | |
+|---|---|
+| `compile_cell=layer` | `torch.compile` the **whole 256-step loop**, not the cell. 189 → 49 ms, **3.89×** |
+| `num_envs=128` | rollout cost per update is flat 8 → 256 envs |
+| `wm_pool_group=8` | the correctness fix (§3), and fewer steps so also faster |
+| `--gres=gpu:l40s:1` | GPU type is worth **1.7×** |
+
+**`predNet.cuda_graph` is NOT in the final config**, despite being the fastest
+thing measured (105 grad/s, 89× the default). See §3.
+
+## 2. Why the pRNN is slow — the budget, closed
+
+Per timestep of the world-model step, measured:
+
+```
+kernel launches                41.0
+CPU time                     1041.0 us    of which cudaLaunchKernel 250.0 (24%)
+                                          the other ~780 us is PyTorch dispatch
+GPU time                      132.8 us    (CPU/GPU 7.8x)
+memory floor                    5.11 us   (must read 1.28 MB of weights)
+```
+
+Three layers, each with a number: a **5.11 µs physics floor**, **132.8 µs** of
+GPU because the step is 41 separate small kernels, **1041 µs** of CPU because
+161 aten ops are dispatched to command them. **The dominant cost is PyTorch
+dispatch — not the driver, not the GPU.** An RTX 8000 and an RTX 4060 give the
+same per-step time (0.1879 vs 0.1946 s): a 4× bigger GPU buys nothing.
+
+Targetable: the launches (fusion 2.47×, graphs 8.59×). Not targetable: the
+weight read. Targetable only by batching: its *per-sample* cost — 12.076 µs at
+B=1 → **0.117 µs at B=128**.
+
+## 3. The science result the speed work turned up
+
+**The world model can be over-trained, and the symptom is invisible in the
+loss.** Serial world-model training takes 1 gradient step per 256 env steps;
+the pooled reference takes 1 per 2048 — **8× apart**. Running serial (which is
+what `cuda_graph` accelerates):
+
+```
+sRSA peaks 0.7732 @25.2M, then FALLS to 0.5581 @83.9M
+while prediction loss keeps IMPROVING 0.0055 -> 0.0035
+SWdist runs 2.3x the reference throughout
+```
+
+Loss down, place code down. It echoes the known result that L2 collapsed the
+place code (r 0.97 → 0.73) while prediction stayed healthy.
+
+Fixing the step **count** alone was not enough. `wm_segment_stride=8` restores
+the reference's rate but each step then sees ONE segment where the reference
+pools eight — 8× the gradient variance — and it reached only **0.6383 against
+0.7905 at essentially the same step count** (49,150 vs 46,094). That is what
+proved it is gradient *quality*, not step count.
+
+**`predNet.wm_pool_group=8`** — pooled in groups of 8 — matches both, and is
+what shipped. It also forced dropping `cuda_graph`, because the graph only
+engages on the serial path (`_use_graph_wm` is consulted in
+`train_on_episode`, never in `train_on_episodes_batched`). **The fastest
+configuration was the wrong one.**
+
+## 4. Two ratios nobody had named
+
+Both are gradient steps per unit of EXPERIENCE, and both were silently changed
+by the speed work:
+
+```
+                   wm steps/env step    policy steps/env step
+reference             1 per  256            1 per  64
+first fast config     1 per  256            1 per 2048   <- policy 32x diluted
+shipped config        1 per 2048            1 per  256
+```
+
+`ppo_batch_size` scaled with `frames` holds policy steps per *update* fixed,
+which silently dilutes them per *environment step*. `TrainingSchedule.summary()`
+now prints **env steps per world-model step** so the regime is legible at
+startup.
+
+## 5. Diagnostics settled along the way
+
+- **`entropy_coef` explains the low `MI_policy`.** At 0.01 the entropy bonus is
+  **0.0198 against an advantage scale of 0.0369** — over half the learning
+  signal — so `policy_entropy` pins at ~1.98 and MI collapses to 0.015 against
+  the reference's 0.28. At `entropy_coef=0`: MI reaches **0.273**, entropy falls
+  1.80 → 1.06. Confirmed.
+- **sRSA does NOT have a high floor.** An untrained net scores
+  **0.062 ± 0.040** (n=5 inits). "Starts near 0.5" was sampling cadence — the
+  first sample landed at 8.4M steps, 20× later than the reference's first.
+- **A falling `sRSA_onPolicy` can be the policy, not the map.** On the same
+  ent=0 checkpoints, off-policy sRSA **rises** 0.4388 → 0.6437 while
+  `sRSA_onPolicy` **falls** 0.6306 → 0.4539, and mean SI rises monotonically
+  0.70 → 1.01. `scripts/multienv/checkpoint_curve.py` has always evaluated with
+  a RANDOM agent; wandb logs the on-policy number. They are different
+  measurements.
+- **Single-shot sRSA carries ±0.05.** Repeats give sd 0.02–0.06 per checkpoint
+  (`scripts/trace/srsa_repeats.py`).
+- ⚠️ **Unexplained:** off-policy sRSA still falls **−17%** after ~50M (0.6437 →
+  0.5312) with SWdist rising 0.036 → 0.068. Not accounted for by coverage.
+
+## 6. Failure modes — read this part
+
+**Eight cluster submissions failed before one worked**, each for a different
+reason, all because I tested the *config* locally but never the full *script
+path*. Once I ran the whole path locally it worked first time and every time
+after.
+
+| # | failure | cause |
+|---|---|---|
+| 1 | `git checkout --detach origin/sdu/speed` | `clone --shared` copies only refs/heads |
+| 2 | gate asserted `tests/golden_omt` | **cannot run from a clean clone** — `data/obs_bank/` is untracked |
+| 3 | 2 h job lost every result | rsync only at script end; wall-clock kill wiped `$SLURM_TMPDIR` |
+| 4 | `PermissionError: '/home/sabrina'` | **`.env` is COMMITTED with a machine-specific `RL_STORAGE`** |
+| 5 | died at wandb init | `logging.wandb_log` defaults True, never overridden |
+| 6 | died in kaleido | *caused by fixing #5* — wandb off routes behaviour analysis into `fig.write_image()` |
+| 7 | traceback invisible twice | `2>&1 \| tail -40` showed the config dump, not the error |
+| 8 | blank figure row | `env.show_state(render, t, **kwargs)` accepts `ax`/`fig` and **silently ignores them** |
+
+**Analysis mistakes I made and had to retract — four of them:**
+
+1. "cat-of-one + permutes are ~30% of hot-loop ops" → measured **1%**.
+2. "a numpy float64 leaks into the LayerNorm parameter" → all params float32.
+3. "the per-timestep `.t()` makes `mm` copy" → **zero** copies; `F.linear` is *slower*.
+4. **"launch overhead is most of the cost"** → `cudaLaunchKernel` is **24%**. I
+   had conflated a whole Python op round-trip (7.08 µs) with a driver launch.
+
+The pattern: every one came from reasoning about code instead of measuring it,
+and every one was caught by measuring. Ranking ops by **time** rather than
+**count** is what finally closed the budget.
+
+**Process lessons worth keeping:**
+
+- Benchmarks lie about production: `tests/perf/benchmark.py` reported 106.74
+  grad/s where a real run sustains 75.3 — benchmarks exclude archiving, saves
+  and layout resampling. **Believe the run.**
+- The archive cadence is part of the time budget. 79 checkpoints cannot be
+  scored in the window; a local gate hit **142** and had to be killed.
+- Never benchmark on a shared GPU. Contention once made a 4% change look like
+  1.29×.
+- GPU type is load-bearing: **1.7×** between an L40S and a Quadro RTX 8000.
+  Never compare numbers across cluster jobs without checking the node.
+
+## 7. Repo flaws found, not fixed
+
+Each is a decision that is not mine to make:
+
+- **`.env` is tracked and holds absolute machine paths**
+  (`RL_STORAGE="/home/sabrina/..."`). Any clean clone elsewhere writes to that
+  user's home. Worked around in the slurm script only.
+- **`tests/golden_omt` is not reproducible from git alone** — it needs
+  `data/obs_bank/`, which is untracked and generated.
+- **`docs/sab_context/` is gitignored** yet cited as a source of truth by
+  `Configs/run/multienv.yaml`, `Configs/performance/ultra.yaml` and
+  `tests/perf/benchmark.py`. The repo ships dangling references.
+- **`Shell.show_state(render, t, **kwargs)`** accepts `ax`/`fig` and draws on
+  the global current axes regardless (upstream `prnn`).
+
+## 8. Where we left off
+
+**In flight — a 2×2 at the reference's own budget** (20,480,000 env steps =
+80,000 episodes, `entropy_coef=0`, single L-room, 100 analysis points,
+off-policy eval on). All four verified from their schedule lines:
+
+| job | `wm_pool_group` | `ppo_batch_size` | regime |
+|---|---|---|---|
+| 10448384 | 8 | 1024 | baseline: wm 1/2048, policy 128/update |
+| 10448385 | 1 | 1024 | **A** — wm rate only: 1/256 |
+| 10448386 | 8 | 256 | **B** — policy rate only: 512/update |
+| 10448387 | 1 | 256 | **C** — both = **the reference regime** |
+
+Compare against
+<https://wandb.ai/blake-richards/curious-george/runs/pRNN_curious_26-07-23-10-06-25>
+(`entropy_coef: 0`, `ppo_batch_size: 256`, `batched_wm: false`, 20.48M steps).
+The question: does closing both ratios reproduce that run's sRSA plateau
+(~0.60–0.67 on-policy), and which axis matters?
+
+**Open:**
+
+1. The unexplained −17% off-policy sRSA decline after ~50M (§5).
+2. **Multi-seed batching is unbuilt.** The physics argument is the strongest
+   thing found: the weight read is already paid, so 128 seeds ride the same
+   12–15 µs call, 103× more efficient per seed. Blocked on a logging decision —
+   prnn logs `"pRNN loss"` under a fixed key from inside itself, which collides
+   with N seeds and conflicts with the standing "prnn owns its metrics" rule.
+3. `cuda_graph` remains measured, gated and **unadopted**. If the pooled path
+   ever needs it, the graph would have to learn the batched path.
+4. The full 491.5M budget is **~7.6 h**, not 2 h. That is arithmetic, not
+   engineering — 1.92M gradient steps against a ~62 grad/s ceiling.
+
+**Tools added this session:** `tests/perf/{find_sync,profile_api,roofline_step}.py`,
+`scripts/trace/{prediction_panel,srsa_repeats}.py`,
+`predNet.{compile_cell,wm_pool_group,wm_segment_stride}`, `slurm/train_fast.sh`.

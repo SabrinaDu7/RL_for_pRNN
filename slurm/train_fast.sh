@@ -87,7 +87,10 @@ EPISODES_ARG="${6:-}"
 # 1 per 256, so those are the two axes that separate them.
 POOL_ARG="${7:-}"
 PB_ARG="${8:-}"
-echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT pool=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES"
+echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
+# The regime knobs are echoed AFTER they are assigned, further down - printing
+# them here reported empty values while the run used the right ones, which is
+# exactly the kind of output that makes a log untrustworthy.
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 module --force purge && module load python/3.10
@@ -156,6 +159,7 @@ POOL_GROUP=${POOL_ARG:-8}
 EPISODES=${EPISODES_ARG:-400000}                 # = world-model gradient-step budget / pool group
 SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
 TOTAL_STEPS=$((EPISODES*SEQDUR))
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
