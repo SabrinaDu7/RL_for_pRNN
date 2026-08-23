@@ -36,9 +36,11 @@ def _move(target, device) -> None:
 def on_device(targets, device: torch.device | str):
     """Temporarily move module(s)/PredictiveNet(s) to `device`; restore on exit.
 
-    The restore is ADDRESS-PRESERVING: the original parameter storages are held
-    alive for the duration and the values are copied back into them, so every
-    parameter ends at the `data_ptr()` it started with.
+    The restore is ADDRESS-PRESERVING for `param.data`, `param.grad` AND every
+    registered BUFFER:
+    the original storages are held alive for the duration and the values are
+    copied back into them, so every parameter and every gradient ends at the
+    `data_ptr()` it started with.
 
     That is not a micro-optimization, it is what makes this composable with
     `predNet.cuda_graph`. `Module.to()` REPLACES `param.data`, so a plain
@@ -55,25 +57,73 @@ def on_device(targets, device: torch.device | str):
     The cost is the parameters staying resident while the copy runs on the other
     device - ~1.6 MB for the h=500 pRNN.
 
+    `.grad` matters as much as `.data` and is easy to miss, because missing it
+    fails SILENTLY rather than crashing. `Module._apply` moves gradients too, so
+    restoring only `.data` leaves a captured graph writing its gradients to, and
+    its captured optimizer step reading them from, the OLD gradient storage,
+    while `param.grad` points somewhere else entirely. The forward pass still
+    reads the correct `.data`, so the prediction loss keeps falling normally and
+    nothing looks wrong - but the optimizer consumes stranded memory and the
+    representation degrades. Measured: a graphed run whose spatial evals ran
+    every ~200k steps held sRSA at the untrained floor (~0.02) for a whole
+    20.48M-step run while its eager control reached 0.52, with the pRNN loss
+    trajectories of the two IDENTICAL to three decimal places.
+
     `_GraphWMTrainer._invalidate_if_moved` is deliberately KEPT: any other path
     that reassigns `param.data` still has to be caught, and this only makes THIS
     path safe.
     """
     targets = _as_list(targets)
     originals = [next(_module_of(t).parameters()).device for t in targets]
-    storages = [[p.data for p in _module_of(t).parameters()] for t in targets]
+
+    # `.data` and `.grad` need OPPOSITE treatment, because `Module._apply`
+    # treats them differently: it REPLACES `param.data` with a new tensor (so
+    # holding a reference keeps the original storage alive and at its address),
+    # but it MUTATES `param.grad` IN PLACE (same Python object, swapped
+    # storage - so a reference follows the gradient to the other device and
+    # preserves nothing). Gradients are therefore DETACHED from the module
+    # before the move, which is what keeps `_apply` away from them, and put
+    # back afterwards. The eval this wraps is inference and neither reads nor
+    # writes gradients.
+    saved = []
+    for t in targets:
+        m = _module_of(t)
+        rows = []
+        for p in m.parameters():
+            rows.append((p.data, p.grad))
+            p.grad = None
+        # BUFFERS TOO. `thRNN_5win` multiplies its inputs, actions and targets
+        # by the registered phase masks `inMask_f` / `actMask_f` / `outMask_f`
+        # (Architectures.clip_mask), and `Module._apply` relocates buffers
+        # exactly as it relocates `param.data`. Restoring only the parameters
+        # left a captured graph multiplying by a STALE mask address: the loss
+        # dropped ~6x on identical data because the inputs were being scaled by
+        # whatever now occupied that memory, and the run trained on nothing.
+        bufs = [(name, b) for name, b in m.named_buffers() if b is not None]
+        saved.append((rows, bufs))
+
     for t in targets:
         _move(t, device)
     try:
         yield
     finally:
-        for t, original, saved in zip(targets, originals, storages):
+        for t, original, (rows, bufs) in zip(targets, originals, saved):
+            m = _module_of(t)
             _move(t, original)
             with torch.no_grad():
-                for p, home in zip(_module_of(t).parameters(), saved):
+                for p, (home, grad_home) in zip(m.parameters(), rows):
                     if p.data.data_ptr() != home.data_ptr():
                         home.copy_(p.data)
                         p.data = home
+                    p.grad = grad_home
+                current = dict(m.named_buffers())
+                for name, home in bufs:
+                    cur = current.get(name)
+                    if cur is None or cur.data_ptr() == home.data_ptr():
+                        continue
+                    home.copy_(cur)
+                    owner, _, leaf = name.rpartition(".")
+                    (m.get_submodule(owner) if owner else m)._buffers[leaf] = home
 
 
 @contextmanager

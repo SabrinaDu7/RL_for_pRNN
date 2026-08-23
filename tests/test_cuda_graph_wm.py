@@ -164,6 +164,10 @@ def test_on_device_preserves_addresses_so_graphs_survive_the_spatial_eval():
     adapter.train_on_episode(images, hd, act, last)  # captures
     trainer = adapter._graph_trainer
     ptrs_before = tuple(p.data_ptr() for p in pN.pRNN.parameters())
+    assert all(p.grad is not None for p in pN.pRNN.parameters()), (
+        "no gradients after a graphed step - the .grad check below is vacuous"
+    )
+    grads_before = tuple(p.grad.data_ptr() for p in pN.pRNN.parameters())
     w_before = _weights(pN)
 
     with on_device([pN], "cpu"):
@@ -171,6 +175,10 @@ def test_on_device_preserves_addresses_so_graphs_survive_the_spatial_eval():
 
     assert tuple(p.data_ptr() for p in pN.pRNN.parameters()) == ptrs_before, (
         "on_device reallocated parameters; captured graphs are now dangling"
+    )
+    assert tuple(p.grad.data_ptr() for p in pN.pRNN.parameters()) == grads_before, (
+        "on_device reallocated GRADIENTS; the graph writes its gradients to, and "
+        "its captured optimizer step reads them from, stranded memory"
     )
     assert torch.equal(_weights(pN), w_before), "round trip changed the weights"
     assert len(trainer.graphs) == 1, "graphs were dropped despite stable addresses"
@@ -362,3 +370,86 @@ def test_ragged_final_group_gets_its_own_graph():
     trainer.train_batch(obs_b[2:], act_b[2:], batched=True)   # ragged tail
     assert {k[1] for k in trainer.graphs} == {2, 1}
     assert torch.isfinite(_weights(pN)).all()
+
+
+@pytest.mark.parametrize("pooled", [False, True], ids=["serial", "pooled"])
+def test_graphed_training_survives_repeated_spatial_evals(pooled):
+    """Training must keep WORKING across evals, not merely not crash.
+
+    This is the test that was missing, and its absence cost a full cluster run.
+    An `on_device` restore has to return THREE things to their original
+    addresses, because `Module._apply` touches all three and a captured graph
+    has all three baked in:
+
+      - `param.data`   - REPLACED by _apply, so holding a reference suffices
+      - `param.grad`   - MUTATED IN PLACE, so a reference follows it to the
+                         other device; it must be detached before the move
+      - registered BUFFERS - `thRNN_5win` multiplies inputs, actions and
+                         targets by `inMask_f`/`actMask_f`/`outMask_f`
+
+    Missing any of them fails SILENTLY. The forward still reads correct
+    parameters, so the prediction loss keeps falling and nothing crashes, but
+    the step is computed against stranded memory: with the masks stale the loss
+    dropped ~6x on identical data, and a 20.48M-step graphed run sat at the
+    untrained sRSA floor (~0.02) while its eager control reached 0.52, with the
+    two loss curves agreeing to three decimals throughout.
+
+    So: interleave evals with training and assert the weights keep moving
+    EXACTLY as eager moves them, on both the serial and the pooled path.
+    """
+    from curious_george.world_model.device import on_device
+
+    dev = torch.device("cuda")
+    deltas = {}
+    for graphed in (False, True):
+        pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
+        pN.pRNN.to(dev)
+        pN.pRNN.train()
+        adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=graphed)
+        segs = [_one_segment(pN, k) for k in range(3)]
+        moved = []
+        for k in range(3):
+            before = _weights(pN)
+            if pooled:
+                obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
+                if graphed:
+                    from curious_george.world_model.adapter import _GraphWMTrainer
+
+                    adapter._graph_trainer = adapter._graph_trainer or _GraphWMTrainer(pN, dev)
+                    adapter._graph_trainer.train_batch(obs_b, act_b, batched=True)
+                else:
+                    pN.trainStep(obs_b, act_b, batched=True, return_stats=False)
+            else:
+                adapter.train_on_episode(*segs[k])
+            moved.append((_weights(pN) - before).norm().item())
+            with on_device([pN], "cpu"):  # the analysis event
+                pass
+        deltas[graphed] = moved
+
+    for k, (e, g) in enumerate(zip(deltas[False], deltas[True])):
+        assert g == pytest.approx(e, rel=1e-5), (
+            f"step {k} after an eval: graphed moved the weights by {g:.6e}, "
+            f"eager by {e:.6e} - the graph is training on stranded memory"
+        )
+
+
+def test_on_device_preserves_buffer_addresses():
+    """Buffers are the third thing `Module._apply` relocates, and the one that
+    is easiest to forget because a model without them behaves perfectly."""
+    from curious_george.world_model.device import on_device
+
+    dev = torch.device("cuda")
+    pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
+    pN.pRNN.to(dev)
+    named = dict(pN.pRNN.named_buffers())
+    assert named, "no buffers - this test would be vacuous on this architecture"
+    before = {k: v.data_ptr() for k, v in named.items()}
+    values = {k: v.detach().clone() for k, v in named.items()}
+
+    with on_device([pN], "cpu"):
+        pass
+
+    after = dict(pN.pRNN.named_buffers())
+    for k, ptr in before.items():
+        assert after[k].data_ptr() == ptr, f"buffer {k} was relocated"
+        assert torch.equal(after[k], values[k].to(after[k].device)), f"buffer {k} changed value"
