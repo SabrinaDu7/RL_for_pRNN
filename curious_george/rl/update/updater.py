@@ -83,16 +83,57 @@ def update_policy(
     num_frames: int,
     max_grad_norm: float,
     update_params: bool = True,
+    graph_trainer=None,
 ) -> UpdateLogs:
-    """Runs `epochs` reshuffled passes over `exps`, one gradient step per minibatch."""
+    """Runs `epochs` reshuffled passes over `exps`, one gradient step per minibatch.
+
+    `graph_trainer` (a rl/update/policy_graph.GraphPolicyTrainer) replays a
+    captured step instead of dispatching one. It updates parameters by
+    construction, so it is ignored when `update_params` is False.
+    """
     if isinstance(loss_fn, str):
         loss_fn = LOSSES[loss_fn]
 
     with timer("update/policy"):
+        if graph_trainer is not None and update_params:
+            return _update_policy_epochs_graphed(
+                graph_trainer, exps, epochs, batch_size, num_frames,
+            )
         return _update_policy_epochs(
             acmodel, optimizer, exps, loss_fn, loss_kwargs, epochs, batch_size,
             num_frames, max_grad_norm, update_params,
         )
+
+
+def _update_policy_epochs_graphed(
+    graph_trainer, exps, epochs: int, batch_size: int, num_frames: int,
+) -> UpdateLogs:
+    """Same schedule as the eager path - `epochs` reshuffled passes, one
+    gradient step per minibatch - with each step replayed from a capture.
+
+    Stats accumulate on-device into one row so a step costs a single extra
+    kernel; the only host transfer is the one at the end, matching the eager
+    path's single `log_sync`."""
+    with timer("update/policy/bind"):
+        graph_trainer.bind(exps)
+    dev = graph_trainer.static.SR.device
+    acc = torch.zeros(5, device=dev)
+    n = 0
+    for _ in range(epochs):
+        with timer("update/policy/batch_indexes"):
+            batches = shuffled_minibatches(num_frames=num_frames, batch_size=batch_size)
+        for inds in batches:
+            with timer("update/policy/replay"):
+                acc += graph_trainer.step(
+                    torch.as_tensor(inds, device=dev, dtype=torch.long)
+                )
+            n += 1
+    with timer("update/policy/log_sync"):
+        entropy, value, policy_loss, value_loss, grad_norm = (acc / n).tolist()
+    return UpdateLogs(
+        entropy=entropy, value=value, policy_loss=policy_loss,
+        value_loss=value_loss, grad_norm=grad_norm,
+    )
 
 
 def _update_policy_epochs(

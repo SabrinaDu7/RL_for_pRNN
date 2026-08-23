@@ -126,6 +126,7 @@ class PredictivePPOAlgo:
         wm_segment_stride=1,
         wm_pool_group=0,
         adam_betas=(0.9, 0.999),
+        policy_cuda_graph=False,
     ):
         # env may be a single shell, a list of shells (parallel collection),
         # or a batched shell pool (process-parallel or device-resident)
@@ -162,6 +163,11 @@ class PredictivePPOAlgo:
         self.batched_wm = batched_wm
         self.wm_segment_stride = wm_segment_stride
         self.wm_pool_group = wm_pool_group
+        # rl.cuda_graph: replay a captured PPO minibatch step. Built lazily on
+        # first update so the acmodel is already on-device and the optimizer
+        # state is still empty (the capturable rebuild requires that).
+        self.policy_cuda_graph = bool(policy_cuda_graph) and device.type == "cuda"
+        self._policy_graph = None
         self.cuda_graph = cuda_graph
         self.pastSR = pastSR
         self.curious_agent = curious_agent
@@ -312,6 +318,24 @@ class PredictivePPOAlgo:
         del exps["done_indices"]
         del exps["last_observations"]
 
+        if self.policy_cuda_graph and self._policy_graph is None and update_params:
+            from curious_george.rl.update.losses import LOSSES
+            from curious_george.rl.update.policy_graph import GraphPolicyTrainer
+
+            self._policy_graph = GraphPolicyTrainer(
+                self.acmodel,
+                self.optimizer,
+                loss_fn=LOSSES[self.loss_name] if isinstance(self.loss_name, str) else self.loss_name,
+                loss_kwargs=dict(
+                    clip_eps=self.clip_eps,
+                    entropy_coef=self.entropy_coef,
+                    value_loss_coef=self.value_loss_coef,
+                ),
+                max_grad_norm=self.max_grad_norm,
+            )
+            # the trainer may have rebuilt the optimizer capturable
+            self.optimizer = self._policy_graph.optimizer
+
         logs = update_policy(
             self.acmodel,
             self.optimizer,
@@ -327,6 +351,7 @@ class PredictivePPOAlgo:
             num_frames=self.num_frames,
             max_grad_norm=self.max_grad_norm,
             update_params=update_params,
+            graph_trainer=self._policy_graph,
         )
 
         if self.train_pN and update_params:

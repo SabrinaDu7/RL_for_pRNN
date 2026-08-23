@@ -93,6 +93,9 @@ PB_ARG="${8:-}"
 # it logs sRSA/SWdist and the prediction images like any other run. Both facts
 # are gated in tests/test_cuda_graph_wm.py.
 GRAPH="${9:-False}"
+# $10 = rl.cuda_graph, the PPO minibatch step. Separate from $9 so the two
+# graphs can be attributed independently; both default off.
+PGRAPH="${10:-False}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -165,8 +168,13 @@ POOL_GROUP=${POOL_ARG:-8}
 EPISODES=${EPISODES_ARG:-400000}                 # = world-model gradient-step budget / pool group
 SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
 TOTAL_STEPS=$((EPISODES*SEQDUR))
-case "$GRAPH" in True|true|1) GRAPH_TAG="-graph" ;; *) GRAPH_TAG="" ;; esac
-echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph=$GRAPH"
+case "$GRAPH$PGRAPH" in
+  TrueTrue) GRAPH_TAG="-graphall" ;;
+  True*)    GRAPH_TAG="-graphwm"  ;;
+  *True)    GRAPH_TAG="-graphpol" ;;
+  *)        GRAPH_TAG=""          ;;
+esac
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
@@ -239,7 +247,7 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=$POOL_GROUP predNet.compile_cell=layer \
-    predNet.cuda_graph=$GRAPH \
+    predNet.cuda_graph=$GRAPH rl.cuda_graph=$PGRAPH \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
     logging.wandb_log=true \
