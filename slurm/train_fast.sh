@@ -196,10 +196,15 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 #     -> 16x too few steps
 #   pool in GROUPS OF 8      1 step / 2048 env steps, 8 segments  <- this
 #
-# This drops cuda_graph, which never engages on the pooled path
-# (PRNNAdapter._use_graph_wm is consulted only in train_on_episode).
-# compile_cell=layer still applies - it compiles pRNN.rnn.forward, which both
-# paths use. Cost: 28,560 -> 16,029 env steps/s locally, still inside 2 h.
+# cuda_graph is NOT set here, but that is now a choice rather than a
+# limitation: as of 2026-08-23 _GraphWMTrainer serves the pooled path too
+# (train_on_episodes_batched), measured 4.19x on the pooled step on top of
+# compile_cell and ~1.35x end-to-end at 20 updates. It stays off until a
+# cluster run gates its sRSA/SWdist curve, because a graphed run logs NEITHER
+# in-run (loop.py::_skip_model_move_diag disables the model-moving
+# diagnostics), and this preset's whole job is producing those curves.
+# compile_cell=layer applies either way - it compiles pRNN.rnn.forward, which
+# both paths use. Cost: 28,560 -> 16,029 env steps/s locally, still inside 2 h.
 # rl.episodes_total IS the world-model gradient-step budget under serial
 # training (schedule.py: total_wm_steps = total_steps/seqdur = episodes_total).
 # 400,000 episodes = 102.4M environment steps (NOTE: with a stride, episodes

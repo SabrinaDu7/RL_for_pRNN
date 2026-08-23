@@ -92,13 +92,25 @@ def validate_action_encoding(predictive_net: PredictiveNet, env, pastSR: bool) -
     )
 
 
-class _GraphWMSegmentTrainer:
-    """CUDA-graph capture of the single-segment world-model trainStep.
+class _GraphWMTrainer:
+    """CUDA-graph capture of the world-model trainStep, serial or pooled.
 
     Equivalent to `PredictiveNet.trainStep` for the MaskedRNN / SpeedHD /
     theta==0 path with the RL defaults (with_homeostat=False, no encoder
     training). The captured region is `pN.predict` + MSE loss + backward +
-    one RMSprop step, over static raw obs/act buffers refilled per segment.
+    one RMSprop step, over static raw obs/act buffers refilled per call.
+
+    Serves BOTH training paths. `batched` selects `predict`'s layout and is
+    part of the graph key, because at B=1 the batched layout (1, L, X, B) is
+    not the serial one (1, L, X) - reusing one graph for both would silently
+    feed the wrong shape. `train_on_episode` captures batched=False at B=1;
+    `train_on_episodes_batched` captures batched=True at B=wm_pool_group.
+
+    The optimizer step is INSIDE the captured region, so weights advance
+    between replays: N sequential replays reproduce N sequential eager
+    trainSteps, which is what preserves `wm_pool_group`'s regime (16 steps per
+    update, each pooled over 8 segments, each at the previous step's weights).
+    Gated bitwise in tests/test_cuda_graph_wm.py with dropout and noise off.
 
     `predict()` runs WHOLE inside the graph - dropout and internal noise
     included, both of which use CUDA's graph-safe RNG (verified to advance
@@ -120,7 +132,10 @@ class _GraphWMSegmentTrainer:
     def __init__(self, pN: PredictiveNet, device: torch.device):
         self.pN = pN
         self.device = device
-        self.graphs: dict[int, dict] = {}  # L+1 -> static buffers + graph
+        # (batched, B, L+1) -> static buffers + graph. B is in the key because
+        # a ragged final group (when wm_pool_group does not divide the segment
+        # count) is a different shape and needs its own capture.
+        self.graphs: dict[tuple[bool, int, int], dict] = {}
         self._param_ptrs: tuple[int, ...] = ()
         self._ensure_capturable_optimizer()
 
@@ -176,13 +191,13 @@ class _GraphWMSegmentTrainer:
             groups.append(ng)
         self.pN.optimizer = torch.optim.RMSprop(groups)
 
-    def _capture(self, obs_b: torch.Tensor, act_b: torch.Tensor) -> None:
+    def _capture(self, obs_b: torch.Tensor, act_b: torch.Tensor, *, batched: bool) -> None:
         pN, opt = self.pN, self.pN.optimizer
         obs_s = obs_b.detach().clone()
         act_s = act_b.detach().clone()
 
         def region():
-            obs_pred, obs_next, h = pN.predict(obs_s, act_s)
+            obs_pred, obs_next, h = pN.predict(obs_s, act_s, batched=batched)
             if isinstance(obs_pred, tuple):
                 obs_pred = obs_pred[0]
             loss = pN.loss_fn(obs_pred, obs_next, h)
@@ -227,26 +242,32 @@ class _GraphWMSegmentTrainer:
                         continue
                     v.copy_(prior[k]) if k in prior else v.zero_()
 
-        self.graphs[obs_s.size(1)] = dict(
+        self.graphs[(batched, obs_s.size(0), obs_s.size(1))] = dict(
             graph=graph, obs_s=obs_s, act_s=act_s, loss_s=loss_s
         )
         self._param_ptrs = self._fingerprint()
 
-    def train_segment(self, obs: torch.Tensor, act: torch.Tensor) -> None:
-        """obs (L+1, X_obs) float in [0,1], act (L, A) - the `_episode_tensors`
-        contract. Runs one graphed pRNN gradient step on the segment."""
-        obs_b = obs.unsqueeze(0).to(self.device)
-        act_b = act.unsqueeze(0).to(self.device)
+    def train_batch(self, obs_b: torch.Tensor, act_b: torch.Tensor, *, batched: bool) -> None:
+        """One graphed pRNN gradient step on obs_b (B, L+1, X), act_b (B, L, A),
+        both already on device. Equal shapes share one graph."""
         self._invalidate_if_moved()  # a device round-trip freed the old params
-        key = obs_b.size(1)  # L+1; equal-length segments share one graph
+        key = (batched, obs_b.size(0), obs_b.size(1))
         if key not in self.graphs:
-            self._capture(obs_b, act_b)
+            self._capture(obs_b, act_b, batched=batched)
         g = self.graphs[key]
         g["obs_s"].copy_(obs_b)
         g["act_s"].copy_(act_b)
         g["graph"].replay()
         self.pN.recordTrainingTrial(g["loss_s"].item())
         self.pN.numTrainingEpochs += 1
+
+    def train_segment(self, obs: torch.Tensor, act: torch.Tensor) -> None:
+        """obs (L+1, X_obs) float in [0,1], act (L, A) - the `_episode_tensors`
+        contract. The serial path's single segment, at B=1 and batched=False."""
+        self.train_batch(
+            obs.unsqueeze(0).to(self.device), act.unsqueeze(0).to(self.device),
+            batched=False,
+        )
 
 
 class PRNNAdapter:
@@ -279,7 +300,7 @@ class PRNNAdapter:
         # CUDA device for the maskless-theta SpeedHD path; trainer is built
         # lazily on first use so weights are already on-device.
         self.cuda_graph = bool(cuda_graph) and self.device.type == "cuda"
-        self._graph_trainer: _GraphWMSegmentTrainer | None = None
+        self._graph_trainer: _GraphWMTrainer | None = None
         self.batched_curiosity = bool(batched_curiosity)
 
         # predNet.compile_cell: fuse the recurrent cell with torch.compile.
@@ -658,8 +679,7 @@ class PRNNAdapter:
         """One pRNN gradient step on a single episode segment."""
         if self._use_graph_wm():
             obs, act = self._episode_tensors(images_tensor, hd_tensor, act_np, last_obs)
-            if self._graph_trainer is None:
-                self._graph_trainer = _GraphWMSegmentTrainer(self.pN, self.device)
+            self._graph_trainer = self._graph_trainer or _GraphWMTrainer(self.pN, self.device)
             self._graph_trainer.train_segment(obs, act)
             return
         if self.fast_speedhd:
@@ -741,7 +761,17 @@ class PRNNAdapter:
 
         with timer("update/wm/train_step"):
             g = int(group) if group and group > 0 else obs_b.size(0)
+            graphed = self._use_graph_wm()
+            if graphed:
+                self._graph_trainer = self._graph_trainer or _GraphWMTrainer(self.pN, self.device)
             for i in range(0, obs_b.size(0), g):
+                if graphed:
+                    # train_batch bumps numTrainingEpochs itself, as the serial
+                    # graphed path does.
+                    self._graph_trainer.train_batch(
+                        obs_b[i : i + g], act_b[i : i + g], batched=True
+                    )
+                    continue
                 self.pN.trainStep(
                     obs_b[i : i + g], act_b[i : i + g], batched=True, return_stats=False
                 )

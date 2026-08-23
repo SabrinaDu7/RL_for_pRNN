@@ -31,7 +31,7 @@ def _skip_model_move_diag(cfg) -> bool:
     churn inside the eval fragments memory so a re-captured graph's private
     pool aliases live tensors (e.g. `exps.obs.direction`) - a use-after-free
     that killed two cluster runs with `IndexError: index 184 out of bounds`.
-    The parameter-address fingerprint in `_GraphWMSegmentTrainer` covers the
+    The parameter-address fingerprint in `_GraphWMTrainer` covers the
     stale-pointer path but NOT this one: the residual crash had no device move
     between it and the failure, so re-capture into fragmented memory is itself
     the fault. Guarding `PRNNAdapter.to()` is also insufficient - `on_device`

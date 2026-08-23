@@ -1210,7 +1210,8 @@ The commands are inlined here instead. The scripts remain in git history at
 ```bash
 # the four world-model regimes (section 3). Run them SEQUENTIALLY on an idle
 # GPU; D (pooled+graph) is the negative control and must match A, because the
-# graph never engages on the pooled path.
+# graph did not engage on the pooled path when this was written; as of
+# 2026-08-23 it does (see docs/claude_logs/compaction-2026-08-22-speed.md 10).
 for arm in "A True False" "B False False" "C False True" "D True True"; do
   set -- $arm
   uv run python tests/perf/benchmark.py --updates 6 --warmup-updates 1 --out <outdir>/$1.json \

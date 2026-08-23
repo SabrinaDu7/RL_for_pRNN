@@ -47,10 +47,14 @@ def _make_pN(*, dropp: float, noise: tuple[float, float]) -> PredictiveNet:
     )
 
 
-def _one_segment(pN: PredictiveNet):
-    """A single deterministic episode segment: obs (L, img), hd, act."""
-    torch.manual_seed(SEED + 1)
-    np.random.seed(SEED + 1)
+def _one_segment(pN: PredictiveNet, k: int = 0):
+    """A single deterministic episode segment: obs (L, img), hd, act.
+
+    `k` selects distinct segments for the pooled tests; k=0 is the segment the
+    single-segment tests have always used.
+    """
+    torch.manual_seed(SEED + 1 + k)
+    np.random.seed(SEED + 1 + k)
     env = pN.env_shell
     agent = RandomActionAgent(env.action_space, np.array([0.15, 0.15, 0.6, 0.1]))
     obs_dicts, acts = [env.reset()], []
@@ -192,3 +196,130 @@ def test_graphed_segment_runs_with_rng():
     # a second replay must keep moving (RNG advanced, buffers refreshed)
     adapter.train_on_episode(images, hd, act, last)
     assert not torch.equal(w1, _weights(pN))
+
+
+# --- pooled path (predNet.wm_pool_group) ------------------------------------
+#
+# The graph used to serve only `train_on_episode`, so the shipped config -
+# batched_wm with wm_pool_group=8 - ran entirely ungraphed. These gate the
+# pooled path on the SAME criterion as the serial one, plus the property the
+# pooled regime actually depends on: N sequential replays must advance the
+# weights the way N sequential eager steps do, because `wm_pool_group` means 16
+# steps per update each starting from the previous step's weights. A graph that
+# replayed at frozen weights would pass a one-step test and silently destroy
+# that.
+
+GROUP = 4      # segments pooled into one gradient step
+STEPS = 3      # sequential gradient steps
+
+
+def _pooled_batch(pN, adapter, n: int):
+    """n equal-length segments stacked to (B, L+1, X) / (B, L, A), on device."""
+    obs_rows, act_rows = [], []
+    for k in range(n):
+        images, hd, act, last = _one_segment(pN, k)
+        o, a = adapter._episode_tensors(images, hd, act, last)
+        obs_rows.append(o)
+        act_rows.append(a)
+    dev = adapter.device
+    return torch.stack(obs_rows).to(dev), torch.stack(act_rows).to(dev)
+
+
+def _run_pooled(*, cuda_graph: bool, dropp: float, noise: tuple[float, float]):
+    dev = torch.device("cuda")
+    pN = _make_pN(dropp=dropp, noise=noise)
+    pN.pRNN.to(dev)
+    pN.pRNN.train()
+    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=cuda_graph)
+    obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
+    if cuda_graph:
+        assert adapter._use_graph_wm(), "pooled graph path not engaged"
+        adapter._graph_trainer = None
+    for _ in range(STEPS):
+        if cuda_graph:
+            from curious_george.world_model.adapter import _GraphWMTrainer
+
+            adapter._graph_trainer = adapter._graph_trainer or _GraphWMTrainer(pN, dev)
+            adapter._graph_trainer.train_batch(obs_b, act_b, batched=True)
+        else:
+            pN.trainStep(obs_b, act_b, batched=True, return_stats=False)
+    return pN, adapter
+
+
+def test_pooled_graphed_bitwise_equals_eager_no_rng():
+    """Noise+dropout off: N sequential pooled replays == N eager pooled steps.
+
+    Bitwise, because with no RNG the captured region is the same math. This is
+    the semantics gate for wm_pool_group: it fails if the in-graph optimizer
+    step does not advance the weights between replays.
+    """
+    pN_eager, _ = _run_pooled(cuda_graph=False, dropp=0.0, noise=(0.0, 0.0))
+    pN_graph, _ = _run_pooled(cuda_graph=True, dropp=0.0, noise=(0.0, 0.0))
+
+    w_fresh = _weights(_make_pN(dropp=0.0, noise=(0.0, 0.0)))
+    w_eager, w_graph = _weights(pN_eager), _weights(pN_graph)
+    assert not torch.equal(w_fresh, w_eager), "eager pooled steps did not move weights"
+    assert torch.equal(w_eager, w_graph), (
+        f"pooled graphed != eager: max|d|={(w_eager - w_graph).abs().max().item():.3e}"
+    )
+
+
+def test_pooled_graph_advances_weights_every_replay():
+    """Each replay must move the weights - a graph replaying at frozen weights
+    would still be bitwise-equal to eager on step 1 alone."""
+    dev = torch.device("cuda")
+    from curious_george.world_model.adapter import _GraphWMTrainer
+
+    pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
+    pN.pRNN.to(dev)
+    pN.pRNN.train()
+    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
+    trainer = _GraphWMTrainer(pN, dev)
+
+    seen = []
+    for _ in range(STEPS):
+        trainer.train_batch(obs_b, act_b, batched=True)
+        seen.append(_weights(pN).clone())
+    for i in range(1, len(seen)):
+        assert not torch.equal(seen[i - 1], seen[i]), f"replay {i} left weights unchanged"
+    assert torch.isfinite(seen[-1]).all()
+
+
+def test_pooled_and_serial_graphs_do_not_collide():
+    """batched=True at B=1 is a DIFFERENT layout from the serial batched=False
+    call, so they must not share a graph key."""
+    dev = torch.device("cuda")
+    from curious_george.world_model.adapter import _GraphWMTrainer
+
+    pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
+    pN.pRNN.to(dev)
+    pN.pRNN.train()
+    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    obs_b, act_b = _pooled_batch(pN, adapter, 1)
+    trainer = _GraphWMTrainer(pN, dev)
+
+    trainer.train_batch(obs_b, act_b, batched=True)
+    trainer.train_segment(obs_b[0].cpu(), act_b[0].cpu())
+    assert len(trainer.graphs) == 2, f"expected two graph keys, got {list(trainer.graphs)}"
+    assert {k[0] for k in trainer.graphs} == {True, False}
+
+
+def test_ragged_final_group_gets_its_own_graph():
+    """wm_pool_group need not divide the segment count; the short final group is
+    a different shape and must capture separately rather than replay the wrong
+    one."""
+    dev = torch.device("cuda")
+    from curious_george.world_model.adapter import _GraphWMTrainer
+
+    pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
+    pN.pRNN.to(dev)
+    pN.pRNN.train()
+    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    obs_b, act_b = _pooled_batch(pN, adapter, 3)
+    trainer = _GraphWMTrainer(pN, dev)
+
+    trainer.train_batch(obs_b[:2], act_b[:2], batched=True)   # full group
+    trainer.train_batch(obs_b[2:], act_b[2:], batched=True)   # ragged tail
+    assert {k[1] for k in trainer.graphs} == {2, 1}
+    assert torch.isfinite(_weights(pN)).all()

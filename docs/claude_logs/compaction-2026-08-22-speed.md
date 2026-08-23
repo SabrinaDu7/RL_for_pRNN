@@ -276,6 +276,93 @@ callers exist (tests)`). Removing a mid-signature parameter would have silently
 shifted every argument in the two positional callers. Everything after `device`
 is now keyword-only.
 
+## 10. The pooled path is now graphable (2026-08-23)
+
+9 removed the reason `cuda_graph` was unadoptable. The graph only ever served
+`train_on_episode`; `_GraphWMTrainer` (renamed from `_GraphWMSegmentTrainer`,
+which no longer described what it does) now serves
+`train_on_episodes_batched` too, so the SHIPPED regime can be graphed rather
+than only the over-training serial one.
+
+`batched` is part of the graph key alongside `(B, L+1)`, because at B=1 the
+batched layout `(1, L, X, B)` is not the serial `(1, L, X)` - one key for both
+would silently feed the wrong shape. B is in the key so a ragged final group
+(when `wm_pool_group` does not divide the segment count) captures separately.
+
+**Measured, steady state, group=8 L=256 h=500 on an RTX 4060:**
+
+```
+compile_cell  graphed   ms/step
+false         false      199.83
+false         true        22.28    8.97x
+layer         false       56.43    3.54x   (matches the doc's 3.89x)
+layer         true        13.48    4.19x on top of compile
+```
+
+End-to-end, production config: **1.47x** on fps (15,198 -> 22,338), 1.56x on
+the timed total. `compare_metrics.py --loose` **PASS** on every recorded
+metric; `prnn_loss` 0.021087 -> 0.020690.
+
+⚠️ **2's stage shares were WRONG, and so was the first correction to them.**
+`tests/perf/benchmark.py` defaults `--sync-stages` off and `--warmup-updates`
+to 0. Without a device sync at each stage boundary a stage that merely QUEUES
+GPU work is credited with the wait for work queued earlier, and without warmup
+`torch.compile`'s one-time compilation lands inside `update/wm_train`. Both
+defaults were used. Re-measured with `--updates 12 --warmup-updates 3
+--sync-stages`:
+
+```
+                        4 upd    20 upd   SYNCHRONIZED    ms/update
+update/wm_train         51.0%     51.5%         48.4%           938
+update/policy            8.2%     17.9%         26.3%           509
+collect/sr_step          6.4%      7.6%         10.1%           196
+collect/policy_fwd       3.9%      6.6%         10.2%           197
+collect/env_step         0.9%      2.1%          3.3%            63
+collect/curious_rewards 29.3%     14.3%          1.3%            26
+```
+
+**`collect/curious_rewards` is 1.3%, not 29.3%** - the unsynchronized timer was
+crediting it with ~350 ms per update of someone else's queued work. The
+"fuse the curiosity forward into the training pass" lever was chasing a 1.3%
+stage; it is dead on payoff, independently of the semantics objection.
+
+The synchronized figures are the trustworthy ones because they are corroborated
+OUT OF BAND: `tests/perf/sweep_graph_compile.py` times the pooled step in
+isolation at 57.27 ms, and 16 steps x 57.27 = 916 ms against the profile's 938;
+an isolated curiosity forward measures 26.87 ms against the profile's 26. The
+unsynchronized runs agree with nothing.
+
+**Never quote a stage share from this tool without `--sync-stages
+--warmup-updates`.** Naming the flags is not enough - their defaults are the
+trap.
+
+**After graphing the world model the ordering changes**, which is what any next
+optimization should target:
+
+```
+post-graph ms/update    update/policy 522 (42%)   collect/sr_step   208 (17%)
+                        collect/policy_fwd 209 (17%)   update/wm_train 203 (16%)
+                        collect/env_step 66 (5%)  collect/curious_rewards 27 (2%)
+```
+
+**What is gated, and what is not.** Bitwise equivalence to eager is gated:
+with dropout and noise off, N sequential pooled replays move the weights
+identically to N eager `trainStep(batched=True)` calls
+(`test_pooled_graphed_bitwise_equals_eager_no_rng`). That is the property
+`wm_pool_group` depends on - the in-graph optimizer step must advance the
+weights BETWEEN replays, and a separate test asserts every replay moves them.
+**Not gated: sRSA/SWdist over a real run.** `tests/perf/benchmark.py` does not
+record the spatial metrics - it calls `run_spatial_analysis` only to TIME it,
+and that function returns None. Closing that is a prerequisite for gating any
+future world-model optimization on the metrics that actually matter.
+
+**The standing cost is unchanged and now lands on production.** Under
+`cuda_graph` the model-moving diagnostics are skipped
+(`loop.py::_skip_model_move_diag`), so a graphed run logs no in-run sRSA/SWdist
+and no prediction images; they are recoverable only offline from archived
+checkpoints. `predNet.cuda_graph` therefore stays **False** in
+`slurm/train_fast.sh` until that trade is decided deliberately.
+
 **Tools added this session:** `tests/perf/{find_sync,profile_api,roofline_step}.py`,
 `scripts/trace/{prediction_panel,srsa_repeats}.py`,
 `predNet.{compile_cell,wm_pool_group,wm_segment_stride}`, `slurm/train_fast.sh`.
