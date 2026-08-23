@@ -75,7 +75,19 @@ SEED="${4:-2}"
 # policy_entropy pins near maximum and MI_policy collapses to ~0.015 against
 # that run's 0.28. Being able to set it is the point.
 ENT="${5:-0.01}"
-echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED"
+# $6 = episodes (= env steps / seqdur). Default is this preset's own budget;
+# pass 80000 to match pRNN_curious_26-07-23-10-06-25, whose config records
+# steps: 20480000 / trajs_total: 80000, when comparing against that run.
+EPISODES_ARG="${6:-}"
+# $7 = wm_pool_group, $8 = ppo_batch_size. Both are regime knobs, not tuning:
+# wm_pool_group sets world-model steps per unit of EXPERIENCE (1 per
+# group*seqdur env steps) and ppo_batch_size sets policy steps per env step.
+# The reference ran 1 wm step per 256 (serial) and 1 policy step per 64
+# (ppo_batch_size=256 at frames=2048); this preset defaults to 1 per 2048 and
+# 1 per 256, so those are the two axes that separate them.
+POOL_ARG="${7:-}"
+PB_ARG="${8:-}"
+echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT pool=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 module --force purge && module load python/3.10
@@ -139,8 +151,9 @@ FRAMES=$((NUM_ENVS*256))
 # clears the 73.4M plateau (per-room sRSA 0.7870). Buying the last 1.27x of
 # speed would cost 8x more dilution, and the brief is explicitly to not
 # sacrifice the learning dynamics.
-PPO_BATCH=1024
-EPISODES=400000                 # = world-model gradient-step budget / pool group
+PPO_BATCH=${PB_ARG:-1024}
+POOL_GROUP=${POOL_ARG:-8}
+EPISODES=${EPISODES_ARG:-400000}                 # = world-model gradient-step budget / pool group
 SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
 TOTAL_STEPS=$((EPISODES*SEQDUR))
 
@@ -209,14 +222,14 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # diluted against the num_envs=8 baseline. 1.29x more steps is not worth 4x
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
-    predNet.batched_wm=True predNet.wm_pool_group=8 predNet.compile_cell=layer \
+    predNet.batched_wm=True predNet.wm_pool_group=$POOL_GROUP predNet.compile_cell=layer \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
     logging.wandb_log=true \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.offpolicy_prnn_eval=True \
     logging.analysis_every_steps=$ANALYSIS_EVERY logging.plot_every_steps=$PLOT_EVERY \
-    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-g$POOL_GROUP-p$PPO_BATCH-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
 # hydra config dump instead of the error - the same way job 10416788's gate
@@ -228,7 +241,7 @@ save
 # Spatial curves are skipped in-run under cuda_graph (the eval moves the model
 # and would invalidate captured graphs), so score the archives offline here -
 # same numbers, computed after rather than during.
-RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}-s${SEED}_* 2>/dev/null | head -1)
+RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}-g${POOL_GROUP}-p${PPO_BATCH}-s${SEED}_* 2>/dev/null | head -1)
 # checkpoint_curve.py is the multi-room scorer and takes --layouts; skip it
 # for the single-room shape, where sRSA/SWdist are logged live to wandb by
 # the ordinary single-room eval path instead.
