@@ -96,6 +96,8 @@ GRAPH="${9:-False}"
 # $10 = rl.cuda_graph, the PPO minibatch step. Separate from $9 so the two
 # graphs can be attributed independently; both default off.
 PGRAPH="${10:-False}"
+# $11 = number of analysis events over the whole run.
+N_ANALYSIS_ARG="${11:-}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -166,6 +168,13 @@ FRAMES=$((NUM_ENVS*256))
 PPO_BATCH=${PB_ARG:-1024}
 POOL_GROUP=${POOL_ARG:-8}
 EPISODES=${EPISODES_ARG:-400000}                 # = world-model gradient-step budget / pool group
+# Once the training loop is graphed this is the DOMINANT cost, not a logging
+# detail: measured with both graphs on, the full 20.48M-step training compute is
+# ~9 min while 100 spatial evals are ~90 min on a dev box. 50 over 20,480,000
+# steps is exactly the density the 2026-07 reference ran at (analysis_interval
+# 200 updates at frames=2048 = one per 409,600 env steps), so matching it is
+# faithful rather than a corner cut.
+N_ANALYSIS=${N_ANALYSIS_ARG:-100}
 SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
 TOTAL_STEPS=$((EPISODES*SEQDUR))
 case "$GRAPH$PGRAPH" in
@@ -174,18 +183,17 @@ case "$GRAPH$PGRAPH" in
   *True)    GRAPH_TAG="-graphpol" ;;
   *)        GRAPH_TAG=""          ;;
 esac
-echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH"
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH n_analysis=$N_ANALYSIS"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
 # the curve"; a literal like 8388608 hides that and silently rescales the
 # moment the budget changes.
 #
-# N_ANALYSIS=100 rather than the 12 an 8388608 literal gave: sRSA is noisy at
-# this sample size (untrained 0.062 +/- 0.040; a trained single-room run swung
-# 0.45-0.63 between adjacent events), so 12 points cannot separate a trend from
-# the estimator. The 2026-07 reference logged ~50 over a 5x shorter run.
-N_ANALYSIS=100
+# N_ANALYSIS (assigned with the regime knobs above) is 100 by default rather
+# than the 12 an 8388608 literal gave: sRSA is noisy at this sample size
+# (untrained 0.062 +/- 0.040; a trained single-room run swung 0.45-0.63 between
+# adjacent events), so 12 points cannot separate a trend from the estimator.
 N_PLOT=12                       # figures are heavy; far fewer than the scalars
 ANALYSIS_EVERY=$((TOTAL_STEPS/N_ANALYSIS))
 PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
