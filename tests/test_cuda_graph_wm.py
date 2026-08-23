@@ -101,23 +101,21 @@ def test_graphed_segment_bitwise_equals_eager_no_rng():
     )
 
 
-def test_device_roundtrip_invalidates_captured_graphs():
-    """A device round-trip REPLACES param storage, so every captured graph is
-    left writing to freed memory - a use-after-free that silently corrupts
-    whatever the allocator hands those blocks to next.
+def test_raw_to_roundtrip_invalidates_captured_graphs():
+    """`Module.to()` REPLACES param storage, so every captured graph is left
+    writing to freed memory - a use-after-free that silently corrupts whatever
+    the allocator hands those blocks to next.
 
-    This is not hypothetical: `logging.plot_every_steps`/`analysis_every_steps`
-    wrap plotting and the spatial eval in `on_device([...], "cpu")`
-    (training/loop.py, evaluation/spatial.py). A 2026-07-22 cluster run died 7
-    updates after the update-200 event with `obs.direction`==184, because the
-    freed parameter block had been reused for that tensor.
+    This is not hypothetical: a 2026-07-22 cluster run died 7 updates after an
+    analysis event with `obs.direction`==184, because the freed parameter block
+    had been reused for that tensor.
 
-    Guarding in `PRNNAdapter.to()` is not enough: `on_device` calls
-    `world_model.device._move()` straight on the PredictiveNet, bypassing the
-    adapter. The graphs must notice the move themselves.
+    Guarding in `PRNNAdapter.to()` is not enough - anything can call `.to()` on
+    the PredictiveNet, bypassing the adapter - so the graphs must notice the
+    move themselves. `on_device` no longer triggers this (see the next test),
+    but the detection has to keep working for every other path, which is what
+    this exercises with a bare `.to()`.
     """
-    from curious_george.world_model.device import on_device
-
     dev = torch.device("cuda")
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
@@ -130,16 +128,57 @@ def test_device_roundtrip_invalidates_captured_graphs():
     assert len(trainer.graphs) == 1
     ptr_before = next(pN.pRNN.parameters()).data_ptr()
 
-    with on_device([pN], "cpu"):  # exactly what the plot / analysis path does
-        pass
+    pN.pRNN.to("cpu")
+    pN.pRNN.to(dev)
     assert next(pN.pRNN.parameters()).data_ptr() != ptr_before, (
-        "device round-trip did not move params - test no longer exercises the bug"
+        "bare .to() round-trip did not move params - test no longer exercises the bug"
     )
 
     # next use must notice the move, drop the stale graphs and re-capture
     adapter.train_on_episode(images, hd, act, last)
     assert len(trainer.graphs) == 1
     assert trainer._param_ptrs == tuple(p.data_ptr() for p in pN.pRNN.parameters())
+    assert torch.isfinite(_weights(pN)).all()
+
+
+def test_on_device_preserves_addresses_so_graphs_survive_the_spatial_eval():
+    """`on_device` must NOT invalidate captured graphs.
+
+    It is what `training/loop.py` and `evaluation/spatial.py` wrap the
+    sample-trajectory figure and the sRSA/SWdist eval in. While it reallocated,
+    a graphed run had to skip both (`loop.py::_skip_model_move_diag`) and
+    therefore logged no in-run spatial metrics at all - which is most of why
+    `predNet.cuda_graph` was measured and then left unadopted. Restoring into
+    the ORIGINAL storages removes the conflict: the eval still runs on CPU, the
+    graphs still point at live memory, and the metrics still get logged.
+    """
+    from curious_george.world_model.device import on_device
+
+    dev = torch.device("cuda")
+    pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
+    pN.pRNN.to(dev)
+    pN.pRNN.train()
+    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    images, hd, act, last = _one_segment(pN)
+
+    adapter.train_on_episode(images, hd, act, last)  # captures
+    trainer = adapter._graph_trainer
+    ptrs_before = tuple(p.data_ptr() for p in pN.pRNN.parameters())
+    w_before = _weights(pN)
+
+    with on_device([pN], "cpu"):
+        assert next(pN.pRNN.parameters()).device.type == "cpu", "eval did not reach CPU"
+
+    assert tuple(p.data_ptr() for p in pN.pRNN.parameters()) == ptrs_before, (
+        "on_device reallocated parameters; captured graphs are now dangling"
+    )
+    assert torch.equal(_weights(pN), w_before), "round trip changed the weights"
+    assert len(trainer.graphs) == 1, "graphs were dropped despite stable addresses"
+
+    # and the surviving graph must still train correctly
+    adapter.train_on_episode(images, hd, act, last)
+    assert len(trainer.graphs) == 1, "re-captured despite stable addresses"
+    assert not torch.equal(_weights(pN), w_before)
     assert torch.isfinite(_weights(pN)).all()
 
 

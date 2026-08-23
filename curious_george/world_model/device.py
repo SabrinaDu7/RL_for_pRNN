@@ -34,16 +34,46 @@ def _move(target, device) -> None:
 
 @contextmanager
 def on_device(targets, device: torch.device | str):
-    """Temporarily move module(s)/PredictiveNet(s) to `device`; restore on exit."""
+    """Temporarily move module(s)/PredictiveNet(s) to `device`; restore on exit.
+
+    The restore is ADDRESS-PRESERVING: the original parameter storages are held
+    alive for the duration and the values are copied back into them, so every
+    parameter ends at the `data_ptr()` it started with.
+
+    That is not a micro-optimization, it is what makes this composable with
+    `predNet.cuda_graph`. `Module.to()` REPLACES `param.data`, so a plain
+    cuda->cpu->cuda round trip ends on a fresh allocation and leaves every
+    captured CUDA graph writing to freed memory - a use-after-free that killed
+    two cluster runs (`obs.direction`==184, 7 updates after an analysis event).
+    The fingerprint in `_GraphWMTrainer` detects that and re-captures, but
+    re-capturing into the memory the move just fragmented was itself implicated
+    in a residual crash, so detection alone forced graphed runs to skip the
+    spatial eval and the sample-trajectory figure entirely.
+
+    Holding the original storages also means the accelerator memory is never
+    released and re-acquired, so there is no fragmentation to re-capture into.
+    The cost is the parameters staying resident while the copy runs on the other
+    device - ~1.6 MB for the h=500 pRNN.
+
+    `_GraphWMTrainer._invalidate_if_moved` is deliberately KEPT: any other path
+    that reassigns `param.data` still has to be caught, and this only makes THIS
+    path safe.
+    """
     targets = _as_list(targets)
     originals = [next(_module_of(t).parameters()).device for t in targets]
+    storages = [[p.data for p in _module_of(t).parameters()] for t in targets]
     for t in targets:
         _move(t, device)
     try:
         yield
     finally:
-        for t, original in zip(targets, originals):
+        for t, original, saved in zip(targets, originals, storages):
             _move(t, original)
+            with torch.no_grad():
+                for p, home in zip(_module_of(t).parameters(), saved):
+                    if p.data.data_ptr() != home.data_ptr():
+                        home.copy_(p.data)
+                        p.data = home
 
 
 @contextmanager

@@ -87,6 +87,12 @@ EPISODES_ARG="${6:-}"
 # 1 per 256, so those are the two axes that separate them.
 POOL_ARG="${7:-}"
 PB_ARG="${8:-}"
+# $9 = predNet.cuda_graph. Off by default. As of 2026-08-23 the graph serves the
+# POOLED path (the shipped regime), and world_model/device.py::on_device is
+# address-preserving, so a graphed run no longer has to skip the spatial eval -
+# it logs sRSA/SWdist and the prediction images like any other run. Both facts
+# are gated in tests/test_cuda_graph_wm.py.
+GRAPH="${9:-False}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -159,7 +165,8 @@ POOL_GROUP=${POOL_ARG:-8}
 EPISODES=${EPISODES_ARG:-400000}                 # = world-model gradient-step budget / pool group
 SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
 TOTAL_STEPS=$((EPISODES*SEQDUR))
-echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS"
+case "$GRAPH" in True|true|1) GRAPH_TAG="-graph" ;; *) GRAPH_TAG="" ;; esac
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph=$GRAPH"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
@@ -232,13 +239,14 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=$POOL_GROUP predNet.compile_cell=layer \
+    predNet.cuda_graph=$GRAPH \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
     logging.wandb_log=true \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.offpolicy_prnn_eval=True \
     logging.analysis_every_steps=$ANALYSIS_EVERY logging.plot_every_steps=$PLOT_EVERY \
-    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-g$POOL_GROUP-p$PPO_BATCH-s$SEED > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-g$POOL_GROUP-p$PPO_BATCH-s$SEED${GRAPH_TAG} > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
 # hydra config dump instead of the error - the same way job 10416788's gate
@@ -250,7 +258,7 @@ save
 # Spatial curves are skipped in-run under cuda_graph (the eval moves the model
 # and would invalidate captured graphs), so score the archives offline here -
 # same numbers, computed after rather than during.
-RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}-g${POOL_GROUP}-p${PPO_BATCH}-s${SEED}_* 2>/dev/null | head -1)
+RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}-g${POOL_GROUP}-p${PPO_BATCH}-s${SEED}${GRAPH_TAG}_* 2>/dev/null | head -1)
 # checkpoint_curve.py is the multi-room scorer and takes --layouts; skip it
 # for the single-room shape, where sRSA/SWdist are logged live to wandb by
 # the ordinary single-room eval path instead.
