@@ -1,4 +1,4 @@
-"""Golden fixture for the Object Memory Task (pre-refactor oracle).
+"""Golden fixture for the Object Memory Task (bitwise oracle).
 
 Runs the REAL task code end-to-end with a PINNED checkpoint (GOLDEN_CKPT_DIR
 below - not the ambient CUR_CKPT_DIR), CPU, pinned seed, wandb off, figures
@@ -8,10 +8,16 @@ analysis-interval eval that fires at batch 0) -> getTestTrial(2) ->
 quantifyObjectLearning.
 
 Run:  uv run python tests/golden_omt/capture_golden_omt.py
-Writes: tests/golden_omt/golden_omt_v0.pt
+Writes: FIXTURE (below), which tests/golden_omt/test_golden_omt.py reads.
 
 The refactored task must reproduce every tensor exactly (same seed => same
-RNG consumption order). Also encodes the env wiring guard: training uses
+RNG consumption order).
+
+v1 (2026-08-23) supersedes v0 (2026-07-17), which is kept as the pre-fix
+anchor. The two differ because removing the dead `recurrence` parameter also
+removed the transition it silently dropped from every odd PPO epoch - a real
+behaviour change, not a refactor, so it earned a new fixture rather than an
+edited one. v0 is the only record of what the code did before that. Also encodes the env wiring guard: training uses
 env_novel (object present), eval rollouts use env_orig (object absent).
 """
 
@@ -33,7 +39,8 @@ except ImportError:  # pre-refactor layout
 
 DEVICE = torch.device("cpu")
 REPO = Path(__file__).resolve().parents[2]
-OUT = str(REPO / "tests" / "golden_omt" / "golden_omt_v0.pt")
+# The one home for the fixture path; test_golden_omt.py imports it.
+FIXTURE = REPO / "tests" / "golden_omt" / "golden_omt_v1.pt"
 
 # The bitwise gate is only meaningful against the checkpoint the fixture was
 # captured from, so PIN it here instead of inheriting the ambient CUR_CKPT_DIR
@@ -47,7 +54,7 @@ GOLDEN_CKPT_DIR = Path(
 )
 
 OVERRIDES = [
-    # golden_omt_v0.pt was captured under legacy alignment at B=1; pin both so
+    # The fixture was captured under legacy alignment at B=1; pin both so
     # the bitwise gate is immune to main.yaml default changes (rewards flip
     # broke it 2026-07-08; num_envs default flipped to 8 in phase C)
     "rewards=curious",
@@ -82,7 +89,7 @@ def run_omt_capture() -> dict:
     for path in (prnn_ckpt, ac_ckpt):
         assert Path(path).is_file(), (
             f"golden fixture checkpoint missing: {path}. The bitwise gate is "
-            "pinned to the run that captured golden_omt_v0.pt; set "
+            f"pinned to the run that captured {FIXTURE.name}; set "
             "GOLDEN_OMT_CKPT_DIR only to re-capture on purpose."
         )
 
@@ -170,8 +177,8 @@ def run_omt_capture() -> dict:
 
 if __name__ == "__main__":
     fixture = run_omt_capture()
-    torch.save(fixture, OUT)
-    print(f"saved {OUT}")
+    torch.save(fixture, FIXTURE)
+    print(f"saved {FIXTURE}")
     print(f"batches: {len(fixture['batches'])}")
     print(f"batch0 curious mean={fixture['batches'][0]['curious_rewards'].mean():.6e}")
     print(f"goalmodulation={fixture['object_learning']['goalmodulation']:.6f}")

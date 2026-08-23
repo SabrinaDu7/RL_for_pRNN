@@ -220,6 +220,62 @@ The question: does closing both ratios reproduce that run's sRSA plateau
 4. The full 491.5M budget is **~7.6 h**, not 2 h. That is arithmetic, not
    engineering — 1.92M gradient steps against a ~62 grad/s ceiling.
 
+## 9. A behaviour discontinuity in the run series (2026-08-23)
+
+`recurrence` was removed from the PPO path, and **that changes training
+numerics** - every run before it is on one side of a line, every run after on
+the other.
+
+`recurrence` was fixed at 1 everywhere (`algo.py` default, `setup.py` passed it
+explicitly, nothing else ever set it), but its machinery was live. Inside
+`get_batches_starting_indexes`, on alternating epochs:
+
+```python
+indexes = indexes[(indexes + recurrence) % num_frames != 0]   # drops one index
+indexes += recurrence // 2                                    # adds 0
+```
+
+At recurrence=1 that **drops exactly one transition and shortens the final
+minibatch, on half of all PPO epochs, in service of a shift of zero**. With
+`ppo_epochs=4` that is 2 epochs in every 4, one transition of `rl.frames`.
+
+Confirmed two ways, not argued:
+
+```
+old vs new partition at the golden's shape (frames=64, batch=16)
+  even epoch   identical=True    [16,16,16,16]   covers 64/64
+  odd  epoch   identical=False   old [16,16,16,15] covers 63/64
+                                 new [16,16,16,16] covers 64/64
+```
+
+and by restoring **only** the drop while keeping the rest of the removal, which
+made `tests/golden_omt` pass 5/5 again. So the refactor is bitwise-clean
+everywhere else; the goldens move because the bug is fixed.
+
+**Consequence for the record:** `tests/golden_omt/golden_omt_v0.pt`
+(2026-07-17) is the pre-fix oracle and is kept; `golden_omt_v1.pt` (2026-08-23)
+is captured on the fixed code and is what the test reads. Divergence appears
+first in `batches[1].curious_rewards`, max|diff| 1.9e-3 - batch 0 is collected
+before the first update, so it still matches. Runs launched before this commit
+(including every run in the tables above, and jobs 10449418 / 10449419) trained
+on 32,767 transitions on odd epochs; runs after train on all 32,768. The effect
+is small but it compounds through the policy into the rollout, so **do not
+expect bitwise agreement across the line** - compare curves, not tensors.
+
+Also removed with it, since nothing else used them: the `batch_num` counter,
+the `for i in range(recurrence)` loop and its five `/= recurrence` divisions,
+and the two `recurrence` asserts. `update_policy` now returns `UpdateLogs`
+instead of `(UpdateLogs, batch_num)`, and `get_batches_starting_indexes` is
+`shuffled_minibatches(*, num_frames, batch_size)`, gated by
+`tests/test_policy_minibatches.py` - the partition test the old code never had.
+
+**A second flaw fixed on the way:** `PredictivePPOAlgo.__init__` took 30
+positional parameters with `recurrence` twelfth, and carried a comment
+accommodating the hazard (`batched_wm=False,  # appended last: positional
+callers exist (tests)`). Removing a mid-signature parameter would have silently
+shifted every argument in the two positional callers. Everything after `device`
+is now keyword-only.
+
 **Tools added this session:** `tests/perf/{find_sync,profile_api,roofline_step}.py`,
 `scripts/trace/{prediction_panel,srsa_repeats}.py`,
 `predNet.{compile_cell,wm_pool_group,wm_segment_stride}`, `slurm/train_fast.sh`.

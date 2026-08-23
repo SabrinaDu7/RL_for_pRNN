@@ -95,6 +95,7 @@ class PredictivePPOAlgo:
         acmodel,
         predictiveNet: PredictiveNet,
         device: torch.device,
+        *,
         num_frames=None,
         discount=0.99,
         lr=0.001,
@@ -102,7 +103,6 @@ class PredictivePPOAlgo:
         entropy_coef=0.01,
         value_loss_coef=0.5,
         max_grad_norm=0.5,
-        recurrence=1,
         adam_eps=1e-8,
         clip_eps=0.2,
         epochs=4,
@@ -119,7 +119,7 @@ class PredictivePPOAlgo:
         k_curious=1,
         reward_alignment="legacy",
         loss="ppo_clip",
-        batched_wm=False,  # appended last: positional callers exist (tests)
+        batched_wm=False,
         cuda_graph=False,
         batched_curiosity=False,
         compile_cell=False,
@@ -152,7 +152,6 @@ class PredictivePPOAlgo:
         self.entropy_coef = entropy_coef
         self.value_loss_coef = value_loss_coef
         self.max_grad_norm = max_grad_norm
-        self.recurrence = recurrence
         self.preprocess_obss = preprocess_obss or default_preprocess_obss
         self.intrinsic = intrinsic
         self.k_int = k_int
@@ -199,9 +198,6 @@ class PredictivePPOAlgo:
                 x is None or x.can_overlap() for x in self.env.grid.grid
             ]
 
-        assert self.acmodel.recurrent or self.recurrence == 1
-        assert self.num_frames % self.recurrence == 0
-
         self.acmodel.to(self.device)
         self.acmodel.train()
         if self.adapter:
@@ -236,7 +232,6 @@ class PredictivePPOAlgo:
         self.clip_eps = clip_eps
         self.epochs = epochs
         self.batch_size = batch_size
-        assert self.batch_size % self.recurrence == 0
 
         if len(adam_betas) != 2 or not (
             0 <= adam_betas[0] < 1 and 0 <= adam_betas[1] < 1
@@ -248,7 +243,6 @@ class PredictivePPOAlgo:
             betas=tuple(adam_betas),
             eps=adam_eps,
         )
-        self.batch_num = 0
 
         # analysis code reads these off the algo after each collect
         self.directions = np.empty(0, dtype=np.int64)
@@ -318,7 +312,7 @@ class PredictivePPOAlgo:
         del exps["done_indices"]
         del exps["last_observations"]
 
-        logs, self.batch_num = update_policy(
+        logs = update_policy(
             self.acmodel,
             self.optimizer,
             exps,
@@ -330,10 +324,8 @@ class PredictivePPOAlgo:
             ),
             epochs=self.epochs,
             batch_size=self.batch_size,
-            recurrence=self.recurrence,
             num_frames=self.num_frames,
             max_grad_norm=self.max_grad_norm,
-            batch_num=self.batch_num,
             update_params=update_params,
         )
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from jaxtyping import Int
 from torch_ac.utils import DictList
 
 from curious_george.rl.update.losses import LOSSES, ppo_clip_loss
@@ -33,29 +34,16 @@ class UpdateLogs:
         }
 
 
-def get_batches_starting_indexes(num_frames: int, recurrence: int, batch_size: int, batch_num: int):
-    """Gives, for each batch, the indexes of the observations given to
-    the model and the experiences used to compute the loss at first.
+def shuffled_minibatches(*, num_frames: int, batch_size: int) -> list[Int[np.ndarray, " b"]]:
+    """The rollout's transition indexes, shuffled and cut into minibatches.
 
-    First, the indexes are the integers from 0 to `num_frames` with a step of
-    `recurrence`, shifted by `recurrence//2` one time in two for having
-    more diverse batches. Then, the indexes are split into the different batches.
+    One PPO gradient step per minibatch. Transitions are independent by this
+    point - the advantages were already computed in episode order by
+    `compute_gae` - so the shuffle is free to cut across episodes, which is
+    what makes a minibatch `batch_size` transitions rather than a whole episode.
     """
-
-    indexes = np.arange(0, num_frames, recurrence)
-    indexes = np.random.permutation(indexes)
-
-    # Shift starting indexes by recurrence//2 half the time
-    if batch_num % 2 == 1:
-        indexes = indexes[(indexes + recurrence) % num_frames != 0]
-        indexes += recurrence // 2
-
-    num_indexes = batch_size // recurrence
-    batches_starting_indexes = [
-        indexes[i : i + num_indexes] for i in range(0, len(indexes), num_indexes)
-    ]
-
-    return batches_starting_indexes
+    indexes = np.random.permutation(num_frames)
+    return [indexes[i : i + batch_size] for i in range(0, num_frames, batch_size)]
 
 
 def _index_policy_batch(exps, indexes, acmodel):
@@ -92,27 +80,25 @@ def update_policy(
     loss_kwargs: dict,
     epochs: int,
     batch_size: int,
-    recurrence: int,
     num_frames: int,
     max_grad_norm: float,
-    batch_num: int,
     update_params: bool = True,
-) -> tuple[UpdateLogs, int]:
-    """Runs the update epochs over `exps`; returns (logs, new_batch_num)."""
+) -> UpdateLogs:
+    """Runs `epochs` reshuffled passes over `exps`, one gradient step per minibatch."""
     if isinstance(loss_fn, str):
         loss_fn = LOSSES[loss_fn]
 
     with timer("update/policy"):
         return _update_policy_epochs(
             acmodel, optimizer, exps, loss_fn, loss_kwargs, epochs, batch_size,
-            recurrence, num_frames, max_grad_norm, batch_num, update_params,
+            num_frames, max_grad_norm, update_params,
         )
 
 
 def _update_policy_epochs(
     acmodel, optimizer, exps, loss_fn, loss_kwargs, epochs, batch_size,
-    recurrence, num_frames, max_grad_norm, batch_num, update_params,
-) -> tuple[UpdateLogs, int]:
+    num_frames, max_grad_norm, update_params,
+) -> UpdateLogs:
     for _ in range(epochs):
         # Initialize log values
 
@@ -123,48 +109,16 @@ def _update_policy_epochs(
         log_grad_norms = []
 
         with timer("update/policy/batch_indexes"):
-            batches = get_batches_starting_indexes(
-                num_frames, recurrence, batch_size, batch_num
-            )
-        batch_num += 1
+            batches = shuffled_minibatches(num_frames=num_frames, batch_size=batch_size)
 
-        for inds in batches: # inds should be multiples of ppo_batch_size
-            # Initialize batch values
+        for inds in batches:
+            with timer("update/policy/index"):
+                sb = _index_policy_batch(exps, inds, acmodel)
 
-            batch_entropy = 0
-            batch_value = 0
-            batch_policy_loss = 0
-            batch_value_loss = 0
-            batch_loss = 0
-
-            for i in range(recurrence): # only loops once
-                # Create a sub-batch of experience
-
-                with timer("update/policy/index"):
-                    sb = _index_policy_batch(exps, inds + i, acmodel)
-
-                # Compute loss
-
-                with timer("update/policy/forward"):
-                    dist, value = acmodel(sb.obs, SR=sb.SR)
-                with timer("update/policy/loss"):
-                    loss, terms = loss_fn(dist, value, sb, **loss_kwargs)
-
-                # Update batch values
-
-                batch_entropy += terms.policy_entropy_bits
-                batch_value += terms.value_mean
-                batch_policy_loss += terms.policy_loss
-                batch_value_loss += terms.value_loss
-                batch_loss += loss
-
-            # Update batch values
-
-            batch_entropy /= recurrence
-            batch_value /= recurrence
-            batch_policy_loss /= recurrence
-            batch_value_loss /= recurrence
-            batch_loss /= recurrence
+            with timer("update/policy/forward"):
+                dist, value = acmodel(sb.obs, SR=sb.SR)
+            with timer("update/policy/loss"):
+                batch_loss, terms = loss_fn(dist, value, sb, **loss_kwargs)
 
             # Update actor-critic
 
@@ -186,10 +140,10 @@ def _update_policy_epochs(
 
             # Update log values
 
-            log_entropies.append(batch_entropy)
-            log_values.append(batch_value)
-            log_policy_losses.append(batch_policy_loss)
-            log_value_losses.append(batch_value_loss)
+            log_entropies.append(terms.policy_entropy_bits)
+            log_values.append(terms.value_mean)
+            log_policy_losses.append(terms.policy_loss)
+            log_value_losses.append(terms.value_loss)
             log_grad_norms.append(grad_norm)
 
     # Aggregate every scalar on-device and perform one host transfer/sync.
@@ -212,4 +166,4 @@ def _update_policy_epochs(
         grad_norm=summary[4],
     )
 
-    return logs, batch_num
+    return logs

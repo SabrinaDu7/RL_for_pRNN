@@ -35,8 +35,11 @@ def batched_algo():
 
     return PredictivePPOAlgo(
         envs, acmodel, pN, torch.device("cpu"),
-        B * T, 0.98, 3e-4, 0.95, 0.0, 1, 0.5, 1, 1e-8, 0.2, 4, 16,
-        preprocess_obss, True, 0, 0.05, SEQDUR, False, 1, True, True, 1,
+        num_frames=B * T, discount=0.98, lr=3e-4, gae_lambda=0.95,
+        entropy_coef=0.0, value_loss_coef=1, max_grad_norm=0.5, adam_eps=1e-8,
+        clip_eps=0.2, epochs=4, batch_size=16, preprocess_obss=preprocess_obss,
+        train_pN=True, noise_mu=0, noise_std=0.05, prnn_seqdur=SEQDUR,
+        intrinsic=False, k_int=1, pastSR=True, curious_agent=True, k_curious=1,
     )
 
 

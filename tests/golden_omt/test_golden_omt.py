@@ -1,5 +1,6 @@
 """Bitwise gate for the OMT refactor: re-run the task end-to-end and compare
-every tensor against the pre-refactor fixture golden_omt_v0.pt.
+every tensor against the pinned fixture (FIXTURE, owned by
+capture_golden_omt.py).
 
 Scope: this answers "given the SAME checkpoint and seed, is the math still
 bit-identical after a refactor?" - it is NOT a check that some new checkpoint
@@ -14,15 +15,11 @@ pN_control, non-degenerate curious_rewards) that DOES run on CUR_CKPT_DIR.
 Runtime ~1 min.
 """
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 import torch
 
-from tests.golden_omt.capture_golden_omt import run_omt_capture
-
-FIXTURE = Path(__file__).parent / "golden_omt_v0.pt"
+from tests.golden_omt.capture_golden_omt import FIXTURE, run_omt_capture
 
 
 def _assert_equal(name, a, b):

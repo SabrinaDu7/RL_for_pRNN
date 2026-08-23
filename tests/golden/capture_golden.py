@@ -83,28 +83,27 @@ def build_fixture() -> dict:
         acmodel,
         predictiveNet,
         DEVICE,
-        FRAMES,          # num_frames
-        0.98,            # discount
-        3e-4,            # lr
-        0.95,            # gae_lambda
-        0.0,             # entropy_coef
-        1,               # value_loss_coef
-        0.5,             # max_grad_norm
-        1,               # recurrence
-        1e-8,            # adam_eps
-        0.2,             # clip_eps
-        4,               # epochs
-        16,              # batch_size (frames=64 -> 4 minibatches)
-        preprocess_obss,
-        True,            # train_pN
-        0,               # noise_mu
-        0.05,            # noise_std
-        SEQDUR,          # prnn_seqdur
-        False,           # intrinsic
-        1,               # k_int
-        pastSR,
-        True,            # curious_agent
-        1,               # k_curious
+        num_frames=FRAMES,
+        discount=0.98,
+        lr=3e-4,
+        gae_lambda=0.95,
+        entropy_coef=0.0,
+        value_loss_coef=1,
+        max_grad_norm=0.5,
+        adam_eps=1e-8,
+        clip_eps=0.2,
+        epochs=4,
+        batch_size=16,  # frames=64 -> 4 minibatches
+        preprocess_obss=preprocess_obss,
+        train_pN=True,
+        noise_mu=0,
+        noise_std=0.05,
+        prnn_seqdur=SEQDUR,
+        intrinsic=False,
+        k_int=1,
+        pastSR=pastSR,
+        curious_agent=True,
+        k_curious=1,
     )
 
     rounds = []
