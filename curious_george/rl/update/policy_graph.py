@@ -18,42 +18,22 @@ addresses, which a captured graph bakes in:
    buffer copied into before each replay, so one capture serves all
    `frames / batch_size` minibatches of every epoch.
 
-And one that is about the host: `torch.distributions.Categorical` validates its
-arguments by default, which runs `if not valid.all()` on a device tensor. That
-is a HOST SYNC, and a host sync during capture is illegal - it is the single
-reason the whole step would not capture. Validation is disabled around capture
-only (`_no_dist_validation`); replay executes no Python, so nothing is skipped
-at run time that would otherwise have run. Measured cost of the check in eager:
-none (3.558 ms validated vs 3.752 unvalidated, i.e. noise).
+And one that is about the host: the policy's `Categorical` would host-sync
+during capture. `curious_george.utils.cuda_graph.no_dist_validation` owns that
+story.
 """
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-
 import torch
 from torch_ac.utils import DictList
+
+from curious_george.utils.cuda_graph import no_dist_validation
 
 # Fields `_index_policy_batch` reads. `obs.direction` is nested and handled
 # separately; `obs.image` is deliberately absent, matching that function's
 # with_CV=False path.
 _FLAT_FIELDS = ("SR", "action", "value", "advantage", "returnn", "log_prob")
-
-
-@contextmanager
-def _no_dist_validation():
-    """Distribution arg-checking off, restored afterwards.
-
-    `Distribution.set_default_validate_args` is process-global, so this is
-    scoped as tightly as possible: capture only, never the eager path a
-    non-graphed run takes.
-    """
-    prev = torch.distributions.Distribution._validate_args
-    torch.distributions.Distribution.set_default_validate_args(False)
-    try:
-        yield
-    finally:
-        torch.distributions.Distribution.set_default_validate_args(prev)
 
 
 class GraphPolicyTrainer:
@@ -164,7 +144,7 @@ class GraphPolicyTrainer:
             for p, st in self.optimizer.state.items()
         }
 
-        with _no_dist_validation():
+        with no_dist_validation():
             s = torch.cuda.Stream()
             s.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(s):

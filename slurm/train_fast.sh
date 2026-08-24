@@ -98,6 +98,11 @@ GRAPH="${9:-False}"
 PGRAPH="${10:-False}"
 # $11 = number of analysis events over the whole run.
 N_ANALYSIS_ARG="${11:-}"
+# $12 = exp.rollout_cuda_graph. The rollout is ~43% of a doubly-graphed update
+# and is the last big block of dispatch left; capturing one timestep is worth
+# 1.59x at wm_pool_group=8 and 1.36x at 1 (the ~370 ms/update saving is the
+# same at both - only the fraction differs). Off by default.
+RGRAPH="${12:-False}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -193,7 +198,8 @@ case "$GRAPH$PGRAPH" in
   *True)    GRAPH_TAG="-graphpol" ;;
   *)        GRAPH_TAG=""          ;;
 esac
-echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH n_analysis=$N_ANALYSIS"
+case "$RGRAPH" in True|true|1) GRAPH_TAG="${GRAPH_TAG}-roll" ;; esac
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH cuda_graph(rollout)=$RGRAPH n_analysis=$N_ANALYSIS"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
@@ -265,7 +271,7 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # more dilution; 128 already fits inside 2 h.
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=$POOL_GROUP predNet.compile_cell=layer \
-    predNet.cuda_graph=$GRAPH rl.cuda_graph=$PGRAPH \
+    predNet.cuda_graph=$GRAPH rl.cuda_graph=$PGRAPH exp.rollout_cuda_graph=$RGRAPH \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
     logging.wandb_log=true \

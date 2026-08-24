@@ -127,6 +127,7 @@ class PredictivePPOAlgo:
         wm_pool_group=0,
         adam_betas=(0.9, 0.999),
         policy_cuda_graph=False,
+        rollout_cuda_graph=False,
     ):
         # env may be a single shell, a list of shells (parallel collection),
         # or a batched shell pool (process-parallel or device-resident)
@@ -168,6 +169,11 @@ class PredictivePPOAlgo:
         # state is still empty (the capturable rebuild requires that).
         self.policy_cuda_graph = bool(policy_cuda_graph) and device.type == "cuda"
         self._policy_graph = None
+        # exp.rollout_cuda_graph: replay a captured rollout timestep. Built
+        # after the tracker exists, below; capture is deferred to the first
+        # rollout so the models are on-device and warmed up.
+        self.rollout_cuda_graph = bool(rollout_cuda_graph) and device.type == "cuda"
+        self._rollout_graph = None
         self.cuda_graph = cuda_graph
         self.pastSR = pastSR
         self.curious_agent = curious_agent
@@ -219,6 +225,21 @@ class PredictivePPOAlgo:
             self._first_obs = [e.reset() for e in self.envs]
             loc_b = [self._pos(e) for e in self.envs]
         self.tracker = make_sr_tracker(self.adapter, self.device, self._first_obs)
+        if self.rollout_cuda_graph:
+            from curious_george.rl.collect.rollout_graph import GraphRolloutStepper
+
+            if not self.is_device_env:
+                raise ValueError(
+                    "exp.rollout_cuda_graph captures the device environment "
+                    "table's timestep; it requires exp.device_env=True"
+                )
+            self._rollout_graph = GraphRolloutStepper(
+                acmodel=self.acmodel,
+                tracker=self.tracker,
+                pool=self.envs,
+                num_steps=self.num_frames // self.num_envs,
+                device=self.device,
+            )
         self.state = CollectorState(
             obs_b=self._first_obs,
             loc_b=loc_b,
@@ -290,6 +311,7 @@ class PredictivePPOAlgo:
             loc_stats=self.loc_stats,
             subroom_size_=self._subroom_size,
             intrinsic_ref=self.intrinsic_ref,
+            rollout_graph=self._rollout_graph,
         )
 
         # expose the rollout on the algo for analysis/tasks that read attributes

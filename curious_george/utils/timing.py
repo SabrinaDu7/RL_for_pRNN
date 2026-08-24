@@ -56,6 +56,23 @@ class StageTimer:
             self.totals[name] += time.perf_counter() - t0
             self.counts[name] += 1
 
+    @contextmanager
+    def disabled(self):
+        """Timing off, and with it the device syncs, restored afterwards.
+
+        Required around CUDA-graph capture: `sync_device` calls
+        `torch.cuda.synchronize()` at every stage boundary and a host sync
+        during capture is ILLEGAL, so a profiling run would otherwise be the
+        one run that cannot capture. Replay executes no Python, so the stages
+        inside a captured region could not be attributed anyway.
+        """
+        prev = self.enabled
+        self.enabled = False
+        try:
+            yield
+        finally:
+            self.enabled = prev
+
     def reset(self) -> None:
         self.totals.clear()
         self.counts.clear()

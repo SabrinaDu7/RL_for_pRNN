@@ -24,6 +24,7 @@ from curious_george.rl.collect.diagnostics import (
     check_large_jump,
     new_joint_probabilities,
 )
+from curious_george.rl.collect.rollout_graph import RolloutBuffers
 from curious_george.rl.update.advantage import compute_gae
 from curious_george.rl.update.rewards import (
     REWARD_ALIGNMENTS,
@@ -135,12 +136,16 @@ def collect_rollout(
     loc_stats: LocationStats,
     subroom_size_: int | None,
     intrinsic_ref=None,  # IntrinsicReference (B=1 only) or None
+    rollout_graph=None,  # GraphRolloutStepper (exp.rollout_cuda_graph) or None
 ) -> CollectResult:
     pool = envs if isinstance(envs, AsyncShellPool) else None
     device_pool = envs if isinstance(envs, DeviceTableShellPool) else None
     B = len(envs)
     T = cfg.num_frames // B
     device = cfg.device
+
+    if rollout_graph is not None and device_pool is None:
+        raise ValueError("exp.rollout_cuda_graph requires the device env table")
 
     if device_pool is not None:
         if cfg.prnn_seqdur <= 0 or T % cfg.prnn_seqdur:
@@ -167,24 +172,32 @@ def collect_rollout(
     )
     last_obs_b: list[list] = [[] for _ in range(B)]
 
-    actions = torch.zeros((T, B), device=device, dtype=torch.int)
-    values = torch.zeros((T, B), device=device)
-    rewards = torch.zeros((T, B), device=device)
     # log_probs is DERIVED after the loop from the stored logits, not
     # accumulated per step - see the record block below.
-    masks = torch.zeros((T, B), device=device)
-    SRs = torch.zeros((T, B, state.sr.shape[1]), device=device)
-    policy_probs = torch.zeros(
-        (T, B, getattr(acmodel, "act_dim")), device=device
+    #
+    # A graphed rollout REUSES its stepper's buffers, because the captured
+    # replays write to the addresses they saw at capture time. Everything
+    # downstream copies out (`flat` permutes and so cannot alias, the rest
+    # goes through .cpu()), so the reuse is invisible past this function.
+    buffers = (
+        rollout_graph.buffers
+        if rollout_graph is not None
+        else RolloutBuffers.allocate(
+            num_steps=T,
+            num_envs=B,
+            hidden_size=state.sr.shape[1],
+            act_dim=getattr(acmodel, "act_dim"),
+            device=device,
+            image_shape=device_pool.image_shape if device_pool is not None else None,
+        )
     )
+    actions, values, rewards = buffers.actions, buffers.values, buffers.rewards
+    masks, SRs, policy_logits = buffers.masks, buffers.srs, buffers.policy_logits
 
     if device_pool is not None:
-        obs_shape = device_pool.image_shape
-        device_images = torch.empty(
-            (T, B, *obs_shape), dtype=torch.uint8, device=device
-        )
-        device_directions = torch.empty((T, B), dtype=torch.long, device=device)
-        device_positions = torch.empty((T, B, 2), dtype=torch.long, device=device)
+        device_images = buffers.images
+        device_directions = buffers.directions
+        device_positions = buffers.positions
         device_obs = device_pool.observation_device()
         device_reset_index = 0
         device_pool.prepare_resets(count=T // cfg.prnn_seqdur)
@@ -195,7 +208,55 @@ def collect_rollout(
     dist_travelled = 0
     last_post_obs = None  # final pre-reset obs (intrinsic tail, non-pastSR)
 
+    def _close_device_segment(post_images, post_directions) -> None:
+        """End a synchronized device segment: bank its tail, reset, re-observe.
+
+        `post_images`/`post_directions` are the observation AFTER the step that
+        closed the segment - what `step_device` returned in eager, what a
+        re-gather from the pool returns after a replay. Same values either way,
+        because the pool's position/direction tensors are the authority.
+        """
+        nonlocal device_reset_index, device_obs
+        device_last_batches.append(
+            (
+                post_images.clone(),
+                post_directions.clone(),
+                device_pool.positions.clone(),
+                device_segment_initial.clone(),
+            )
+        )
+        # This backend rejects environment rewards/terminations, so
+        # synchronized segment statistics are known without B Python
+        # bookkeeping iterations.
+        state.done_counter += B
+        state.finished_returns.extend([0.0] * B)
+        state.finished_reshaped.extend([0.0] * B)
+        state.finished_frames.extend([cfg.prnn_seqdur] * B)
+
+        state.sr = tracker.reset_all_envs()
+        device_pool.apply_prepared_reset(index=device_reset_index)
+        device_reset_index += 1
+        device_obs = device_pool.observation_device()
+
+    if rollout_graph is not None:
+        rollout_graph.prepare(sr=state.sr)
+
     for t in range(T):
+        if rollout_graph is not None:
+            # ONE replay covers the policy forward, the per-timestep records,
+            # the environment step and the pRNN step. Only what a graph cannot
+            # express stays here: the Python-known segment boundaries, and the
+            # episode mask, whose value the replay reads from a static row.
+            if t % cfg.prnn_seqdur == 0:
+                device_segment_initial = device_pool.positions.clone()
+            with timer("collect/graph_step"):
+                rollout_graph.step(mask=float(state.mask_b[0]))
+            seq_done = (t + 1) % cfg.prnn_seqdur == 0
+            state.mask_b.fill(1 - seq_done)
+            if seq_done:
+                _close_device_segment(*device_pool.observation_device())
+            continue
+
         # --- action selection (one batched forward) ----------------------
         with timer("collect/policy_fwd"):
             with timer("collect/policy/preprocess"):
@@ -251,7 +312,7 @@ def collect_rollout(
             # naive `log_softmax(logits).gather(...)` does NOT - verified - and
             # would break the bitwise oracle in tests/golden_omt/, which
             # models.py's redundant log_softmax exists to protect.
-            policy_probs[t] = dist.logits.detach()
+            policy_logits[t] = dist.logits.detach()
 
         # --- environment stepping ----------------------------------------
         pre_obs_b = None if device_pool is not None else list(state.obs_b)
@@ -345,26 +406,7 @@ def collect_rollout(
         # boundaries. No tensor value is inspected and no D2H occurs here.
         if device_pool is not None:
             if seq_done:
-                device_last_batches.append(
-                    (
-                        post_images.clone(),
-                        post_directions.clone(),
-                        device_pool.positions.clone(),
-                        device_segment_initial.clone(),
-                    )
-                )
-                # This backend rejects environment rewards/terminations, so
-                # synchronized segment statistics are known without B Python
-                # bookkeeping iterations.
-                state.done_counter += B
-                state.finished_returns.extend([0.0] * B)
-                state.finished_reshaped.extend([0.0] * B)
-                state.finished_frames.extend([cfg.prnn_seqdur] * B)
-
-                state.sr = tracker.reset_all_envs()
-                device_pool.apply_prepared_reset(index=device_reset_index)
-                device_reset_index += 1
-                device_obs = device_pool.observation_device()
+                _close_device_segment(post_images, post_directions)
             continue
 
         # --- per-env episode termination -----------------------------------
@@ -411,6 +453,12 @@ def collect_rollout(
                 state.obs_b[b] = obs_reset_b[b]
                 state.loc_b[b] = loc_reset_b[b]
 
+    if rollout_graph is not None:
+        # Replays write the SR into the tracker's state buffer and nowhere
+        # else; the carried copy is what the bootstrap value below and the
+        # next rollout read.
+        state.sr = rollout_graph.current_sr()
+
     if device_pool is not None:
         # Only directions and positions are needed by CPU diagnostics. Images
         # and terminal observations stay on-device for PPO/world-model work.
@@ -449,12 +497,13 @@ def collect_rollout(
     # device during the recurrent rollout and transfer once here; the old path
     # performed a second device->host copy in every timestep. np.add.at uses
     # the same historical (t, b) accumulation order without a Python loop.
-    # `policy_probs` held normalised LOGITS during the loop (see above); turn
-    # them into log-probs and probabilities now, in one batched op each.
-    log_probs = policy_probs.gather(-1, actions.long().unsqueeze(-1)).squeeze(-1)
-    policy_probs = policy_probs.softmax(dim=-1)
+    # `policy_logits` holds the distribution's own normalised logits (see
+    # above); turn them into log-probs and probabilities now, in one batched
+    # op each. Neither writes back, so a graphed rollout's reused buffer is
+    # left holding logits, as its name says.
+    log_probs = policy_logits.gather(-1, actions.long().unsqueeze(-1)).squeeze(-1)
 
-    probs_np = policy_probs.cpu().numpy()
+    probs_np = policy_logits.softmax(dim=-1).cpu().numpy()
     np.add.at(
         joint,
         (
