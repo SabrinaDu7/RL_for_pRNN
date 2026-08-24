@@ -111,6 +111,13 @@ RGRAPH="${12:-False}"
 # which is exactly what happened in 10463590 (10,000 steps) vs 10463591
 # (80,000). Budget by this instead when comparing regimes.
 WM_STEPS_ARG="${13:-}"
+# $14 = exp.num_envs. Raising it is the one lever that helps the POOLED regime
+# specifically: wm_pool_group=8 needs 8x more updates than g1 for the same
+# gradient-step budget, so it pays every per-update cost (curiosity forward,
+# GAE, log prep) eight times over. Doubling num_envs halves the update count
+# for the same budget. rl.frames follows it, and rl.ppo_batch_size must be
+# scaled alongside or the policy budget moves with it.
+NUM_ENVS_ARG="${14:-}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -170,7 +177,7 @@ DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p $DEST
 save () { rsync -a outputs/ "$DEST/outputs/" 2>/dev/null || true; }
 trap save EXIT
 
-NUM_ENVS=128
+NUM_ENVS=${NUM_ENVS_ARG:-128}
 FRAMES=$((NUM_ENVS*256))
 # ppo_batch_size is NOT scaled with frames, deliberately. Scaling it holds
 # policy gradient steps per UPDATE fixed at 16, which means one policy step per
