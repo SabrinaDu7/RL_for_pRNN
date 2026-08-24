@@ -946,7 +946,15 @@ class BatchedSRTracker:
         self.reset_all()
 
     def reset_all(self) -> None:
-        self.state = torch.zeros((self.B, 1, self.hidden_size), device=self.device)
+        # Allocated ONCE and zeroed in place thereafter. The hidden state is an
+        # input to (and output of) the per-step cell call, so anything that
+        # captures that call bakes in its address; rebinding it to a fresh
+        # allocation would leave the capture reading stranded memory - the same
+        # failure mode as world_model/device.py's buffers, which fails silently.
+        if getattr(self, "state", None) is None:
+            self.state = torch.zeros((self.B, 1, self.hidden_size), device=self.device)
+        else:
+            self.state.zero_()
         self.phases = np.zeros(self.B, dtype=np.int64)
 
     def reset_env(self, i: int) -> None:
@@ -971,7 +979,8 @@ class BatchedSRTracker:
                 _, state = self.pN.pRNN.rnn(
                     x, internal=noise, state=self.state, batched=True
                 )
-        self.state = state[0].unsqueeze(1)
+        # copy_, not rebind - see reset_all.
+        self.state.copy_(state[0].unsqueeze(1))
         return self.sr()
 
     def step(self, obs_x: torch.Tensor, act_x: torch.Tensor) -> torch.Tensor:

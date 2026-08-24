@@ -353,11 +353,20 @@ class DeviceTableShellPool:
         return self._mission
 
     def observation_device(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return image uint8 ``(B,H,W,C)`` and direction int64 ``(B,)``."""
+        """Return image uint8 ``(B,H,W,C)`` and direction int64 ``(B,)``.
+
+        BOTH are owned by the caller. `images` always was - the gather
+        allocates - but `directions` used to be the LIVE `self.directions`,
+        which `step_device` then mutates in place. That made the pair
+        asymmetric: holding the returned observation across a step silently
+        changed half of it under you, and the collector was correct only by
+        call ordering. A borrow that is safe only by accident is a defect, not
+        a convention, so it is cloned.
+        """
         images = self.obs_banks[
             self.stream_layout, self.positions[:, 0], self.positions[:, 1], self.directions
         ]
-        return images, self.directions
+        return images, self.directions.clone()
 
     def _reset_streams(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Draw one layout and one start state per stream. (layouts, pos, dir).
