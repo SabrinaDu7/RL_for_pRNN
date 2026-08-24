@@ -103,6 +103,14 @@ N_ANALYSIS_ARG="${11:-}"
 # 1.59x at wm_pool_group=8 and 1.36x at 1 (the ~370 ms/update saving is the
 # same at both - only the fraction differs). Off by default.
 RGRAPH="${12:-False}"
+# $13 = world-model GRADIENT STEPS to train for. When set, $6 (episodes) is
+# derived from it through the regime, because episodes are experience and
+# experience is not training: at wm_pool_group=8 one gradient step costs 8
+# episodes, at 1 it costs one. Two arms budgeted by episodes are therefore NOT
+# comparable - g8 gets an eighth of g1's optimisation for the same wall clock,
+# which is exactly what happened in 10463590 (10,000 steps) vs 10463591
+# (80,000). Budget by this instead when comparing regimes.
+WM_STEPS_ARG="${13:-}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -182,7 +190,21 @@ FRAMES=$((NUM_ENVS*256))
 # sacrifice the learning dynamics.
 PPO_BATCH=${PB_ARG:-1024}
 POOL_GROUP=${POOL_ARG:-8}
-EPISODES=${EPISODES_ARG:-400000}                 # = world-model gradient-step budget / pool group
+EPISODES=${EPISODES_ARG:-400000}
+if [ -n "$WM_STEPS_ARG" ]; then
+  EPISODES=$(uv run --no-sync python -c "
+from hydra import compose, initialize_config_dir
+from pathlib import Path
+from curious_george.training.schedule import TrainingSchedule
+with initialize_config_dir(config_dir=str(Path('Configs').resolve()), version_base=None):
+    cfg = compose(config_name='main', overrides=[
+        'env=$ENVCFG', 'run=multienv',
+        'predNet.batched_wm=True', 'predNet.wm_pool_group=$POOL_GROUP',
+        'exp.num_envs=$NUM_ENVS', 'rl.frames=$FRAMES'])
+print(TrainingSchedule.episodes_for_wm_steps(cfg, $WM_STEPS_ARG))
+")
+  echo "budget: $WM_STEPS_ARG world-model gradient steps -> $EPISODES episodes"
+fi
 # Once the training loop is graphed this is the DOMINANT cost, not a logging
 # detail: measured with both graphs on, the full 20.48M-step training compute is
 # ~9 min while 100 spatial evals are ~90 min on a dev box. 50 over 20,480,000

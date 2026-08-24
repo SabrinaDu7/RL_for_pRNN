@@ -44,6 +44,25 @@ class TrainingSchedule:
     pool_group: int = 0
     segment_stride: int = 1
 
+    @staticmethod
+    def episodes_for_wm_steps(cfg, wm_steps_total: int) -> int:
+        """`rl.episodes_total` that yields `wm_steps_total` world-model steps.
+
+        `episodes_total` is experience, and how much TRAINING that buys depends
+        on the regime: at `wm_pool_group=8` it is one gradient step per 8
+        episodes, at 1 it is one per episode. So the same `episodes_total`
+        trains the world model 8x less at g=8 - two arms budgeted that way are
+        not comparable runs, they are one run and a fifth of another.
+
+        Inverts `total_world_model_steps` through the regime rather than
+        assuming the pooled case, so it stays correct for serial and for
+        `wm_segment_stride` too.
+        """
+        probe = TrainingSchedule.from_config(cfg)
+        per_update = probe.world_model_steps_per_update
+        updates = -(-int(wm_steps_total) // max(per_update, 1))
+        return updates * probe.episodes_per_update
+
     @classmethod
     def from_config(cls, cfg) -> "TrainingSchedule":
         return cls(
