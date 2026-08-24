@@ -118,6 +118,10 @@ WM_STEPS_ARG="${13:-}"
 # for the same budget. rl.frames follows it, and rl.ppo_batch_size must be
 # scaled alongside or the policy budget moves with it.
 NUM_ENVS_ARG="${14:-}"
+# $15 = predNet.curiosity_cuda_graph. Like $14, this helps the POOLED regime
+# specifically: the curiosity forward is a per-UPDATE cost, and g8 needs 8x the
+# updates for a given gradient-step budget. 27.47 -> 12.98 ms/update measured.
+CGRAPH="${15:-False}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -228,7 +232,7 @@ case "$GRAPH$PGRAPH" in
   *)        GRAPH_TAG=""          ;;
 esac
 case "$RGRAPH" in True|true|1) GRAPH_TAG="${GRAPH_TAG}-roll" ;; esac
-echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH cuda_graph(rollout)=$RGRAPH n_analysis=$N_ANALYSIS"
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH cuda_graph(rollout)=$RGRAPH cuda_graph(curiosity)=$CGRAPH n_analysis=$N_ANALYSIS num_envs=$NUM_ENVS"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
@@ -301,6 +305,7 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.batched_wm=True predNet.wm_pool_group=$POOL_GROUP predNet.compile_cell=layer \
     predNet.cuda_graph=$GRAPH rl.cuda_graph=$PGRAPH exp.rollout_cuda_graph=$RGRAPH \
+    predNet.curiosity_cuda_graph=$CGRAPH \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
     logging.wandb_log=true \
