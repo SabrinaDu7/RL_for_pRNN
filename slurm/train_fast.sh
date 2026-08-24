@@ -111,7 +111,17 @@ export PYTHONUNBUFFERED=1
 export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}" UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache CG_DEVICE=cuda
 
 SRC=$HOME/experiments/RL_for_pRNN
-git -C $SRC fetch -q origin
+# SERIALIZED and NON-FATAL. Every job fetches into the same shared $SRC, so two
+# submitted in the same second race on the same remote-tracking ref - and with
+# `set -e` a transient git error kills the job outright. Job 10458976 died in
+# 2 seconds on exactly this ("cannot lock ref 'refs/remotes/origin/...': is at
+# 03b8b5e but expected 56df2b0") while its twin 10458975, which won the race,
+# ran fine. flock serializes the fetch; `|| echo` means losing it costs a
+# staleness warning rather than the run. Nothing downstream needs the fetch to
+# have succeeded: the clone below pulls the branch ref straight out of $SRC.
+mkdir -p "$SCRATCH/pRNN"
+flock "$SCRATCH/pRNN/.gitfetch.lock" git -C "$SRC" fetch -q origin \
+  || echo "[git] fetch of $SRC failed (concurrent job?); using it as-is"
 git clone -q --shared $SRC $SLURM_TMPDIR/RL_for_pRNN
 cd $SLURM_TMPDIR/RL_for_pRNN
 git fetch -q "$SRC" "refs/remotes/origin/$BRANCH"
