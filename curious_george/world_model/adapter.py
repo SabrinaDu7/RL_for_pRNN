@@ -92,6 +92,90 @@ def validate_action_encoding(predictive_net: PredictiveNet, env, pastSR: bool) -
     )
 
 
+class _GraphCuriosityForward:
+    """CUDA-graph capture of the curiosity forward pass.
+
+    The last ungraphed region of a training update, and the one the pooled
+    regime pays for most: `wm_pool_group=8` needs 8x the updates of g=1 for
+    the same world-model gradient-step budget, so it pays this per-update cost
+    eight times over (0.3 vs 2.3 min/run at 80,000 steps).
+
+    Much simpler than `_GraphWMTrainer` below, because there is nothing to
+    undo: one `pN.predict` under `no_grad`, no backward, no optimizer step, so
+    warmup and capture leave the weights exactly as they found them. Only the
+    RNG advances - dropout and the initial-state noise run INSIDE the graph
+    and draw fresh on every replay, as they do in eager.
+
+    Keyed on shape. `target_offset` changes the sequence length (the next_obs
+    alignment appends a zero-action step) and `exp.num_envs` changes the
+    batch, so one capture per (batch, obs length, action length).
+
+    The returned tensors are the graph's STATIC OUTPUTS, valid until the next
+    replay. `PRNNAdapter._curiosity_errors` is the only caller and reduces
+    them immediately, which is why they never escape the adapter.
+    """
+
+    def __init__(self, pN: PredictiveNet, device: torch.device):
+        self.pN = pN
+        self.device = device
+        self.graphs: dict[tuple[int, int, int], dict] = {}
+        self._addresses: tuple[int, ...] = ()
+
+    def _addresses_now(self) -> tuple[int, ...]:
+        """Parameter AND buffer storages, for the reason `_GraphWMTrainer.
+        _fingerprint` gives: a captured graph reads the addresses it saw at
+        capture time, and a device round trip can replace them. Buffers are in
+        here because `thRNN_5win` multiplies by `inMask_f`/`actMask_f`/
+        `outMask_f` inside the captured region, and a stale mask fails
+        silently rather than loudly.
+        """
+        return tuple(
+            x.data_ptr()
+            for x in (*self.pN.pRNN.parameters(), *self.pN.pRNN.buffers())
+        )
+
+    def _capture(self, obs_b: torch.Tensor, act_b: torch.Tensor) -> None:
+        obs_s = obs_b.detach().clone()
+        act_s = act_b.detach().clone()
+
+        def region():
+            with torch.no_grad():
+                obs_pred, obs_next, _ = self.pN.predict(obs_s, act_s, batched=True)
+            return obs_pred, obs_next
+
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(stream):
+            for _ in range(3):
+                region()
+        torch.cuda.current_stream().wait_stream(stream)
+
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            pred_s, next_s = region()
+
+        self.graphs[(obs_s.size(0), obs_s.size(1), act_s.size(1))] = dict(
+            graph=graph, obs_s=obs_s, act_s=act_s, pred_s=pred_s, next_s=next_s
+        )
+        self._addresses = self._addresses_now()
+
+    def predict(
+        self, obs_b: torch.Tensor, act_b: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """`(obs_pred, obs_next)` for obs_b (N, L+1, X), act_b (N, L, A),
+        both already on device. Equal shapes share one graph."""
+        if self.graphs and self._addresses_now() != self._addresses:
+            self.graphs.clear()  # a device round trip freed the old storages
+        key = (obs_b.size(0), obs_b.size(1), act_b.size(1))
+        if key not in self.graphs:
+            self._capture(obs_b, act_b)
+        g = self.graphs[key]
+        g["obs_s"].copy_(obs_b)
+        g["act_s"].copy_(act_b)
+        g["graph"].replay()
+        return g["pred_s"], g["next_s"]
+
+
 class _GraphWMTrainer:
     """CUDA-graph capture of the world-model trainStep, serial or pooled.
 
@@ -279,6 +363,7 @@ class PRNNAdapter:
         cuda_graph: bool = False,
         batched_curiosity: bool = False,
         compile_cell: bool | str = False,
+        curiosity_cuda_graph: bool = False,
     ):
         self.pN = predictive_net
         self.device = device
@@ -302,6 +387,15 @@ class PRNNAdapter:
         self.cuda_graph = bool(cuda_graph) and self.device.type == "cuda"
         self._graph_trainer: _GraphWMTrainer | None = None
         self.batched_curiosity = bool(batched_curiosity)
+
+        # predNet.curiosity_cuda_graph: replay the batched curiosity forward.
+        # Built lazily on first use, and only ever reached by the two batched
+        # curiosity paths - a serial-curiosity run never captures anything, so
+        # the flag needs no compatibility check of its own.
+        self.curiosity_cuda_graph = (
+            bool(curiosity_cuda_graph) and self.device.type == "cuda"
+        )
+        self._graph_curiosity: _GraphCuriosityForward | None = None
 
         # predNet.compile_cell: fuse the recurrent cell with torch.compile.
         # The 256-step loop is dispatch-bound across many tiny ops - ranked by
@@ -409,6 +503,42 @@ class PRNNAdapter:
                 SR = self.pN.predict_single(obs_pN[:, :-1, :], act_pN).squeeze(dim=0)
         return SR
 
+    def _curiosity_errors(
+        self,
+        obs_b: torch.Tensor,
+        act_b: torch.Tensor,
+        *,
+        target_offset: int,
+    ) -> torch.Tensor:
+        """Per-step observation-prediction MSE for equal-length segments.
+
+        `obs_b` (N, L+1+target_offset, X_obs), `act_b` (N, L+target_offset,
+        X_act), both on device. Returns (N, L): one row per segment, one
+        column per action, already trimmed so column i is the error for
+        action i.
+
+        The one home for the curiosity forward. Both batched callers route
+        through it, so `predNet.curiosity_cuda_graph` covers both and the
+        error reduction has a single spelling.
+        """
+        with timer("collect/curious/predict"):
+            if self.curiosity_cuda_graph:
+                if self._graph_curiosity is None:
+                    self._graph_curiosity = _GraphCuriosityForward(
+                        self.pN, self.device
+                    )
+                obs_pred, obs_next = self._graph_curiosity.predict(obs_b, act_b)
+            else:
+                with torch.no_grad():
+                    obs_pred, obs_next, _ = self.pN.predict(
+                        obs_b, act_b, batched=True
+                    )
+        with timer("collect/curious/error"):
+            # Batched masked-pRNN layout is (phase=1, L, X, B).
+            return ((obs_pred - obs_next) ** 2).mean(dim=2)[0].transpose(0, 1)[
+                :, target_offset:
+            ]
+
     def prediction_mses(
         self,
         obss: list,
@@ -505,15 +635,7 @@ class PRNNAdapter:
 
             obs_b = torch.stack(obs_rows).to(self.device)
             act_b = torch.stack(act_rows).to(self.device)
-        with timer("collect/curious/predict"):
-            with torch.no_grad():
-                obs_pred, obs_next, _ = self.pN.predict(
-                    obs_b, act_b, batched=True
-                )
-        with timer("collect/curious/error"):
-            # Batched masked-pRNN layout is (phase=1, L, X, B).
-            errors = ((obs_pred - obs_next) ** 2).mean(dim=2)[0].transpose(0, 1)
-            errors = errors[:, target_offset:]
+        errors = self._curiosity_errors(obs_b, act_b, target_offset=target_offset)
 
         MSEs = torch.zeros(num_frames, device=self.device)
         for b, (start, end) in enumerate(
@@ -599,18 +721,8 @@ class PRNNAdapter:
                     1,
                 )
 
-        with timer("collect/curious/predict"):
-            with torch.no_grad():
-                obs_pred, obs_next, _ = self.pN.predict(
-                    obs_b, act_b, batched=True
-                )
-        with timer("collect/curious/error"):
-            errors = (
-                ((obs_pred - obs_next) ** 2)
-                .mean(dim=2)[0]
-                .transpose(0, 1)[:, target_offset:]
-            )
-            return errors.reshape(B, segments, L).reshape(B * T)
+        errors = self._curiosity_errors(obs_b, act_b, target_offset=target_offset)
+        return errors.reshape(B, segments, L).reshape(B * T)
 
     def episode_prediction_rows(
         self,

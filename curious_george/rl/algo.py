@@ -128,6 +128,7 @@ class PredictivePPOAlgo:
         adam_betas=(0.9, 0.999),
         policy_cuda_graph=False,
         rollout_cuda_graph=False,
+        curiosity_cuda_graph=False,
     ):
         # env may be a single shell, a list of shells (parallel collection),
         # or a batched shell pool (process-parallel or device-resident)
@@ -197,6 +198,7 @@ class PredictivePPOAlgo:
                 cuda_graph=cuda_graph,
                 batched_curiosity=batched_curiosity,
                 compile_cell=compile_cell,
+                curiosity_cuda_graph=curiosity_cuda_graph,
             )
             if self.pN
             else None

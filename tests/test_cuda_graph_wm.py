@@ -128,10 +128,20 @@ def test_raw_to_roundtrip_invalidates_captured_graphs():
     assert len(trainer.graphs) == 1
     ptr_before = next(pN.pRNN.parameters()).data_ptr()
 
-    pN.pRNN.to("cpu")
-    pN.pRNN.to(dev)
+    # Reassign `param.data` DIRECTLY rather than round-tripping through
+    # `.to("cpu")`. A cuda->cpu->cuda trip often returns the SAME addresses -
+    # the caching allocator hands the just-freed blocks straight back - so the
+    # graph is not stranded and there is nothing for the guard to catch. That
+    # made this test pass or fail on allocator state (loudly, thanks to the
+    # assert below, but a gate that depends on allocator luck is not a gate).
+    # `.clone()` is what `Module._apply` does to `param.data` and is the thing
+    # the guard actually defends against, so testing it directly is both
+    # deterministic and closer to the real hazard.
+    with torch.no_grad():
+        for p_ in pN.pRNN.parameters():
+            p_.data = p_.data.clone()
     assert next(pN.pRNN.parameters()).data_ptr() != ptr_before, (
-        "bare .to() round-trip did not move params - test no longer exercises the bug"
+        "param.data reassignment did not move storage - test is vacuous"
     )
 
     # next use must notice the move, drop the stale graphs and re-capture
