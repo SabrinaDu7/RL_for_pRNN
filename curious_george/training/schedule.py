@@ -151,6 +151,55 @@ class TrainingSchedule:
         )
 
 
+@dataclass(frozen=True)
+class EntropySchedule:
+    """`rl.entropy_coef` as a function of progress through the run.
+
+    Exists because policy collapse is a LATE phenomenon and a constant is the
+    wrong shape for it. Measured at `entropy_coef=0`, policy_entropy holds near
+    1.43 at 20M environment steps and falls to 0.59-1.18 by 60-80M, with
+    `MI_policy` spiking inversely - the agent stops exploring and the world
+    model's input distribution lurches. A coefficient that RISES with progress
+    puts the resistance where the drift is.
+
+    The two endpoints are measured, the middle is not: 0.0 drifts to 0.79-1.12
+    over a long run, 0.01 pins entropy near its 1.98 maximum and crushes
+    MI_policy to 0.015 (the bonus is 0.0198 against an advantage scale of
+    0.0369 - over half the learning signal). The target band is the 2026-07
+    reference's own: MI 0.20-0.33 at entropy 1.34-1.55.
+
+    `final is None` means constant, which is the historical behaviour.
+    """
+
+    start: float
+    final: float | None
+    total_steps: int
+
+    @classmethod
+    def from_config(cls, cfg) -> "EntropySchedule":
+        f = cfg.rl.get("entropy_coef_final", None)
+        return cls(
+            start=float(cfg.rl.entropy_coef),
+            final=None if f is None else float(f),
+            total_steps=int(cfg.rl.episodes_total) * int(cfg.predNet.seqdur),
+        )
+
+    def at(self, step: int) -> float:
+        """Linear in ENVIRONMENT STEPS, which is the axis collapse tracks -
+        not in updates, which mean different amounts of experience at
+        different rollout shapes."""
+        if self.final is None:
+            return self.start
+        frac = min(max(step / max(self.total_steps, 1), 0.0), 1.0)
+        return self.start + frac * (self.final - self.start)
+
+    def summary(self) -> str:
+        if self.final is None:
+            return f"  entropy_coef: {self.start} (constant)"
+        return (f"  entropy_coef: {self.start} -> {self.final} "
+                f"linearly over {self.total_steps} env steps")
+
+
 class StepCadence:
     """Fires an event once every `every` environment steps.
 

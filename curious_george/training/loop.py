@@ -15,7 +15,11 @@ from curious_george.evaluation.spatial import (
 )
 from curious_george.storage import save_analysis_of_agent_behav, save_status
 from curious_george.training import logging as train_log
-from curious_george.training.schedule import TrainingCadence, TrainingSchedule
+from curious_george.training.schedule import (
+    EntropySchedule,
+    TrainingCadence,
+    TrainingSchedule,
+)
 from curious_george.training.setup import RunContext, TrainingComponents
 from curious_george.world_model.device import on_device
 from curious_george.utils.checkpoints import StatusCkptKeys
@@ -143,13 +147,18 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
 
     schedule = TrainingSchedule.from_config(cfg)
     cadence = TrainingCadence.from_config(cfg, start_step=num_frames)
+    entropy = EntropySchedule.from_config(cfg)
     print(schedule.summary())
+    print(entropy.summary())
     if num_frames:
         print(f"  resuming at {num_frames} steps -> {schedule.total_steps - num_frames} to go")
 
     with tqdm(total=schedule.total_steps, desc="Processing") as pbar:
         while num_frames < schedule.total_steps:
             update_start = time.time()
+            # Read per update: the loss reads algo.entropy_coef fresh each time
+            # (rl/algo.py), so a schedule needs no plumbing beyond this.
+            algo.entropy_coef = entropy.at(num_frames)
 
             if cfg.exp.random_action_agent:
                 logs = algo.randomAgent_collect_exp_and_update(comps.random_agent)

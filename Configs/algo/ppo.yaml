@@ -20,3 +20,4 @@ ppo_epochs: 4
 ppo_batch_size: 256
 ppo_clip_eps: 0.2
 cuda_graph: False # CUDA-graph the PPO minibatch step (rl/update/policy_graph.py). One update is ppo_epochs*frames/ppo_batch_size gradient steps on a tiny actor-critic, i.e. almost pure dispatch: measured 3.558 -> 0.275 ms/step. Fresh runs only (Adam is rebuilt capturable, which needs empty state).
+entropy_coef_final: null # if set, entropy_coef ramps LINEARLY to this over the run (training/schedule.py::EntropySchedule). Collapse is late, so a rising coefficient puts resistance where the drift is. null = constant.

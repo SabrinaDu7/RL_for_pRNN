@@ -122,6 +122,11 @@ NUM_ENVS_ARG="${14:-}"
 # specifically: the curiosity forward is a per-UPDATE cost, and g8 needs 8x the
 # updates for a given gradient-step budget. 27.47 -> 12.98 ms/update measured.
 CGRAPH="${15:-False}"
+# $16 = rl.entropy_coef_final. When set, entropy_coef ramps LINEARLY from $5 to
+# this over the run. Collapse is a LATE phenomenon - policy_entropy holds near
+# 1.43 at 20M env steps and falls to 0.59-1.18 by 60-80M at entropy_coef=0 - so
+# a RISING coefficient puts the resistance where the drift is. Empty = constant.
+ENT_FINAL="${16:-}"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)  layouts=$LAYOUTS env=$ENVCFG seed=$SEED ent=$ENT"
 # The regime knobs are echoed AFTER they are assigned, further down - printing
 # them here reported empty values while the run used the right ones, which is
@@ -308,11 +313,12 @@ uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
     predNet.curiosity_cuda_graph=$CGRAPH \
     exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
     rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
+    ${ENT_FINAL:+rl.entropy_coef_final=$ENT_FINAL} \
     logging.wandb_log=true \
     logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
     exp.offpolicy_prnn_eval=True \
     logging.analysis_every_steps=$ANALYSIS_EVERY logging.plot_every_steps=$PLOT_EVERY \
-    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT-g$POOL_GROUP-p$PPO_BATCH-s$SEED${GRAPH_TAG} > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT${ENT_FINAL:+to$ENT_FINAL}-g$POOL_GROUP-p$PPO_BATCH-s$SEED${GRAPH_TAG} > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
 # hydra config dump instead of the error - the same way job 10416788's gate
@@ -324,7 +330,7 @@ save
 # Spatial curves are skipped in-run under cuda_graph (the eval moves the model
 # and would invalidate captured graphs), so score the archives offline here -
 # same numbers, computed after rather than during.
-RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}-g${POOL_GROUP}-p${PPO_BATCH}-s${SEED}${GRAPH_TAG}_* 2>/dev/null | head -1)
+RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}${ENT_FINAL:+to${ENT_FINAL}}-g${POOL_GROUP}-p${PPO_BATCH}-s${SEED}${GRAPH_TAG}_* 2>/dev/null | head -1)
 # checkpoint_curve.py is the multi-room scorer and takes --layouts; skip it
 # for the single-room shape, where sRSA/SWdist are logged live to wandb by
 # the ordinary single-room eval path instead.
