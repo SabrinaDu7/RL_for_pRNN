@@ -258,6 +258,49 @@ graph training on stranded memory looks like.
 
 ---
 
+## Status at 2026-08-25 (16 commits on `sdu/refactor-after-speed30`)
+
+```
+Phase 0  training-path bitwise gate                    DONE
+Phase 1  provenance.json                               DONE
+Phase 2  metric semantics (a UpdateLogs, b return, c SI)  DONE
+Phase 3  stage discards in throwaway/ported/           DONE
+Phase 4  questions repo, Python 3.10, pinned dep       DONE
+Phase 5  OMT ported and PROVEN BITWISE                 port done; Q1 harness wiring open
+Phase 6  prune (delete throwaway/ported/)              deliberately last, not started
+Phase 7  gates                                         path gate, ruff, .env, pypatree DONE
+                                                       skips, *.png, obs_bank open
+```
+
+Gate, read from its own final line at each step:
+
+```
+174 -> 179 -> 188 -> 197 -> 204 -> 206 -> 199 -> 188 -> 145 -> 150 passed
+ 18 skipped throughout, then 0 once test_view_coords.py moved to the questions repo
+  7 deselected, then 1 once test_analysis_omt.py moved
+```
+
+`../curious-george-questions`: **122 passed, 18 skipped**, `make check` clean
+(ruff + basedpyright 0 errors), `uv run exp check Q0` reproduces all 14 values and
+24 checks exactly.
+
+**What is left, in order of value**
+
+1. **Q1's harness wiring** — `instructions-Q1.md`, `results_Q1.in`, `collect.py`,
+   `analyze.py`. The OMT is ported and bitwise; it is not yet a *question* in the
+   `exp` sense, and no run has been made to compare against the twelve
+   `omt-cur-dot-0730-*` runs (§5).
+2. **The 18 skips**, now in the questions repo, still on a missing
+   `outputs/data_cur_lroom_step1608_goal711/trajectories.pt`.
+3. **62 ruff findings** the widened `include` exposed.
+4. **`.gitignore`'s blanket `*.png`** — `git ls-files '*.png'` is still 0, so no figure
+   a document cites is in the repo.
+5. **`envs/obs_bank.py:95`** non-atomic write, and the `data/obs_bank/` 2-of-246 split.
+6. **Phase 6**: delete `throwaway/ported/` once every port is gated. Deliberately the
+   last thing that happens.
+
+---
+
 ## 3. Phase order
 
 The ordering constraints are real; the rest is preference.
