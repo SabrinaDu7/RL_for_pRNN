@@ -1,4 +1,4 @@
-"""Every repo path a live file names must be in git.
+"""Every reference a live file makes must resolve: paths in git, modules importable.
 
 The cheapest gate with the best record in the 2026-08 audit: 41 of 174
 referenced paths were dead in a clean clone, including a copy-pasteable
@@ -20,6 +20,7 @@ Paths into another repository (`../curious-george-questions/...`) are skipped:
 this gate can only speak for this one.
 """
 
+import importlib.util
 import re
 import subprocess
 from pathlib import Path
@@ -42,14 +43,14 @@ ROOTS = "docs|scripts|tests|curious_george|Configs|slurm|throwaway"
 #: dead `tests/x.py`.
 PATH = re.compile(rf"(?<![\w./-])(?:{ROOTS})/[A-Za-z0-9_./-]+\.(?:py|md|yaml|yml|sh|png|json|in|pt|toml)")
 
-LIVE_GLOBS = ("*.py", "*.yaml", "*.yml", "*.sh", "*.toml", "README.md", "CLAUDE.md", "justfile")
+LIVE_GLOBS = ("*.py", "*.yaml", "*.yml", "*.sh", "*.toml", "*.md", "justfile")
 EXEMPT_PREFIXES = ("throwaway/", "docs/claude_logs/")
 
 #: This file, which cites the defects it exists to catch BY NAME - a deleted
 #: test, a climbing path - so it trips its own matcher. A gate that documents a
 #: failure cannot be subject to itself. Nothing else may be added here without a
 #: reason as specific as this one.
-EXEMPT_FILES = ("tests/test_referenced_paths_exist.py",)
+EXEMPT_FILES = ("tests/test_references_resolve.py",)
 
 
 def _git(*args: str) -> list[str]:
@@ -115,3 +116,60 @@ def test_exemptions_are_real_directories(exempt):
     """An exemption for a directory that no longer exists silently widens the
     gate's blind spot."""
     assert (REPO / exempt).is_dir(), f"{exempt} is exempt from this gate but does not exist"
+
+
+# ---------------------------------------------------------------------------
+# Modules. The other half of "a reference resolves", and the half that was
+# missing: `io/` -> `log_and_store/` left `curious_george.storage` in
+# `slurm/train_fast.sh` and `scripts/multienv/checkpoint_curve.py`. Both are
+# live, neither is imported by any test, and a shell heredoc is invisible to
+# every linter here - so the rename shipped broken and the suite stayed green.
+
+#: A dotted name under this package, as it appears in an import, a heredoc, or
+#: prose. `(?<![\w.])` stops a longer dotted name's tail from matching.
+MODULE = re.compile(r"(?<![\w.])curious_george(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+
+
+def _module_references() -> dict[str, list[str]]:
+    """dotted name -> the live files that name it."""
+    found: dict[str, list[str]] = {}
+    for f in _live_files():
+        try:
+            text = (REPO / f).read_text(errors="ignore")
+        except OSError:
+            continue
+        for match in MODULE.findall(text):
+            found.setdefault(match, []).append(f)
+    return found
+
+
+def _resolves(dotted: str) -> bool:
+    """True if the name is a module, or an attribute of one (`pkg.mod.SYMBOL`).
+
+    Attributes are accepted without importing: this gate answers "does the
+    MODULE PATH still exist", which is what a rename breaks. Whether a symbol
+    inside it still exists is the type checker's job.
+    """
+    parts = dotted.split(".")
+    while len(parts) > 1:
+        try:
+            if importlib.util.find_spec(".".join(parts)) is not None:
+                return True
+        except (ImportError, AttributeError, ValueError):
+            pass
+        parts.pop()
+    return False
+
+
+def test_every_referenced_module_resolves():
+    """A `curious_george.x.y` named anywhere live is importable in a clean env."""
+    dead = {m: sorted(set(src)) for m, src in _module_references().items() if not _resolves(m)}
+    assert not dead, "named but not importable:\n" + "\n".join(
+        f"  {m}\n      named by: {', '.join(src)}" for m, src in sorted(dead.items())
+    )
+
+
+def test_the_module_gate_can_see_something():
+    """A matcher that stops matching would make the test above pass forever."""
+    refs = _module_references()
+    assert len(refs) > 20, f"only {len(refs)} modules matched; the regex is probably broken"

@@ -99,7 +99,7 @@ def fixed_probe(*, pN, env, layout, n_trajs: int, steps: int):
     checkpoints comparable rather than each carrying its own rollout noise.
     """
     from curious_george.utils.enums import AgentType
-    from curious_george.storage import get_agent
+    from curious_george.log_and_store.storage import get_agent
 
     env.env.unwrapped.landmarks = list(layout.landmarks)
     env.env.reset(seed=PROBE_SEED)

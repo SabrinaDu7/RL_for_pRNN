@@ -171,7 +171,7 @@ mkdir -p "$RL_STORAGE"
 # Preflight: fail LOUDLY and immediately rather than 60 s into a GPU
 # allocation, and prove the path the code will actually use.
 uv run python -c "
-from curious_george.storage import get_storage_dir
+from curious_george.log_and_store.storage import get_storage_dir
 import os, sys
 d = get_storage_dir()
 print(f'storage dir -> {d}')

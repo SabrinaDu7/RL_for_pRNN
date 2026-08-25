@@ -30,7 +30,7 @@ Three readings:
 - **reliability criterion** — drop the activity count entirely and exclude on split-half
   stability or the trajectory-level shuffle null instead.
 
-**Evidence** (`uv run python scripts/si_threshold_audit.py`, checkpoint
+**Evidence** (`uv run python throwaway/ported/si_threshold_audit.py`, checkpoint
 `outputs/ckpts/pRNN_curious_26-07-23-10-06-25`, probe `outputs/trace/probe_lroom_noobj`):
 
 ```
@@ -304,7 +304,7 @@ Two results:
 
 ## 4. Which SI bin weighting is the honest one
 
-`scripts/trace/trace_maps.py::spatial_info` supports `weighting="occupancy"` (standard Skaggs,
+`throwaway/ported/trace/trace_maps.py::spatial_info` supports `weighting="occupancy"` (standard Skaggs,
 bins weighted by dwell time) and `weighting="uniform"` (every valid bin equal).
 
 The random-action probe oversamples corners roughly 9x — it pushes forward ~60% of the time
@@ -350,6 +350,6 @@ not rediscovered as surprises.
   pinning the commit explicitly.
 - **The training golden fixture is not enforced.** `tests/golden/` holds `golden_v0.pt` and
   `golden_v1.pt` plus the scripts that write and compare them, but no `test_*.py`, so pytest
-  never reads either. The OMT path *is* gated by `tests/golden_omt/test_golden_omt.py`.
+  never reads either. The OMT path *is* gated by `../experiment-curiousgeorge/tests/golden_omt/test_golden_omt.py`.
 - **`collectObservationSequence(seed=...)` sets the global** `torch`/`random`/`numpy` seeds,
   so a data-collection call mutates process-wide RNG state.
