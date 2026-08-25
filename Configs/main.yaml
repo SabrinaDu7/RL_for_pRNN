@@ -5,7 +5,6 @@ defaults:
     - world_model: thrnn5win # -> predNet.* (Configs/world_model/)
     - algo: ppo # -> rl.*       (Configs/algo/)
     - rewards: curious_next_obs # -> rl.*       (Configs/rewards/)
-    - tasks: omt
     - optional run: null # e.g. run=multienv; sets the whole shape of a named experiment
     - optional performance: null # e.g. performance=ultra; explicit because it changes optimizer batching semantics
     - override hydra/hydra_logging: disabled
@@ -25,7 +24,7 @@ hydra:
         dir: .
 
 exp:
-    exp_name: omt
+    exp_name: pRNN # wandb group + run-name prefix; every launcher in slurm/ overrides it
     seed: 2 # Random seed
     num_envs: 8 # Parallel envs for rollout collection (1 = exact historical serial path; learning-equivalence gated by the 2026-07 bsweep, throwaway/ported/docs_legacy/perf_log.md). NOTE: exp.random_action_agent=true requires num_envs=1
     rollout_cuda_graph: False # CUDA-graph one rollout TIMESTEP and replay it (curious_george/rl/collect/rollout_graph.py). Requires exp.device_env; CUDA-only. Not bitwise vs eager once the policy samples - a captured region draws from CUDA's graph-safe RNG, so the two realize different (equally valid) streams; gated in tests/test_cuda_graph_rollout.py

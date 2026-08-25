@@ -103,7 +103,7 @@ ignore = ["F722", "F821"]
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-include = ["curious_george", "tests", "tasks", "*.py"]
+include = ["curious_george", "tests", "scripts", "*.py"]
 
 # OVerride specific rules
 reportPossiblyUnboundVariable = "none"
