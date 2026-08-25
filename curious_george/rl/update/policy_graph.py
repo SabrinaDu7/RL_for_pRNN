@@ -113,7 +113,7 @@ class GraphPolicyTrainer:
 
     # --- capture and replay --------------------------------------------------
     def _region(self, inds_s):
-        from curious_george.rl.update.updater import _index_policy_batch
+        from curious_george.rl.update.policy import _index_policy_batch
 
         sb = _index_policy_batch(self.static, inds_s, self.acmodel)
         dist, value = self.acmodel(sb.obs, SR=sb.SR)

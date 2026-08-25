@@ -72,7 +72,7 @@ def _run(policy_cuda_graph: bool, index_sets, *, capturable_eager: bool = False)
     """Take len(index_sets) gradient steps on FIXED minibatches, so the eager
     and graphed arms see identical data and the comparison is about the
     mechanism rather than about the shuffle."""
-    from curious_george.rl.update.updater import _index_policy_batch
+    from curious_george.rl.update.policy import _index_policy_batch
     from curious_george.rl.update.losses import LOSSES
 
     algo, acmodel, cfg = _algo(policy_cuda_graph)
@@ -189,7 +189,7 @@ def test_graphed_policy_survives_spatial_evals():
     weights must move EXACTLY as eager moves them, across the eval.
     """
     from curious_george.rl.update.losses import LOSSES
-    from curious_george.rl.update.updater import _index_policy_batch
+    from curious_george.rl.update.policy import _index_policy_batch
     from curious_george.world_model.device import on_device
 
     sets = _fixed_index_sets(STEPS, 256, 2048)

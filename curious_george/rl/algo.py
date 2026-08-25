@@ -5,7 +5,7 @@
 `PredictivePPOAlgo` wires together:
 - rl.collect.collector  - the rollout loop (B=1 is bitwise-identical to the
   historical serial path via SingleSRTracker; B>1 batches the forwards)
-- rl.update.updater / losses - loss-agnostic policy updates (rl.loss config)
+- rl.update.policy / losses - loss-agnostic policy updates (rl.loss config)
 - rl.update.rewards / advantage - reward terms and GAE
 - rl.update.world_model - per-episode pRNN training
 - world_model.adapter   - the only rollout-time prnn seam
@@ -32,7 +32,7 @@ from curious_george.rl.collect.collector import (
 )
 from curious_george.rl.collect.diagnostics import LocationStats
 from curious_george.rl.update.losses import LOSSES
-from curious_george.rl.update.updater import update_policy
+from curious_george.rl.update.policy import update_policy
 from curious_george.rl.update.world_model import train_world_model_on_episodes
 from curious_george.world_model.adapter import PRNNAdapter, make_sr_tracker
 

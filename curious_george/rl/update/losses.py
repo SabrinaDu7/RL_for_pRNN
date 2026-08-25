@@ -1,6 +1,6 @@
 """Policy-gradient loss functions.
 
-Every loss has the same signature so the updater is loss-agnostic:
+Every loss has the same signature so `policy.py` is loss-agnostic:
 
     loss_fn(dist, value, sb, **cfg_kwargs) -> (loss, LossTerms)
 
@@ -20,7 +20,7 @@ class LossTerms:
     """Per-minibatch scalar diagnostics returned next to the loss.
 
     Fields are detached 0-dim tensors, NOT floats: converting per minibatch
-    (.item()) forced a device sync each time; the updater aggregates them and
+    (.item()) forced a device sync each time; `policy.py` aggregates them and
     syncs once per update.
     """
 

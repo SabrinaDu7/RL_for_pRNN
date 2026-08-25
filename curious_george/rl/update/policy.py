@@ -1,8 +1,10 @@
-"""Loss-agnostic policy update driver.
+"""Updating the POLICY: the epoch / minibatch / optimizer / grad-clip machinery.
 
-Owns the epoch / minibatch / optimizer / grad-clip machinery (extracted from
-the old rl/ppo.py). Which objective is optimized is a `loss_fn` argument -
-see update/losses.py for available losses and their shared signature.
+Named for what it updates, like `world_model.py` beside it - the directory
+already says `update`, so a verb in the filename would only stutter.
+
+Which objective is optimized is a `loss_fn` argument; see `losses.py` for the
+available losses and their shared signature.
 """
 
 from dataclasses import dataclass

@@ -4,5 +4,5 @@ from curious_george.rl.update.rewards import (
     compute_curious_rewards,
     REWARD_ALIGNMENTS,
 )
-from curious_george.rl.update.updater import update_policy, shuffled_minibatches
+from curious_george.rl.update.policy import update_policy, shuffled_minibatches
 from curious_george.rl.update.world_model import train_world_model_on_episodes

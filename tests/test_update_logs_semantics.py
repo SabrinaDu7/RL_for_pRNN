@@ -24,7 +24,7 @@ import pytest
 import torch
 
 from curious_george.rl.update.losses import LOSSES
-from curious_george.rl.update.updater import update_policy
+from curious_george.rl.update.policy import update_policy
 
 SEED = 5
 EPOCHS = 4

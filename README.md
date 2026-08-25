@@ -1,27 +1,16 @@
 # RL for pRNN
 
-**This repository is machinery, not an experiment.** It holds the components you assemble
-to launch a training run or an evaluation — environments, an actor–critic policy, the seam
-to the world model, the rollout and update loop, and the online metrics. It is deliberately
-modular so that a new question takes the pieces it needs rather than forking the whole
-thing.
+**The point of the repo.** This repository is meant to couple the training of a predictive recurrent neural network (pRNN) , the model from [Levenstein et al. 2024](https://www.biorxiv.org/content/10.1101/2024.04.28.591528v2) and a policy network learned with curiosity-driven RL. The the [original pRNN repository](https://github.com/LevensteinLab/pRNN) already solved its task, but did not yet introduce RL.
 
-`main_train.py` is *an example* of assembling those components into a training run, not
-the only way to use them. Likewise the online evaluations are plain functions —
-`run_spatial_analysis`, `run_behavior_analysis` in `curious_george/training/loop.py` — that
-a different loop can call, reorder, or ignore.
+**Novelty in this repo: Learning a policy.** In the [original pRNN repository](https://github.com/LevensteinLab/pRNN), a fixed random action selection was used instead. Here, we learn a policy network via PPO, where the agent's reward is the pRNN's own prediction error, so the policy learns to seek out what the prnn cannot yet predict, and the prnn learns from the
+observations that policy generates.
 
-**What it trains.** A predictive recurrent neural network (pRNN) — the model from
-Levenstein et al. 2024, installed from
-[`LevensteinLab/pRNN`](https://github.com/LevensteinLab/pRNN) — driven by a
-**curiosity-driven policy network** rather than the fixed random action selection the
-original used. The agent's reward is the pRNN's own prediction error, so the policy learns
-to seek out what the world model cannot yet predict, and the world model learns from the
-observations that policy generates. The two train together; that coupling is the point of
-this repository.
+**What this repo is and is not.** This repo holds the components you assemble to launch a training run or an evaluation: environments, an actor–critic policy, the link to the world model (i.e., prnn), etc. This repo is not an experiment, so does not make any specific claims or provide results beyond the pRNN "learning" and the RL "working".
 
-The experiments themselves live in a separate repository, which depends on this one by
-pinned revision.
+Examples: 
+- `main_train.py` is *an example* of assembling those components into a training run, not
+the only way to use them. 
+- `run_spatial_analysis`, `run_behavior_analysis` in `curious_george/training/loop.py` are examples of online analysis done during training.
 
 ---
 
@@ -37,9 +26,11 @@ cd RL_for_pRNN
 uv sync
 ```
 
-Copy `.env.example` to `.env` and fill it in. `RL_STORAGE` is the single source of truth
-for where run outputs land. Runs log to wandb, so `wandb login` first.
+### IO and logging
+- Inputs (what you have to add): (1) Copy `.env.example` to `.env` and fill it in. (2) Runs log to wandb, so `wandb login` first.
+- Outputs: `RL_STORAGE` is the single source of truth for where run outputs land on this machine. Other outputs might simply be logged to wandb. 
 
+### Launching a training run
 ```bash
 uv run python main_train.py                              # defaults from Configs/main.yaml
 uv run python main_train.py exp.seed=3 rl.frames=2048    # override single keys
@@ -67,20 +58,21 @@ main_train.py
       │                        setup_training -> TrainingComponents (envs, pRNN,
       │                        acmodel, algo, agents) in ONE construction order
       │
-      └─ training/loop.py      run_training: the while-loop over updates
+      └─ training/loop.py      run_training: the while-loop over gradient updates
                                + run_spatial_analysis / run_behavior_analysis
                                + save_checkpoint, all fired by StepCadence
                                           │
                                           ▼
                                rl/algo.py  PredictivePPOAlgo
                                  collect_experiences() ──► rl/collect/collector.py
-                                 update_parameters()   ──► rl/update/updater.py
+                                 update_parameters()   ──► rl/update/policy.py
                                                        └─► rl/update/world_model.py
                                                                     │
                                                                     ▼
                                                     world_model/adapter.py
-                                                       PRNNAdapter — the only
-                                                       place that imports `prnn`
+                                                       PRNNAdapter: the only
+                                                       interface to pRNN and
+                                                       only `prnn` import
 ```
 
 ### `curious_george/rl` — the agent
@@ -96,7 +88,7 @@ it delegates to, which is what makes the pieces reusable outside this loop.
 - `rl/collect/agent.py` — the actor–critic agent used to act; `format.py` — observation
   preprocessing; `diagnostics.py` — location statistics and the policy/space joint
   distribution accumulated during the rollout.
-- `rl/update/updater.py` — `update_policy`, loss-agnostic: it drives the PPO epochs and
+- `rl/update/policy.py` — `update_policy`, loss-agnostic: it drives the PPO epochs and
   minibatching and calls whichever loss `rl.loss` names.
 - `rl/update/losses.py` — the losses (`ppo_clip`, `a2c`); `advantage.py` — GAE;
   `rewards.py` — the curiosity reward, i.e. the pRNN's prediction error.
