@@ -55,6 +55,7 @@ from curious_george.evaluation.on_policy import (
     EnvironmentFeaturesAnalysis,
     OnPolicyAnalysis,
     get_occupancy_fig,
+    occupancy_counts,
 )
 
 from curious_george.envs.factory import (
@@ -113,6 +114,7 @@ __all__ = [
     "EnvironmentFeaturesAnalysis",
     "OnPolicyAnalysis",
     "get_occupancy_fig",
+    "occupancy_counts",
     "get_dist_travelled",
     # Env
     "episode_video_trigger",

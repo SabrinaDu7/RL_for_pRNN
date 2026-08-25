@@ -1,4 +1,5 @@
 import numpy as np
+from jaxtyping import Integer
 import torch
 import plotly
 from plotly.subplots import make_subplots
@@ -556,18 +557,43 @@ class OnPolicyAnalysis:
 
 
 # Distinct function
+def occupancy_counts(
+    algo: PredictivePPOAlgo, timesteps: int
+) -> Integer[np.ndarray, "hd width height"]:
+    """State-occupancy counts per head-direction, `[hd, x, y]`, 0-indexed.
+
+    THE MEASUREMENT. `get_occupancy_fig` draws this and nothing else, so the
+    numbers a figure shows and the numbers an analysis reads are the same
+    array by construction.
+
+    It exists because they were not: occupancy was built inside the plotting
+    function and thrown away into a plotly figure, so the only way to analyse
+    it later was to scrape the figure's `z` back out of wandb - a number
+    recovered from a picture. Log this instead and the picture is downstream of
+    the data.
+
+    Indexing is `[hd, x, y]` with x horizontal, matching `get_walkable_mask`
+    and MiniGrid's `grid.get(x, y)`. Note that the FIGURE transposes to `[y, x]`
+    for display, which is the convention any consumer of the logged plotly JSON
+    inherits.
+    """
+    occ = np.zeros((4, algo.env.width - 2, algo.env.height - 2), dtype=np.int64)
+    for t in range(timesteps):
+        x, y = algo.locs[t][0] - 1, algo.locs[t][1] - 1
+        occ[algo.directions[t], x, y] += 1
+    return occ
+
+
 def get_occupancy_fig(algo: PredictivePPOAlgo, timesteps: int, scale="plasma") -> go.Figure:
     """
     Show state-occupancy counts (no action dimension).
-    1×4 layout – one heat-map per head-direction.
-    """
-    hd_labels = ["→", "↓", "←", "↑"]
+    1x4 layout - one heat-map per head-direction.
 
-    occ = np.zeros((4, algo.env.width - 2, algo.env.height - 2))
-    for t in range(timesteps):
-        hd = algo.directions[t]
-        x, y = algo.locs[t][0] - 1, algo.locs[t][1] - 1
-        occ[hd, x, y] += 1
+    Draws `occupancy_counts` and adds nothing to it.
+    """
+    hd_labels = ["\u2192", "\u2193", "\u2190", "\u2191"]
+
+    occ = occupancy_counts(algo, timesteps)
 
     fig = make_subplots(
         rows=1,

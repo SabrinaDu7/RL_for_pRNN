@@ -8,4 +8,5 @@ from curious_george.evaluation.on_policy import (
     EnvironmentFeaturesAnalysis,
     OnPolicyAnalysis,
     get_occupancy_fig,
+    occupancy_counts,
 )
