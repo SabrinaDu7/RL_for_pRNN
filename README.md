@@ -94,12 +94,11 @@ it delegates to, which is what makes the pieces reusable outside this loop.
 - `rl/update/world_model.py` — `train_world_model_on_episodes`, the pRNN's gradient steps
   for a rollout. This is where the two learners meet.
 - `rl/collect/rollout_graph.py`, `rl/update/policy_graph.py` — CUDA-graph capture of the
-  rollout timestep and the PPO minibatch step. Optional, off by default, and gated against
-  the eager path.
+  rollout timestep and the PPO minibatch step. Optional, off by default.
 
 ### `curious_george/models` — the two learned networks
 
-Both networks live here, plus the device machinery they share.
+Both pRNN and policy networks live here, plus the device machinery they share.
 
 - `models/policy.py` — `ACModel` / `ACModelSR`, the actor–critic. `ACModelSR` is the one
   this project runs: it concatenates the pRNN's hidden state into the embedding, so the
@@ -111,11 +110,11 @@ Both networks live here, plus the device machinery they share.
   that changes.
 - `models/device.py` — `on_device` / `eval_mode`, the context managers that move models
   between CPU and accelerator without changing their identity. Here because it operates
-  *on* models, not because it is one. Load-bearing: the spatial evaluation runs on CPU, and
+  *on* models, not because it is one. **Note**: the spatial evaluation runs on CPU, and
   a naive `.to()` there silently invalidated captured CUDA graphs.
 
 ⚠️ `models/policy.py` is the network; `rl/update/policy.py` is the optimisation that
-updates it. Two files, one word, different concerns — the directory disambiguates.
+updates it.
 
 ### `curious_george/envs` — the world
 
@@ -125,8 +124,11 @@ updates it. Two files, one word, different concerns — the directory disambigua
 - `envs/vector.py` — `DeviceTableShellPool` and `AsyncShellPool`, the multi-environment
   backends. The device pool keeps observations and transitions resident on the accelerator
   and is what the fast configurations use.
-- `envs/obs_bank.py` — precomputed `(position, direction) → observation` tables that make
-  the device pool possible.
+- `envs/obs_bank.py` — precomputed `(position, direction) → observation` tables, plus the
+  transition tables, that make the device pool possible. Byte-equality with the live
+  render is gated in `tests/test_obs_bank.py`. The on-disk cache under `data/obs_bank/`
+  is local and untracked: rebuilding one bank is 0.49 s, so it saves half a second per
+  distinct grid and nothing else.
 - `envs/layouts.py` — seeded pools of landmark layouts for multi-room training.
 
 ### `curious_george/evaluation` — the online metrics
@@ -154,10 +156,12 @@ Called by `training/loop.py` on a cadence, but importable on their own.
 
 ### Supporting
 
-- `provenance.py` — every artifact records what produced it: the resolved commits of this
-  repo, `prnn`, `minigrid` and the caller, plus the config and its input artifacts.
-- `storage.py` — where things are written; `io/wandb.py` — reading runs back out;
-  `check/wandb_compare.py` — comparing two runs on matched environment steps.
+- `log_and_store/` — where artifacts go, where they come from, and what produced them.
+  `storage.py` (paths under `RL_STORAGE`, checkpoints, model factories),
+  `provenance.py` (the `provenance.json` written beside every artifact — the questions
+  repo calls `resolve_package` and `input_artifact` directly), and `wandb.py` (reading
+  finished runs back out).
+- `check/wandb_compare.py` — comparing two runs on matched environment steps.
 - `utils/` — the device handle, seeding, timing, checkpoint keys, enums.
 
 ---

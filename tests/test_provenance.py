@@ -1,4 +1,4 @@
-"""Gates for `curious_george.provenance`.
+"""Gates for `curious_george.log_and_store.provenance`.
 
 The claim under test is not "the module works" but "an artifact cannot be
 produced without a record of what produced it". Three commits in five days
@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from curious_george import provenance
+from curious_george.log_and_store import provenance
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
 

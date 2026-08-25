@@ -170,7 +170,7 @@ B8 serial        2.285          3.58     916
 So the production question is asked in the **serial** regime. And the flag is
 only wired into the serial path — `PRNNAdapter._use_graph_wm` is consulted in
 `train_on_episode` and **not** in `train_on_episodes_batched`
-(`world_model/adapter.py:617,622`, read, confirmed). Under pooling the graph is
+(`models/prnn_adapter.py:617,622`, read, confirmed). Under pooling the graph is
 dead code, which is exactly why it measured as "the wrong term".
 
 ## 3. Result — four arms, one variable each
@@ -220,7 +220,7 @@ to one step.
 
 ## 4. Why this is not a semantics change
 
-`_GraphWMSegmentTrainer` (`world_model/adapter.py`) captures
+`_GraphWMSegmentTrainer` (`models/prnn_adapter.py`) captures
 `pN.predict` + loss + backward + **one** RMSprop step per segment, so the
 gradient-step **count and math are identical to the serial eager path** — unlike
 `batched_wm`, which replaces B steps with 1 and therefore needs a curve gate.

@@ -3,9 +3,14 @@
 For a static grid, RGBImgPartialObsWrapper_HD's per-step get_frame render
 (~0.7 ms, the single biggest per-step cost) is a pure function of
 (x, y, dir, grid). BankedRGBPartialObsWrapper precomputes the full
-(W, H, 4) bank once per grid layout (~1 s for 18x18), persists it under
-data/obs_bank/ (committed; the cluster copies it to $SLURM_TMPDIR with the
-repo), and serves per-step observations as lookups.
+(W, H, 4) bank once per grid layout (~1 s for 18x18), caches it under
+data/obs_bank/ and serves per-step observations as lookups.
+
+The cache is LOCAL and untracked. Measured: one 16x16 bank plus its transition
+tables costs 0.49 s to build and 0.15 MB in memory, so the cache saves half a
+second per distinct grid per process and nothing else. Committing it does not
+scale - a 500-room layout pool would be 500 files - and it was 246 files with
+2 tracked, which answers "which of these is canonical?" with "nobody knows".
 
 Byte-equality with the live render is asserted in tests/test_obs_bank.py;
 the bank is keyed by a fingerprint of grid.encode(), so a layout change
@@ -16,6 +21,7 @@ silently corrupting the bank.
 """
 
 import hashlib
+import os
 from pathlib import Path
 
 import numpy as np
@@ -34,9 +40,12 @@ _BANK_CACHE: dict[str, np.ndarray] = {}
 class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
     """Drop-in replacement for RGBImgPartialObsWrapper_HD backed by the bank."""
 
-    def __init__(self, env, tile_size: int = 1, bank_dir: Path = BANK_DIR):
+    def __init__(self, env, tile_size: int = 1, bank_dir: Path | None = None):
         super().__init__(env, tile_size)
-        self.bank_dir = Path(bank_dir)
+        # Resolved at CALL time, not bound as a default at import: a default
+        # argument captures BANK_DIR once, so rebinding the module global has no
+        # effect and the wrapper silently keeps writing to the real cache.
+        self.bank_dir = Path(bank_dir) if bank_dir is not None else BANK_DIR
         self._bank: np.ndarray | None = None  # (W, H, 4, h, w, 3) uint8
         self._fingerprint: str | None = None
 
@@ -92,7 +101,16 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
         else:
             bank = self._build_bank()
             path.parent.mkdir(parents=True, exist_ok=True)
-            np.savez_compressed(path, bank=bank)
+            # Atomic: a reader either sees a complete bank or no file. The
+            # previous direct write raced `_ensure_bank`'s `path.exists()`
+            # check, so a concurrent reader could load a truncated npz.
+            # A FILE HANDLE, not a path: np.savez_compressed APPENDS ".npz"
+            # when the name does not already end in it, so passing a ".tmp"
+            # path writes ".npz.tmp.npz" and the replace below cannot find it.
+            temporary = path.with_suffix(".npz.tmp")
+            with open(temporary, "wb") as handle:
+                np.savez_compressed(handle, bank=bank)
+            os.replace(temporary, path)
             print(f"obs bank built and saved: {path} ({bank.nbytes / 1e6:.1f} MB raw)")
         bank.flags.writeable = False
         _BANK_CACHE[fingerprint] = bank
@@ -138,7 +156,7 @@ class TableDrivenRGBPartialObsWrapper(BankedRGBPartialObsWrapper):
 
     _NUM_ACTIONS = 4
 
-    def __init__(self, env, tile_size: int = 1, bank_dir: Path = BANK_DIR):
+    def __init__(self, env, tile_size: int = 1, bank_dir: Path | None = None):
         super().__init__(env, tile_size=tile_size, bank_dir=bank_dir)
         self._transition_fingerprint: str | None = None
         self._next_state: np.ndarray | None = None

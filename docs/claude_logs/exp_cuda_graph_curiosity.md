@@ -10,7 +10,7 @@ this per-update cost eight times over. What does graphing it buy?
 
 ## Where the code lives
 
-- `curious_george/world_model/adapter.py` - `_GraphCuriosityForward` (the
+- `curious_george/models/prnn_adapter.py` - `_GraphCuriosityForward` (the
   capture, keyed on `(batch, obs length, action length)`) and
   `PRNNAdapter._curiosity_errors`, the single seam both batched curiosity
   callers now route through. `_prediction_mses_batched` (list path) and

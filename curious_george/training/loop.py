@@ -13,7 +13,7 @@ from curious_george.evaluation.spatial import (
     evaluate_multi_room_representation,
     evaluate_spatial_representation,
 )
-from curious_george.storage import save_analysis_of_agent_behav, save_status
+from curious_george.log_and_store.storage import save_analysis_of_agent_behav, save_status
 from curious_george.training import logging as train_log
 from curious_george.training.schedule import (
     EntropySchedule,

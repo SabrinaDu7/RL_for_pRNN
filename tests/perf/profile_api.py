@@ -1,6 +1,6 @@
 """Count CUDA runtime API calls per sequential step in one rollout.
 
-The census behind docs/exp_speed_cuda_graph_2026-08-19.md §8: which of
+The census behind docs/claude_logs/exp_speed_cuda_graph_2026-08-19.md §8: which of
 cudaLaunchKernel / cudaMemcpyAsync / cudaStreamSynchronize the rollout actually
 spends its CPU on. Pair with find_sync.py, which attributes *data-dependent*
 host syncs to a Python line; this one counts the CUDA runtime API instead, and

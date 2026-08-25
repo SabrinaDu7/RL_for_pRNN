@@ -83,7 +83,7 @@ from curious_george.models.policy import (
     ACModelSR,
 )
 
-from curious_george.storage import (
+from curious_george.log_and_store.storage import (
     create_folders_if_necessary,
     get_storage_dir,
     get_model_dir,

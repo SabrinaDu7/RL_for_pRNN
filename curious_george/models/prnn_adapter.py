@@ -400,7 +400,7 @@ class PRNNAdapter:
         # predNet.compile_cell: fuse the recurrent cell with torch.compile.
         # The 256-step loop is dispatch-bound across many tiny ops - ranked by
         # TIME, `mm` is 26.6% and the LayerNorm chain ~28%, with no single hot
-        # spot (docs/exp_speed_cuda_graph_2026-08-19.md 9d). Fusing the cell
+        # spot (docs/claude_logs/exp_speed_cuda_graph_2026-08-19.md 9d). Fusing the cell
         # collapses that chain into one kernel: measured 1.39x on the
         # world-model step on CUDA, 1.01x on CPU, so it is CUDA-only.
         #

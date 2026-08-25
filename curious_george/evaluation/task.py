@@ -26,7 +26,7 @@ from prnn.utils import PredictiveNet
 
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.format import get_obss_preprocessor
-from curious_george.storage import get_agent, get_pN, get_SR_acmodel
+from curious_george.log_and_store.storage import get_agent, get_pN, get_SR_acmodel
 from curious_george.training.setup import setup_algo
 from curious_george.utils.common import seed as seed_everything
 from curious_george.utils.common import synthesize

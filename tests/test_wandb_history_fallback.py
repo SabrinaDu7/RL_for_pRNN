@@ -11,7 +11,7 @@ No network: a stub Run reproduces both branches.
 
 import pytest
 
-from curious_george.io.wandb import _history_rows
+from curious_george.log_and_store.wandb import _history_rows
 
 METRIC = "Eval/OPA_Occupancy"
 ROWS = [{"_step": 3, METRIC: {"path": "media/plotly/a.json"}}]

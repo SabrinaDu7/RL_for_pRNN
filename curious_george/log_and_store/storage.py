@@ -217,7 +217,7 @@ def save_pN_and_acmodel(
     # A step directory is handed straight to CUR_CKPT_DIR to seed another run,
     # so it is an artifact in its own right and needs its own provenance - not
     # just the run directory's one level up.
-    from curious_george import provenance
+    from curious_george.log_and_store import provenance
 
     provenance.write(
         step_dir,

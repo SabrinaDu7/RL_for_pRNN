@@ -249,6 +249,6 @@ def read(directory: str | Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(
             f"no {FILENAME} in {directory}. It predates provenance, or the code "
-            f"that wrote it does not call curious_george.provenance.write."
+            f"that wrote it does not call curious_george.log_and_store.provenance.write."
         )
     return json.loads(path.read_text())

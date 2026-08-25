@@ -267,7 +267,7 @@ Run that before fixing `ultra`.
 
 Measured (`tests/perf/benchmark.py`, RTX 4060, idle GPU, serial world model,
 `exp.layouts=one`, `frames = num_envs x 256`, `ppo_batch_size = frames/4`; full
-method and caveats in `docs/exp_speed_cuda_graph_2026-08-19.md` §9b):
+method and caveats in `docs/claude_logs/exp_speed_cuda_graph_2026-08-19.md` §9b):
 
 ```
  num_envs   GRAD/s   s/upd  wm_s/upd  roll_s/upd        with predNet.cuda_graph=True

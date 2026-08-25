@@ -15,13 +15,13 @@ import torch.nn as nn
 
 from prnn.utils import PredictiveNet, load_pN
 
-from curious_george import provenance
+from curious_george.log_and_store import provenance
 from curious_george.utils.common import get_device, seed as seed_everything
 from curious_george.envs.factory import make_env
 from curious_george.models.policy import ACModel, ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.format import get_obss_preprocessor
-from curious_george.storage import (
+from curious_george.log_and_store.storage import (
     create_folders_if_necessary,
     get_agent,
     get_model_dir,

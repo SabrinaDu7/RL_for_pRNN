@@ -63,7 +63,7 @@ SHAPES: tuple[str, ...] = ("x", "plus", "block3")
 # FloorBright, the OMT novel object.
 LANDMARK_COLORS: tuple[str, ...] = ("blue", "green", "red", "yellow")
 
-OFFSET_RADIUS = 4  # the object-vector window; see docs/exp_instructions/instructions-OVC.md
+OFFSET_RADIUS = 4  # the object-vector window; see throwaway/ported/docs_exp_instructions/instructions-OVC.md
 
 
 def walkable_cells(*, env) -> frozenset[tuple[int, int]]:
@@ -156,7 +156,7 @@ class Layout:
         Small here means the landmark is effectively part of the boundary, and
         vector tuning to it cannot be told apart from boundary-vector tuning -
         the first of the known disanalogies in
-        docs/exp_instructions/instructions-OVC.md.
+        throwaway/ported/docs_exp_instructions/instructions-OVC.md.
         """
         return min(
             _wall_distance(cell=c, walkable=walkable) for c in self.cells
