@@ -16,7 +16,10 @@ from curious_george import get_env_var, AgentInputType
 from curious_george import get_pN, make_env, grid_to_pixel_coords
 from curious_george.utils.dev_env import resolve_prnn_ckpt
 
-RL_STORAGE = get_env_var("RL_STORAGE")
+# NOT read at module scope. `get_env_var` RAISES when RL_STORAGE is unset, so
+# binding it here made `import tasks.omt` fail without a .env - and .env is
+# tracked (audit H8) purely so that keeps working. Two defects propping each
+# other up. Resolved lazily below instead, so the package imports anywhere.
 DEVICE = torch.device("cpu")
 
 # Plotting: Trajectories
@@ -387,14 +390,19 @@ def figure_object_learning(env_name: MinigridEnvNames | FaramaMinigridShell,
                            testTrial: dict | None = None,
                            objectLearning: dict | None = None,
                            pN: PredictiveNet | None = None,
-                           rl_storage: str = RL_STORAGE,
+                           rl_storage: str | None = None,
                            config: DictConfig | None = None,
                            show: bool = False,
                            save: bool = False) -> Figure:
     """
     Generate object learning figure panels for a specific run.
+
+    `rl_storage` defaults to $RL_STORAGE, resolved HERE rather than at import.
     """
     from prnn.utils.general import saveFig
+
+    if rl_storage is None:
+        rl_storage = get_env_var("RL_STORAGE")
 
     # Setup
     plt.figure(figsize=(12, 8))

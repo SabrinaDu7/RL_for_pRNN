@@ -12,13 +12,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.omt.task import ObjectMemoryTask
-from curious_george import get_ckpt_env_vars, get_env_var, get_model_dir, AgentType, AgentInputType
+from curious_george import get_ckpt_env_vars, get_model_dir, AgentType, AgentInputType
 from curious_george import provenance
 from curious_george import make_env
 
 # ===== Constants =====
 DEVICE = torch.device("cuda")
-RL_STORAGE = get_env_var("RL_STORAGE")
 
 # All task output lives under the single storage root: $RL_STORAGE/<run_name>/
 TIME = time.strftime("%m%d-%H%M")

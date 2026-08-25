@@ -1,6 +1,6 @@
 """Device / eval-mode context managers.
 
-Generalized from scripts/analysis_OMT.py. These replace the ad-hoc
+Generalized from the OMT analysis (now ../curious-george-questions). These replace the ad-hoc
 `.to("cpu")` / `.to(DEVICE)` toggling that used to be scattered across the
 training and task code: callers that genuinely need modules on a device
 (e.g. numpy-based analysis needs CPU) say so locally and the original

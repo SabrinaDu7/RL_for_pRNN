@@ -3,7 +3,7 @@
 Reads the step-tagged archive a multi-room run writes under `<run>/checkpoints/`
 and replays ONE fixed probe through every checkpoint, so differences between
 points are in the weights and nothing else. That is the same "replay, don't
-re-collect" rule the trace work runs on (`scripts/trace/trace_probe.py`).
+re-collect" rule the probe runs on (`curious_george/evaluation/probe.py`).
 
 Two jobs:
   - the local gate: is prediction loss actually going down?

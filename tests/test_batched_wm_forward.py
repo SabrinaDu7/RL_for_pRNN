@@ -69,7 +69,7 @@ def _tiny_pN() -> PredictiveNet:
 
 
 def test_predict_batched_matches_serial():
-    """The regression that made scripts/analysis_OMT.py pass 4-D and crash."""
+    """The regression that made the OMT analysis pass 4-D and crash."""
     torch.manual_seed(0)
     pN = _tiny_pN()
     obs = torch.rand(B, L + 1, X)

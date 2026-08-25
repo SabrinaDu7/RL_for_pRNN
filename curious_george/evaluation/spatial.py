@@ -159,8 +159,8 @@ def evaluate_spatial_representation(
     # reports activations inflated 17.6% and then randomly zeroed: neither the
     # training nor the inference distribution. The agent never sees it either -
     # predict_single skips clip_mask entirely. Every other eval path in the
-    # repo already does this (evaluation/task.py, tasks/omt, trace_probe); this
-    # one was the outlier.
+    # repo already does this (evaluation/task.py, evaluation/probe.py, and the
+    # OMT task, now in the questions repo); this one was the outlier.
     #
     # The injected noise (predNet.trainNoiseMeanStd) is deliberately KEPT: it
     # is the model's dynamics, and it is what generates the "sleep" activity

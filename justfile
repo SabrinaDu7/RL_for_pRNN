@@ -1,26 +1,6 @@
-# Run experiments
-omt-start-near *EXTRA:
-    uv run tasks/omt/main_task.py tasks.testing.start_random=False {{EXTRA}}
-
-omt-start-away *EXTRA:
-    uv run tasks/omt/main_task.py tasks.testing.start_random=False tasks.testing.start_up_bound=[8,14] tasks.testing.start_low_bound=[1,7] {{EXTRA}}
-
-omt-start-rand *EXTRA:
-    uv run tasks/omt/main_task.py tasks.testing.start_random=True tasks.testing.start_up_bound=[] tasks.testing.start_low_bound=[] {{EXTRA}}
-
-omt-rand-start-near *EXTRA:
-    just omt-start-near exp.random_action_agent=True exp.curious_agent=False tasks.control=True {{EXTRA}}
-
-omt-rand-start-away *EXTRA:
-    just omt-start-away exp.random_action_agent=True exp.curious_agent=False tasks.control=True {{EXTRA}}
-
-omt-rand-start-rand *EXTRA:
-    just omt-start-rand exp.random_action_agent=True exp.curious_agent=False tasks.control=True {{EXTRA}}
-
-
-# Run control omt
-omt-start-rand-ctrl *EXTRA:
-    just omt-start-rand tasks.control=True tasks.training.saving_interval=1000000 logging.wandb_project=curious-george-ctrl tasks.new_obj_loc=[7,11] {{EXTRA}}
+# The OMT recipes moved to ../curious-george-questions (justfile there) with
+# the task itself on 2026-08-25. This repo is the library; questions live in
+# the questions repo.
 
 # Training
 fourroom *EXTRA:
