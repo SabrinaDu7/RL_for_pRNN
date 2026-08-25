@@ -17,6 +17,10 @@ from prnn.utils.Shell import FaramaMinigridShell
 from curious_george import make_env, get_pN, get_SR_acmodel, get_obss_preprocessor, ActorCriticAgent, seed, DEVICE
 from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
+from curious_george.envs.access import (
+    get_walkable_mask,
+    get_walkable_minigrid_positions as get_walkable_positions,
+)
 from scripts.analysis_OMT import (
     EvalTrajectoryConfig,
     EvalTrajectories,
@@ -26,8 +30,7 @@ from scripts.analysis_OMT import (
     collect_eval_trajectories,
     save_eval_trajectories,
     load_eval_trajectories,
-    get_walkable_mask,
-    get_walkable_minigrid_positions as get_walkable_positions,
+
 )
 from scripts.legacy.isomap import make_novel_obj_in_view_label_fn
 

@@ -754,10 +754,25 @@ is a config field plus two call sites.
    **do not exist** — so the work is deleting the `tasks/README.md` paragraphs that send
    the next reader to them, including the whole "Where this is going" section.
 
+6. **`scripts/trace/trace_probe.py` is the promoted probe**, as
+   `curious_george/evaluation/probe.py`. It was the only one of the four with a fixed
+   seed (`PROBE_SEED`) and documented fixed actions, which is what makes repeated
+   scoring of one checkpoint agree; `moser_analysis.py::_build_probe` said in its own
+   docstring that it was the same construction. `checkpoint_curve.py::fixed_probe` and
+   `evaluation/task.py::collect_eval_rollouts` are not promoted; the training collector
+   is a different thing and stays separate.
+
+   Its two dependencies — `get_walkable_mask` and `get_walkable_minigrid_positions` —
+   went to `curious_george/envs/access.py` with it. Ten call sites across the probe,
+   the task code and the figure scripts: env geometry the library owns, not analysis.
+
+   ✅ **C3 IS RESOLVED.** `uv run pypatree scripts` was exit 124 with **0 lines** in
+   the audit; it is now **exit 0, 89 lines**. The only module-scope call left anywhere
+   in `scripts/` is `warnings.filterwarnings` in `analysis_OMT.py`, which is inert.
+
 **Still open:**
 
-5. **Name of the questions repo.**
-6. **Which of the four probe implementations is promoted** (§4).
+5. **Name of the questions repo**, and whether it gets a remote.
 
 ---
 

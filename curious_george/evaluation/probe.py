@@ -1,4 +1,18 @@
-"""Fixed measurement rollouts ("the probe") for object-trace-cell analysis.
+"""One way to turn a checkpoint into (hidden state, position).
+
+Promoted out of scripts/trace/ 2026-08-25. It was one of FOUR competing
+implementations of this - the others were
+scripts/multienv/checkpoint_curve.py::fixed_probe,
+moser_analysis.py::_build_probe (whose own docstring said it was the same
+construction as build_probe here), and evaluation/task.py::collect_eval_rollouts.
+This one won because it is the only one with a FIXED SEED (PROBE_SEED) and
+documented fixed actions, which is what makes repeated scoring of one
+checkpoint agree. The training collector (rl/collect/collector.py) is a
+different thing and stays separate.
+
+The trace/object-vector RESULTS this served are not trusted and are being
+restarted; the MECHANISM is what every future question needs.
+Fixed measurement rollouts ("the probe") for object-trace-cell analysis.
 
 A probe is collected ONCE and replayed against every checkpoint. Its actions
 come from a RandomActionAgent, which pre-generates them independently of the
@@ -31,7 +45,7 @@ from prnn.utils.Shell import FaramaMinigridShell
 
 from curious_george import get_agent, AgentType
 from curious_george.world_model.device import eval_mode, on_device
-from scripts.analysis_OMT import get_walkable_mask, get_walkable_minigrid_positions
+from curious_george.envs.access import get_walkable_mask, get_walkable_minigrid_positions
 
 PROBE_SEED = 20260730
 
