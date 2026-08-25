@@ -26,7 +26,8 @@ FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
 
     golden_v0.pt  pre-migration stack (SabrinaDu7 prnn). Kept for the legacy tree.
     golden_v1.pt  post-migration, valid up to and including `37aaa1b`.
-    golden_v2.pt  from `d275149` on. <- current
+    golden_v2.pt  from `d275149` on.
+    golden_v3.pt  from the UpdateLogs epoch-averaging fix on. <- current
 
 `d275149` ("rl: remove dead `recurrence`") removed a code path that silently
 dropped one transition on odd epochs, so the policy minibatches changed and
@@ -39,6 +40,20 @@ downstream of it moved.
 
 The bump went unnoticed for three days because nothing ran this file.
 `tests/golden/test_golden.py` now does.
+
+v2 -> v3 is a REPORTING change, not a dynamics one, and the fixture proves it:
+hoisting the eager `UpdateLogs` accumulators out of the PPO epoch loop moved
+EXACTLY six leaves - `policy_loss`, `value_loss` and `grad_norm` in both rounds
+- and left every weight and every rollout tensor bit-identical. Measured
+2026-08-25:
+
+    rounds[0].grad_norm    2.1485 -> 3.6079
+    rounds[0].value_loss   0.2125 -> 0.2373
+    rounds[0].policy_loss -0.4792 -> -0.4626
+
+all three in the direction the mechanism predicts (see
+tests/test_update_logs_semantics.py). NOTE that `entropy` is not in this
+fixture, so it is gated only by that file.
 """
 
 import numpy as np
@@ -53,7 +68,7 @@ FRAMES = 64
 SEQDUR = 32
 UPDATES = 2
 DEVICE = torch.device("cpu")
-OUT = "tests/golden/golden_v2.pt"  # see FIXTURE VERSIONS in the module docstring
+OUT = "tests/golden/golden_v3.pt"  # see FIXTURE VERSIONS in the module docstring
 
 
 def build_fixture() -> dict:

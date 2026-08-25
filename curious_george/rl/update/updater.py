@@ -140,15 +140,28 @@ def _update_policy_epochs(
     acmodel, optimizer, exps, loss_fn, loss_kwargs, epochs, batch_size,
     num_frames, max_grad_norm, update_params,
 ) -> UpdateLogs:
+    # Accumulate across ALL epochs, matching _update_policy_epochs_graphed.
+    #
+    # These were declared INSIDE the epoch loop, inherited verbatim (comment and
+    # all) from torch_ac/algos/ppo.py:32-35, so the post-loop mean covered only
+    # the LAST epoch - one quarter of the gradient steps at ppo_epochs=4 - while
+    # the graphed path averaged all of them. Two different statistics under one
+    # name, and the graphed-vs-eager comparison is what the CUDA-graph work
+    # rests on.
+    #
+    # The bias is systematic, not noise: the policy moves across the four passes
+    # over one batch, and at epoch 1 minibatch 1 the importance ratio is exactly
+    # 1. So the old eager path reported lower entropy, lower value_loss, lower
+    # grad_norm and larger-magnitude policy_loss than graphed for the identical
+    # update. See docs/invalid-runs.md - this changes REPORTING only, so the
+    # weights are bit-identical and the world-model metrics are untouched.
+    log_entropies = []
+    log_values = []
+    log_policy_losses = []
+    log_value_losses = []
+    log_grad_norms = []
+
     for _ in range(epochs):
-        # Initialize log values
-
-        log_entropies = []
-        log_values = []
-        log_policy_losses = []
-        log_value_losses = []
-        log_grad_norms = []
-
         with timer("update/policy/batch_indexes"):
             batches = shuffled_minibatches(num_frames=num_frames, batch_size=batch_size)
 

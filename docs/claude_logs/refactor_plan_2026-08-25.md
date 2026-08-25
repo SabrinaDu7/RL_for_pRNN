@@ -346,10 +346,23 @@ importance ratio is exactly 1. So for the identical update, eager reports **lowe
 entropy, **lower** `value_loss`, **lower** `grad_norm` and **larger-magnitude**
 `policy_loss` than graphed.
 
-Fix: hoist the five list initialisations above the epoch loop. Graphed is the correct
-convention — the statistic should describe the update, and the update is all four
-passes. Gate: assert eager and graphed produce the same `UpdateLogs` on the same data.
-It fails today.
+Fix: hoist the five list initialisations above the epoch loop.
+
+✅ **DONE 2026-08-25.** Gate **197 passed, 18 skipped, 7 deselected** (+9, skips
+unchanged).
+
+**The golden was the instrument, and it proved the change is reporting-only**: exactly
+six leaves moved — `policy_loss`, `value_loss` and `grad_norm` in both rounds — with
+every weight and every rollout tensor bit-identical. Fixture bumped to `golden_v3.pt`.
+
+The gate is `tests/test_update_logs_semantics.py`, and it does **not** assert a value:
+it recomputes the statistic from every `LossTerms` the update produced, so it holds for
+any config, device or future loss. It also asserts the two conventions *disagree* on
+this config, which stops the main assertion passing vacuously. All 9 tests go red on
+the old placement.
+
+⚠️ `UpdateLogs.entropy` is **not** in the golden fixture (see `capture_golden.py`'s
+`rounds` dict), so it is gated only by this new file.
 
 ⚠️ **This creates a fourth invalidating line.** `policy_entropy`, `value_loss` and
 `grad_norm` after the fix are not comparable to any historical eager curve — including

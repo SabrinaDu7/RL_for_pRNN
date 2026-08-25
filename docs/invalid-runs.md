@@ -75,21 +75,38 @@ under graphing.
 
 ---
 
-## `UpdateLogs` epoch averaging — PENDING (refactor plan, Phase 2a)
+## `UpdateLogs` epoch averaging — 2026-08-25
 
-**What will change.** The eager path re-creates its log accumulators inside the PPO
-epoch loop (inherited verbatim from `torch_ac/algos/ppo.py:32-35`), so it reports the
-mean over the **last** epoch only. The graphed path averages **all** epochs. Eager is
-being fixed to match graphed.
+**What changed.** The eager path re-created its log accumulators inside the PPO epoch
+loop (inherited verbatim from `torch_ac/algos/ppo.py:32-35`), so it reported the mean
+over the **last** epoch only — one quarter of the gradient steps at `ppo_epochs=4`. The
+graphed path averaged **all** epochs. Eager now matches graphed.
 
-**What it will invalidate.** Policy diagnostics from every eager arm, including the
+**Measured, and it is reporting-only.** `tests/golden/capture_golden.py` moved
+**exactly six leaves** — `policy_loss`, `value_loss` and `grad_norm` in both rounds —
+and left every weight and every rollout tensor bit-identical:
+
+```
+rounds[0].grad_norm    2.1485 -> 3.6079
+rounds[0].value_loss   0.2125 -> 0.2373
+rounds[0].policy_loss -0.4792 -> -0.4626
+```
+
+All three in the direction the mechanism predicts, so the old convention understated
+`grad_norm` by 41% on this fixture.
+
+**What it invalidates.** Policy diagnostics from every eager arm, including the
 2026-07 reference `pRNN_curious_26-07-08-16-04-37`: `policy_entropy`, `value_loss`,
 `grad_norm`, `policy_loss`. The direction of the bias is systematic, not noise — eager
 reports lower entropy, lower `value_loss`, lower `grad_norm` and larger-magnitude
 `policy_loss` than graphed for the identical update.
 
-**What it will NOT invalidate.** `pRNN loss`, `sRSA`, `SWdist` and `SI` do not pass
+**What it does NOT invalidate.** `pRNN loss`, `sRSA`, `SWdist` and `SI` do not pass
 through `UpdateLogs`. The entire world-model line is untouched.
+
+**Fixture.** `golden_v3.pt`. **Gate.** `tests/test_update_logs_semantics.py` recomputes
+the statistic from every `LossTerms` the update produced, so it holds for any config and
+any device; all 9 of its tests go red on the old placement.
 
 **Already contaminated by it:** `speed-30min` §9's eager-vs-graphed entropy comparison
 ("g8 EAGER 0.5927 at 60M against g8 graphed 1.3357") mixes an estimator difference with
