@@ -46,3 +46,8 @@ tests/perf/results/*.prof
 !outputs/ckpts/
 !outputs/ckpts/pRNN_lroom_cur_noObs_26-02-15-17-33-11/
 !outputs/ckpts/pRNN_lroom_cur_noObs_26-02-15-17-33-11/**
+
+# .env is UNTRACKED as of 2026-08-25. It was tracked and hardcoded one machine's
+# home directory for RL_STORAGE and ROOT_DIR, so any clone elsewhere wrote into
+# a path naming that user. .env.example carries the keys with relative defaults.
+.env

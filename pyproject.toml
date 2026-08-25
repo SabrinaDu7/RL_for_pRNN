@@ -82,9 +82,14 @@ markers = ["slow: marks tests as slow to run"]
 [tool.ruff]
 include = [
     "pyproject.toml",
-    "curious_george/*.py",
-    "test/*.py",
-    "trainRL_Adel.py",
+    # RECURSIVE. `curious_george/*.py` matched only the top level, so every
+    # subpackage - rl/, envs/, evaluation/, training/, world_model/, utils/ -
+    # was unlinted. The two entries dropped here were dead: `test/*.py` names a
+    # directory that is `tests/`, and `trainRL_Adel.py` no longer exists.
+    "curious_george/**/*.py",
+    "tests/**/*.py",
+    "scripts/**/*.py",
+    "main_train.py",
 ]
 
 [tool.pyright]

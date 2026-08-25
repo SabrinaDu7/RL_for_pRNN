@@ -45,6 +45,12 @@ PATH = re.compile(rf"(?<![\w./-])(?:{ROOTS})/[A-Za-z0-9_./-]+\.(?:py|md|yaml|yml
 LIVE_GLOBS = ("*.py", "*.yaml", "*.yml", "*.sh", "*.toml", "README.md", "CLAUDE.md", "justfile")
 EXEMPT_PREFIXES = ("throwaway/", "docs/claude_logs/")
 
+#: This file, which cites the defects it exists to catch BY NAME - a deleted
+#: test, a climbing path - so it trips its own matcher. A gate that documents a
+#: failure cannot be subject to itself. Nothing else may be added here without a
+#: reason as specific as this one.
+EXEMPT_FILES = ("tests/test_referenced_paths_exist.py",)
+
 
 def _git(*args: str) -> list[str]:
     out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, check=True)
@@ -54,7 +60,7 @@ def _git(*args: str) -> list[str]:
 def _live_files() -> list[str]:
     return [
         f for f in _git("ls-files", *LIVE_GLOBS)
-        if not f.startswith(EXEMPT_PREFIXES)
+        if not f.startswith(EXEMPT_PREFIXES) and f not in EXEMPT_FILES
     ]
 
 

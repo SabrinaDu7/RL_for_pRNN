@@ -559,9 +559,23 @@ green, and that commit says which gate proved each file safe to drop.
   **Proven to fail:** adding `# see docs/this_file_does_not_exist.md` to
   `curious_george/models.py` turns it red.
 - Resolve `outputs/data_cur_lroom_step1608_goal711/trajectories.pt` so the 18 skips run.
-- Extend `[tool.ruff] include` to `curious_george/` recursively and `tests/`; drop the
-  two dead entries (`trainRL_Adel.py`, `test/*.py`).
-- Untrack `.env`; ship `.env.example` with relative defaults.
+- ✅ **`[tool.ruff] include` extended — DONE 2026-08-25.** It was
+  `curious_george/*.py`, which matches only the TOP LEVEL, so every subpackage
+  (`rl/`, `envs/`, `evaluation/`, `training/`, `world_model/`, `utils/`) was unlinted.
+  Now recursive, plus `tests/`, `scripts/` and `main_train.py`. The two dead entries
+  are dropped: `test/*.py` names a directory that is `tests/`, and `trainRL_Adel.py`
+  does not exist.
+
+  ⚠️ **This exposes a backlog of 103 ruff findings**, previously invisible. Not fixed
+  here — a lint sweep during a refactor makes every bitwise diff harder to read, and
+  some may be deliberate. It is now VISIBLE, which is the point; clearing it is its own
+  commit. `ruff` is not part of `pytest`, so nothing is red.
+
+- ✅ **`.env` untracked — DONE 2026-08-25**, with `.env.example` carrying relative
+  defaults. This only became safe once `tasks/omt/figure.py`'s module-scope
+  `get_env_var("RL_STORAGE")` was made lazy (§8): before that, untracking `.env` would
+  have broken `import tasks.omt`. Verified no module-scope `get_env_var` remains
+  anywhere in `curious_george/`, `tests/` or `scripts/`.
 - Narrow `.gitignore`: drop the blanket `*.png`, keep `outputs/` ignored, track the
   figures a document cites.
 
