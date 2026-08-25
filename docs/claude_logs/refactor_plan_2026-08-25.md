@@ -144,15 +144,29 @@ Three pieces make the pin real rather than nominal:
 1. `just sync` → `uv lock --upgrade-package rl-for-prnn && uv sync`.
 2. **A rendered results document records the resolved rev**, alongside the config and
    commit the template already records. A pin nobody reads back is just a pin.
-3. A local path override stays available and documented, with one invariant enforced
-   in the render step:
+3. ✅ **DONE 2026-08-25** — a local path override, with the invariant ENFORCED rather
+   than written down:
 
    > You may develop against a local path. You may not render a results document from
    > one.
 
-   That turns the override from a hazard into a tool, which matters because
-   `uv lock --upgrade-package` needs the commit pushed and that is a real tax during
-   an active refactor.
+   The tax was not hypothetical: it cost two commit-push-relock round trips in one
+   afternoon (the `scan_history` fallback, then `occupancy_counts`).
+
+   ```
+   make dev CMD='exp collect Q1'   overlay ../RL_for_pRNN for ONE command
+   make pin                        pin the library at its HEAD and sync
+   ```
+
+   `uv run --with-editable` does the overlay, so no file is mutated and the committed
+   pin stays the truth. The guard reuses `provenance.resolve_package` — `origin="vcs"`
+   vs `"worktree"` is the same question a run's `provenance.json` answers — and refuses
+   on a worktree, on a **dirty** pin, and on anything not from git.
+
+   It is careful about what it stops: values and figures are already written when it
+   fires, so iterating under the overlay works and only publishing is blocked. And
+   every rendered document now carries the library it was made against, which is what
+   makes the pin worth having.
 
 ---
 
