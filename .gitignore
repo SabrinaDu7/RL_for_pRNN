@@ -14,13 +14,35 @@ omt-*/
 
 # Claude and outputs
 wandb/*
-outputs/
+# `outputs/*` rather than `outputs/`: git cannot re-include a path whose PARENT
+# directory is excluded, so a directory pattern here makes the exception below
+# impossible to express.
+outputs/*
+!outputs/ckpts/
+outputs/ckpts/*
+# EXCEPTION - this one is a FIXTURE, not an output. It is the checkpoint
+# tests/golden_omt/capture_golden_omt.py pins, and the fixtures captured from it
+# are tracked (658 KB each) while the 3.9 MB checkpoint was not - so the repo's
+# best bitwise gate could not run on a clean clone and passed only on local
+# state. Same class of defect as the data/obs_bank 2-of-246 split.
+!outputs/ckpts/pRNN_lroom_cur_noObs_26-02-15-17-33-11/
 # docs/ is TRACKED (reorganised 2026-08-12 into claude_logs/ legacy/ results/
-# exp_instructions/). Only the personal scratch area stays out.
-docs/sab_context/
+# exp_instructions/). docs/sab_context/ became tracked on 2026-08-25: it is
+# cited from Configs/run/multienv.yaml, Configs/performance/ultra.yaml,
+# tests/perf/benchmark.py and a figure generator that carried its numbers as
+# source literals. Untracked and load-bearing is the worst combination.
 
 # Generated observation banks: rebuilt automatically per (env, object position)
 # by curious_george/envs/obs_bank.py, keyed on a grid fingerprint.
 data/obs_bank/
 storage/*
 tests/perf/results/*.prof
+
+# EXCEPTION: the checkpoint tests/golden_omt/capture_golden_omt.py pins.
+# It is a FIXTURE, not an output. The fixtures beside it are tracked (658 KB
+# each) while the 3.9 MB checkpoint they were captured from was not, so the
+# repo's best bitwise gate could not run on a clean clone - it passed only on
+# local state. Same class as the data/obs_bank 2-of-246 split.
+!outputs/ckpts/
+!outputs/ckpts/pRNN_lroom_cur_noObs_26-02-15-17-33-11/
+!outputs/ckpts/pRNN_lroom_cur_noObs_26-02-15-17-33-11/**

@@ -776,6 +776,18 @@ do not build around it silently.
 
 ### Found while executing (2026-08-25)
 
+- 🔴 **The OMT bitwise gate depended on an UNTRACKED checkpoint.**
+  `tests/golden_omt/capture_golden_omt.py` pins
+  `outputs/ckpts/pRNN_lroom_cur_noObs_26-02-15-17-33-11` (3.9 MB, 2 files). Its
+  fixtures are tracked (658 KB each); the checkpoint they were captured from was
+  under the blanket `outputs/` ignore. So the repo's **best** gate — the anchor of
+  the whole OMT pilot — could not run on a clean clone and passed here only on local
+  state. Audit H7c and H1 in their most consequential instance. Fixed: the ignore is
+  restructured to `outputs/*` + a re-include (git cannot re-include under an excluded
+  PARENT, so the directory pattern made the exception inexpressible) and the
+  checkpoint is tracked as the fixture it is.
+- ✅ `docs/sab_context/` is now tracked (§7.2), in the same change.
+
 - 🔴 **`tests/golden/golden_v1.pt` was stale from `d275149` to `ba87d81`** and nothing
   noticed, because `capture_golden.py` is not a `test_*.py`. Resolved: `golden_v2.pt` +
   `tests/golden/test_golden.py` (§2a). This is the concrete cost of a gate that cannot
