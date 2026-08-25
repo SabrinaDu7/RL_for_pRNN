@@ -57,9 +57,13 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
         "duration": stats.duration,
     }
     if not stats.random_agent:
-        out.update(
-            _prefixed("return", synthesize(logs["return_per_episode"], signs=True))
-        )
+        # Absent under exp.device_env, which cannot measure extrinsic reward.
+        # No series at all beats a series of zeros nothing can distinguish from
+        # a real one (collector.py::_close_device_segment).
+        if "return_per_episode" in logs:
+            out.update(
+                _prefixed("return", synthesize(logs["return_per_episode"], signs=True))
+            )
         out.update(
             _prefixed("int_reward", synthesize(logs["intrinsic_rewards"], abs=True))
         )

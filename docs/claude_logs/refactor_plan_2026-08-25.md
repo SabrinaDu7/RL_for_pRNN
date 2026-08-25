@@ -390,8 +390,25 @@ so `num_episodes` counts segments, a different quantity from `num_episodes` on t
 non-device path.
 
 Fix: do not log a fabricated zero — omit the key under this backend so wandb has no
-series rather than a flat-zero one, and give the segment count a name that says
-segment.
+series rather than a flat-zero one.
+
+✅ **DONE 2026-08-25.** Gate **204 passed, 18 skipped, 7 deselected** (+7, skips
+unchanged). `return_per_episode` and `reshaped_return_per_episode` are now **absent**
+under `exp.device_env`, present otherwise. `num_episodes` and `num_frames_per_episode`
+stay — those counts ARE known on this backend, since segment boundaries are
+synchronized and Python-visible; only the two return fields were fabricated.
+
+`logging.early_stop` now **raises** instead of reading the fabricated zero, comparing
+`0.0 > 0.9` and silently never firing. Gate proven to fail: restoring the zero turns 3
+of the 7 red.
+
+⚠️ **Scope call: `num_episodes` is NOT renamed.** Under `device_env` there are no
+environment terminations at all, so an "episode" is a `prnn_seqdur` SEGMENT and
+`num_episodes` counts segments. Renaming is a 5-file, 24-reference change — but
+`num_episodes` is a **wandb key shared with all 557 OMT runs and every training run**,
+so a rename buys clarity at the cost of historical continuity on a key. The conflation
+is documented at the site instead, and the questions repo should name it correctly in
+its own metric layer, where there is no history to break.
 
 **2c. Spatial information = `pN`.** Decided. `pN` owns the metric, wandb logs it, every
 historical curve used it, and `scripts/trace/trace_maps.py::spatial_info` dies with the

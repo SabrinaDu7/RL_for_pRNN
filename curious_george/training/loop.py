@@ -223,6 +223,15 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
 
             # --- early stop -----------------------------------------------
             if cfg.logging.early_stop and not cfg.exp.random_action_agent:
+                if "return_per_episode" not in logs:
+                    # Loudly, rather than never firing. Under exp.device_env the
+                    # backend cannot measure extrinsic return, so this criterion
+                    # has nothing to read - and it USED to read a fabricated 0.0
+                    # and silently never trigger.
+                    raise ValueError(
+                        "logging.early_stop needs extrinsic return, which "
+                        "exp.device_env does not measure. Turn one of them off."
+                    )
                 returns = synthesize(logs["return_per_episode"], signs=True)
                 if returns["mean"] > 0.9 and returns["std"] < 0.05:
                     n_performance += 1

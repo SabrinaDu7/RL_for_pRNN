@@ -228,9 +228,21 @@ def collect_rollout(
         # This backend rejects environment rewards/terminations, so
         # synchronized segment statistics are known without B Python
         # bookkeeping iterations.
+        #
+        # EXTRINSIC RETURN IS NOT MEASURED HERE, and it is deliberately NOT
+        # recorded as 0.0. A zero reaching wandb as `return_mean` cannot be told
+        # apart from "the agent earned nothing" - harmless in a goal-less L-room
+        # where the true return is 0 anyway, and wrong the first time this
+        # backend runs a goal env (MiniGrid-LRoom_Goal-v0 exists). Omitting the
+        # series is honest; a flat zero is not. The curious agent's actual
+        # learning signal is intrinsic and logged separately.
+        #
+        # NOTE the segment/episode conflation this backend also introduces:
+        # there are no environment terminations at all, so a "finished episode"
+        # here is a `prnn_seqdur`-step SEGMENT. `done_counter` and
+        # `finished_frames` count segments. The names are left alone because
+        # `num_episodes` is a wandb key shared with every historical run.
         state.done_counter += B
-        state.finished_returns.extend([0.0] * B)
-        state.finished_reshaped.extend([0.0] * B)
         state.finished_frames.extend([cfg.prnn_seqdur] * B)
 
         state.sr = tracker.reset_all_envs()
@@ -656,9 +668,13 @@ def collect_rollout(
             logs = {f"curious_reward_{k}": v for k, v in curious_by_action.items()}
         adv_by_action = mean_by_action(adv_np, actions_np)
 
+        # The two return keys are ABSENT, not zero, on a backend that cannot
+        # measure extrinsic reward (see _close_device_segment). A missing series
+        # cannot be misread; a flat zero can.
+        if device_pool is None:
+            logs["return_per_episode"] = list(state.finished_returns)
+            logs["reshaped_return_per_episode"] = list(state.finished_reshaped)
         logs.update({
-            "return_per_episode": list(state.finished_returns),
-            "reshaped_return_per_episode": list(state.finished_reshaped),
             "num_frames_per_episode": list(state.finished_frames),
             "num_frames": B * T,
             "num_episodes": state.done_counter,
