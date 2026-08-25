@@ -99,7 +99,17 @@ def log_spatial(metrics: dict, nameext: str) -> None:
     # (Sabrina, 2026-07-09). Until the pooled-eval metrics move into prnn
     # (next refactor phase), the pooled path's values reach wandb only via
     # this repo's own historical key, SWdist_direct.
-    wandb.log({f"SWdist_direct{nameext}": metrics["SWdist"]})
+    # `mean SI` (logged by prnn) averages a structural zero into every unit that
+    # fired in fewer than `active_time_threshold` samples, so on its own it
+    # cannot be read: a falling curve may be sparsification rather than lost
+    # spatial tuning. These say how much of it is measurement.
+    # See evaluation/spatial.py::si_coverage.
+    coverage = {
+        f"{key}{nameext}": metrics[key]
+        for key in ("SI_units_total", "SI_units_zeroed", "SI_mean_active_only")
+        if key in metrics
+    }
+    wandb.log({f"SWdist_direct{nameext}": metrics["SWdist"], **coverage})
 
 
 def log_multi_room(result: dict, layout_episodes) -> None:

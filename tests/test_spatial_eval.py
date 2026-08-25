@@ -41,11 +41,55 @@ def test_pooled_eval_returns_finite_metrics(setup):
         onset_transient=5, active_time_threshold=10,
         sleep_timesteps=50,
     )
-    assert set(metrics) == {"sRSA", "SWdist", "SI"}
+    assert set(metrics) == {
+        "sRSA", "SWdist", "SI",
+        "SI_units_total", "SI_units_zeroed", "SI_mean_active_only",
+    }
     assert np.isfinite(metrics["sRSA"])
     assert np.isfinite(metrics["SWdist"]) and metrics["SWdist"] >= 0
     assert len(metrics["SI"]) == pN.hidden_size
     assert np.isfinite(np.nanmean(np.asarray(metrics["SI"]["SI"], dtype=float)))
+
+
+def test_si_coverage_describes_the_units_prnn_zeroed(setup):
+    """`mean SI` averages a structural zero into every unit that fired in fewer
+    than `active_time_threshold` samples, so on its own it cannot be read: a
+    falling curve may be sparsification rather than lost spatial tuning. These
+    three say how much of it is measurement.
+
+    The gate is that they describe EXACTLY the units prnn zeroed - every unit
+    counted as zeroed has SI exactly 0.0 in the returned frame."""
+    env, pN, agent = setup
+    metrics = evaluate_spatial_representation(
+        pN, env, agent,
+        n_trajs=3, traj_timesteps=60,
+        onset_transient=5, active_time_threshold=10,
+        sleep_timesteps=50,
+    )
+    values = np.asarray(metrics["SI"]["SI"], dtype=float)
+    assert metrics["SI_units_total"] == pN.hidden_size
+    assert 0 <= metrics["SI_units_zeroed"] <= metrics["SI_units_total"]
+    # prnn assigns exactly 0 to the units it excludes, so a zeroed count larger
+    # than the number of exact zeros would mean the two disagree about which
+    # units are inactive.
+    assert metrics["SI_units_zeroed"] <= int((values == 0.0).sum())
+
+
+def test_si_coverage_raises_the_mean_when_units_are_zeroed(setup):
+    """The direction that matters: excluding structural zeros can only move the
+    mean up, so `mean SI` understates spatial tuning by exactly the share of
+    units below the threshold."""
+    env, pN, agent = setup
+    # a threshold above any plausible activity count zeroes every unit
+    everything = evaluate_spatial_representation(
+        pN, env, agent,
+        n_trajs=3, traj_timesteps=60,
+        onset_transient=5, active_time_threshold=10**9,
+        sleep_timesteps=50,
+    )
+    assert everything["SI_units_zeroed"] == everything["SI_units_total"]
+    assert np.isnan(everything["SI_mean_active_only"])
+    assert float(np.asarray(everything["SI"]["SI"], dtype=float).max()) == 0.0
 
 
 def test_pooled_eval_restores_device_placement(setup):

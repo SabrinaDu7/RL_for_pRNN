@@ -431,12 +431,40 @@ non-comparable across runs with different activity levels.
 
 Fix, no upstream change needed: `calculateSpatialMetrics` returns the **per-unit**
 frame; only the wandb call takes `.mean()`. So `curious_george/evaluation/spatial.py`
-logs `n_units_zeroed` and `mean SI over active units` alongside `mean SI`, from data
-prnn already returns. `mean SI` stays the historical series and becomes interpretable.
+logs `SI_units_zeroed`, `SI_units_total` and `SI_mean_active_only` alongside `mean SI`,
+recomputing the same threshold on the same activity so they describe exactly the units
+prnn zeroed. `mean SI` stays the historical series and becomes interpretable.
 
-**Unmeasured, and it belongs here:** N is `n_trajs × traj_timesteps` = 8 × 256 = 2048,
-so the threshold is ~10% of samples — but nobody has measured what fraction of the 500
-units it actually excludes on a real checkpoint. One cheap measurement.
+✅ **DONE 2026-08-25.** Gate **206 passed, 18 skipped, 7 deselected** (+2, skips
+unchanged) — `evaluation/spatial.py::si_coverage`, logged by `logging.py::log_spatial`.
+
+⚠️ **This test failed and was CHANGED**: `test_pooled_eval_returns_finite_metrics`
+pinned the exact key set, which is the contract this decision deliberately widened. The
+assertion was extended to the new set rather than loosened, and two tests were added.
+Naming it because CLAUDE.md forbids editing a failing test to make a failure go away —
+the cause here was fully diagnosed and is the intended change.
+
+🟢 **MEASURED, and it de-escalates the concern I raised.** On the real checkpoint
+`pRNN_curious_26-07-23-10-06-25` at production eval settings
+(`n_trajs=8, traj_timesteps=256`):
+
+```
+active_time_threshold   units zeroed        mean SI (all)   mean SI (active)
+             200          4 / 500  (0.8%)          0.9368             0.9444
+             100          1 / 500  (0.2%)          0.9818             0.9838
+              20          1 / 500  (0.2%)          0.9577             0.9596
+```
+
+So the structural-zero effect on this checkpoint is **0.008**, while three evals of the
+SAME checkpoint spanned 0.9368–0.9818 — the eval's own sampling noise (~0.045, since
+`collect_pooled_activity` re-rolls trajectories through a stochastic policy each call)
+is roughly **6× larger than the confound**. The mechanism is real and the logging is
+worth having, but this is not a live threat to any current number.
+
+⚠️ Still unmeasured, and it is the case the mechanism predicts: whether the zeroed
+fraction **grows with training**, which is what would make `mean SI` fall for a reason
+unrelated to spatial tuning. One eval of an early archive against a late one settles it,
+and the three keys are now logged on every event so any future run answers it for free.
 
 ### Phase 3 — stage every deletion in `throwaway/` FIRST
 

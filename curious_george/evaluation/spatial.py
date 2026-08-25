@@ -208,7 +208,49 @@ def evaluate_spatial_representation(
             rng=rng,
             wandb_nameext=wandb_nameext,
         )
-    return {"sRSA": metrics["sRSA"], "SWdist": metrics["SWdist"], "SI": metrics["SI"]}
+    return {
+        "sRSA": metrics["sRSA"],
+        "SWdist": metrics["SWdist"],
+        "SI": metrics["SI"],
+        **si_coverage(h_pool, active_time_threshold=active_time_threshold, SI=metrics["SI"]),
+    }
+
+
+def si_coverage(
+    h: Float[np.ndarray, "N H"],
+    *,
+    active_time_threshold: int,
+    SI,
+) -> dict[str, float]:
+    """How much of `mean SI` is a measurement, and how much is a structural zero.
+
+    `prnn.utils.predictiveNet.calculateSpatialMetrics` does
+
+        num_active = (h > 0).sum(axis=0)
+        SI.iloc[num_active < active_time_threshold] = 0
+
+    and wandb logs `SI.mean()` over ALL units. So a unit that barely fired is
+    averaged in as **0, not excluded**, and `mean SI` conflates "carries no
+    spatial information" with "hardly active". That matters with a direction:
+    training sparsifies the representation, so more units fall below the
+    threshold as a run proceeds and `mean SI` is pushed DOWN for a reason that
+    has nothing to do with spatial tuning. It also makes SI incomparable across
+    runs with different activity levels - e.g. the historical curves logged
+    with dropout on.
+
+    `mean SI` is kept as-is because it is the historical series and pN owns the
+    metric (refactor plan, §7.2). These three numbers alongside it are what make
+    it readable: the same threshold recomputed on the same activity, so they
+    describe exactly the units prnn zeroed.
+    """
+    num_active = (np.asarray(h) > 0).sum(axis=0)
+    active = num_active >= active_time_threshold
+    values = np.asarray(SI["SI"] if hasattr(SI, "columns") else SI, dtype=float)
+    return {
+        "SI_units_total": float(active.size),
+        "SI_units_zeroed": float((~active).sum()),
+        "SI_mean_active_only": float(values[active].mean()) if active.any() else float("nan"),
+    }
 
 
 def evaluate_multi_room_representation(
