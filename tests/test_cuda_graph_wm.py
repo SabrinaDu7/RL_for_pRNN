@@ -21,7 +21,7 @@ from prnn.utils import (
     RandomActionAgent,
 )
 from curious_george import AgentInputType, make_env
-from curious_george.world_model.adapter import PRNNAdapter
+from curious_george.models.prnn_adapter import PRNNAdapter
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA graph path requires a GPU"
@@ -162,7 +162,7 @@ def test_on_device_preserves_addresses_so_graphs_survive_the_spatial_eval():
     the ORIGINAL storages removes the conflict: the eval still runs on CPU, the
     graphs still point at live memory, and the metrics still get logged.
     """
-    from curious_george.world_model.device import on_device
+    from curious_george.models.device import on_device
 
     dev = torch.device("cuda")
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
@@ -294,7 +294,7 @@ def _run_pooled(*, cuda_graph: bool, dropp: float, noise: tuple[float, float]):
         adapter._graph_trainer = None
     for _ in range(STEPS):
         if cuda_graph:
-            from curious_george.world_model.adapter import _GraphWMTrainer
+            from curious_george.models.prnn_adapter import _GraphWMTrainer
 
             adapter._graph_trainer = adapter._graph_trainer or _GraphWMTrainer(pN, dev)
             adapter._graph_trainer.train_batch(obs_b, act_b, batched=True)
@@ -325,7 +325,7 @@ def test_pooled_graph_advances_weights_every_replay():
     """Each replay must move the weights - a graph replaying at frozen weights
     would still be bitwise-equal to eager on step 1 alone."""
     dev = torch.device("cuda")
-    from curious_george.world_model.adapter import _GraphWMTrainer
+    from curious_george.models.prnn_adapter import _GraphWMTrainer
 
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
@@ -347,7 +347,7 @@ def test_pooled_and_serial_graphs_do_not_collide():
     """batched=True at B=1 is a DIFFERENT layout from the serial batched=False
     call, so they must not share a graph key."""
     dev = torch.device("cuda")
-    from curious_george.world_model.adapter import _GraphWMTrainer
+    from curious_george.models.prnn_adapter import _GraphWMTrainer
 
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
@@ -367,7 +367,7 @@ def test_ragged_final_group_gets_its_own_graph():
     a different shape and must capture separately rather than replay the wrong
     one."""
     dev = torch.device("cuda")
-    from curious_george.world_model.adapter import _GraphWMTrainer
+    from curious_george.models.prnn_adapter import _GraphWMTrainer
 
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
@@ -407,7 +407,7 @@ def test_graphed_training_survives_repeated_spatial_evals(pooled):
     So: interleave evals with training and assert the weights keep moving
     EXACTLY as eager moves them, on both the serial and the pooled path.
     """
-    from curious_george.world_model.device import on_device
+    from curious_george.models.device import on_device
 
     dev = torch.device("cuda")
     deltas = {}
@@ -423,7 +423,7 @@ def test_graphed_training_survives_repeated_spatial_evals(pooled):
             if pooled:
                 obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
                 if graphed:
-                    from curious_george.world_model.adapter import _GraphWMTrainer
+                    from curious_george.models.prnn_adapter import _GraphWMTrainer
 
                     adapter._graph_trainer = adapter._graph_trainer or _GraphWMTrainer(pN, dev)
                     adapter._graph_trainer.train_batch(obs_b, act_b, batched=True)
@@ -446,7 +446,7 @@ def test_graphed_training_survives_repeated_spatial_evals(pooled):
 def test_on_device_preserves_buffer_addresses():
     """Buffers are the third thing `Module._apply` relocates, and the one that
     is easiest to forget because a model without them behaves perfectly."""
-    from curious_george.world_model.device import on_device
+    from curious_george.models.device import on_device
 
     dev = torch.device("cuda")
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))

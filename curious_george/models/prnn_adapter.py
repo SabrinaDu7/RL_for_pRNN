@@ -1062,7 +1062,7 @@ class BatchedSRTracker:
         # input to (and output of) the per-step cell call, so anything that
         # captures that call bakes in its address; rebinding it to a fresh
         # allocation would leave the capture reading stranded memory - the same
-        # failure mode as world_model/device.py's buffers, which fails silently.
+        # failure mode as models/device.py's buffers, which fails silently.
         if getattr(self, "state", None) is None:
             self.state = torch.zeros((self.B, 1, self.hidden_size), device=self.device)
         else:

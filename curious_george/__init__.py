@@ -77,7 +77,7 @@ from curious_george.rl.collect.format import (
     Vocabulary,
 )
 
-from curious_george.models import (
+from curious_george.models.policy import (
     init_params,
     ACModel,
     ACModelSR,

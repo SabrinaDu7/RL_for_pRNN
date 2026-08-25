@@ -21,7 +21,7 @@ from curious_george.training.schedule import (
     TrainingSchedule,
 )
 from curious_george.training.setup import RunContext, TrainingComponents
-from curious_george.world_model.device import on_device
+from curious_george.models.device import on_device
 from curious_george.utils.checkpoints import StatusCkptKeys
 from curious_george.utils.timing import timer
 

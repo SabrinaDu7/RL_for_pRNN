@@ -29,7 +29,7 @@ from prnn.analysis.representationalGeometryAnalysis import (
     representationalGeometryAnalysis as RGA,
 )
 
-from curious_george.world_model.device import eval_mode, on_device
+from curious_george.models.device import eval_mode, on_device
 
 
 def compute_sleep_wake_dist(

@@ -13,7 +13,7 @@ from prnn.utils import (
 from prnn.utils.Shell import FaramaMinigridShell
 
 from curious_george.envs.access import get_new_obj_pos as access_get_goal_loc
-from curious_george.models import ACModel, ACModelSR
+from curious_george.models.policy import ACModel, ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.agent import ActorCriticAgent
 from curious_george.utils.checkpoints import (

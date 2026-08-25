@@ -69,7 +69,7 @@ main_train.py
                                                        └─► rl/update/world_model.py
                                                                     │
                                                                     ▼
-                                                    world_model/adapter.py
+                                                    models/prnn_adapter.py
                                                        PRNNAdapter: the only
                                                        interface to pRNN and
                                                        only `prnn` import
@@ -77,8 +77,7 @@ main_train.py
 
 ### `curious_george/rl` — the agent
 
-**`rl/algo.py` is the hub.** `PredictivePPOAlgo` owns the environments, the actor–critic,
-the world-model adapter and the optimizer, and exposes exactly two calls the loop uses:
+**`rl/algo.py` is the hub.** `PredictivePPOAlgo` brings together the environments, the actor–critic policy, the world-model (pRNN) adapter and the optimizer. It exposes two important calls:
 `collect_experiences()` and `update_parameters()`. Everything below it is a plain function
 it delegates to, which is what makes the pieces reusable outside this loop.
 
@@ -98,17 +97,25 @@ it delegates to, which is what makes the pieces reusable outside this loop.
   rollout timestep and the PPO minibatch step. Optional, off by default, and gated against
   the eager path.
 
-### `curious_george/world_model` — the pRNN seam
+### `curious_george/models` — the two learned networks
 
-**`world_model/adapter.py` is the boundary.** `PRNNAdapter` is the only module that imports
-`prnn`; everything else talks to it. It owns the SR (hidden-state) trackers, the action and
-observation encoding, the training step, and the prediction-error computation the curiosity
-reward is built from. If the upstream pRNN API changes, this is the file that changes.
+Both networks live here, plus the device machinery they share.
 
-`world_model/device.py` — `on_device` / `eval_mode`, the context managers that move models
-between CPU and accelerator without losing their identity. Load-bearing: the spatial
-evaluation runs on CPU, and a naive `.to()` there silently invalidated captured CUDA
-graphs.
+- `models/policy.py` — `ACModel` / `ACModelSR`, the actor–critic. `ACModelSR` is the one
+  this project runs: it concatenates the pRNN's hidden state into the embedding, so the
+  policy acts on the world model's representation rather than on pixels alone.
+- **`models/prnn_adapter.py` is the boundary.** `PRNNAdapter` is the only module that
+  imports `prnn`; everything else talks to it. It owns the hidden-state trackers, the
+  action and observation encoding, the training step, and the prediction-error computation
+  the curiosity reward is built from. If the upstream pRNN API changes, this is the file
+  that changes.
+- `models/device.py` — `on_device` / `eval_mode`, the context managers that move models
+  between CPU and accelerator without changing their identity. Here because it operates
+  *on* models, not because it is one. Load-bearing: the spatial evaluation runs on CPU, and
+  a naive `.to()` there silently invalidated captured CUDA graphs.
+
+⚠️ `models/policy.py` is the network; `rl/update/policy.py` is the optimisation that
+updates it. Two files, one word, different concerns — the directory disambiguates.
 
 ### `curious_george/envs` — the world
 
@@ -147,8 +154,6 @@ Called by `training/loop.py` on a cadence, but importable on their own.
 
 ### Supporting
 
-- `models.py` — `ACModel` / `ACModelSR`, the actor–critic. `ACModelSR` is the one that takes
-  the pRNN hidden state as input.
 - `provenance.py` — every artifact records what produced it: the resolved commits of this
   repo, `prnn`, `minigrid` and the caller, plus the config and its input artifacts.
 - `storage.py` — where things are written; `io/wandb.py` — reading runs back out;

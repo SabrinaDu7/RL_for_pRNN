@@ -11,7 +11,7 @@ class ActorCriticAgent:
     is dynamic). `getObservations` aligns the pRNN to that device on entry and
     leaves it there - it never moves models behind the caller's back. Callers
     that need a specific device (e.g. CPU for numpy-based analysis) wrap the
-    call in `curious_george.world_model.device.on_device`.
+    call in `curious_george.models.device.on_device`.
     """
 
     def __init__(self, action_space, acmodel, prnn, device, argmax: bool, pastSR=True):

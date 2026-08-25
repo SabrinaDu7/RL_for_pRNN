@@ -190,7 +190,7 @@ def test_graphed_policy_survives_spatial_evals():
     """
     from curious_george.rl.update.losses import LOSSES
     from curious_george.rl.update.policy import _index_policy_batch
-    from curious_george.world_model.device import on_device
+    from curious_george.models.device import on_device
 
     sets = _fixed_index_sets(STEPS, 256, 2048)
     results = {}

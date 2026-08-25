@@ -1,4 +1,14 @@
-# Adapted from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
+"""The POLICY network: actor-critic, with and without the pRNN hidden state.
+
+Adapted from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
+
+`ACModelSR` is the one this project runs: it concatenates the pRNN's hidden
+state (the "SR") into the embedding, so the policy acts on the world model's
+representation rather than on pixels alone.
+
+Not to be confused with `rl/update/policy.py`, which UPDATES this network -
+this file is the network, that one is the optimisation.
+"""
 
 
 import torch

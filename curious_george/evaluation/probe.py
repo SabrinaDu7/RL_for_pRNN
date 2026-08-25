@@ -44,7 +44,7 @@ from prnn.utils import PredictiveNet
 from prnn.utils.Shell import FaramaMinigridShell
 
 from curious_george import get_agent, AgentType
-from curious_george.world_model.device import eval_mode, on_device
+from curious_george.models.device import eval_mode, on_device
 from curious_george.envs.access import get_walkable_mask, get_walkable_minigrid_positions
 
 PROBE_SEED = 20260730

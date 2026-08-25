@@ -9,7 +9,7 @@ import torch
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
 from curious_george import AgentInputType
 from curious_george import make_env
-from curious_george.world_model.adapter import (
+from curious_george.models.prnn_adapter import (
     PRNNAdapter,
     encode_speed_hd_rows,
     flat_obs_rows,

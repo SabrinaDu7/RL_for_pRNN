@@ -13,7 +13,7 @@ from prnn.utils import (
 )
 from curious_george import AgentInputType, make_env
 from curious_george.rl.update.world_model import train_world_model_on_episodes
-from curious_george.world_model.adapter import PRNNAdapter
+from curious_george.models.prnn_adapter import PRNNAdapter
 
 SEED = 5
 L = 24  # segment length

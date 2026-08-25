@@ -34,7 +34,7 @@ from curious_george.rl.collect.diagnostics import LocationStats
 from curious_george.rl.update.losses import LOSSES
 from curious_george.rl.update.policy import update_policy
 from curious_george.rl.update.world_model import train_world_model_on_episodes
-from curious_george.world_model.adapter import PRNNAdapter, make_sr_tracker
+from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
 
 
 def compare_trajs(traj1, traj2):

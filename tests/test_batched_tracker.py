@@ -9,7 +9,7 @@ import torch
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
 from curious_george import AgentInputType
 from curious_george import make_env
-from curious_george.world_model.adapter import BatchedSRTracker
+from curious_george.models.prnn_adapter import BatchedSRTracker
 
 T = 6
 B = 3

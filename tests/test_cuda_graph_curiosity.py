@@ -33,7 +33,7 @@ CUDA-only; skipped on CPU boxes.
 import pytest
 import torch
 
-from curious_george.world_model.adapter import PRNNAdapter
+from curious_george.models.prnn_adapter import PRNNAdapter
 from tests.test_cuda_graph_wm import _make_pN, _one_segment
 
 pytestmark = pytest.mark.skipif(
@@ -141,12 +141,12 @@ def test_graphed_curiosity_survives_repeated_spatial_evals():
     Two assertions, because either alone is too weak. The answers must stay
     exactly eager's - and the captured graph must be the SAME OBJECT
     throughout, because `on_device` is address-preserving by contract
-    (curious_george/world_model/device.py) and re-capture is only the net
+    (curious_george/models/device.py) and re-capture is only the net
     beneath it. If a future `on_device` stopped restoring `param.grad` or the
     `inMask_f`/`actMask_f`/`outMask_f` buffers to their addresses, the object
     identity is what notices.
     """
-    from curious_george.world_model.device import on_device
+    from curious_george.models.device import on_device
 
     (eager_pN, eager), (graph_pN, graphed) = _paired_adapters()
     captured = None

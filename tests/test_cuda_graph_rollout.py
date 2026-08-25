@@ -220,14 +220,14 @@ def test_graphed_rollout_bitwise_equals_eager():
 def test_graphed_rollout_survives_repeated_spatial_evals(extra):
     """Collection must keep WORKING across analysis events, not merely not
     crash. `on_device` moves both models to the CPU and back; it is
-    address-preserving by contract (curious_george/world_model/device.py), and
+    address-preserving by contract (curious_george/models/device.py), and
     `GraphRolloutStepper` re-checks those addresses anyway. Either way the
     rollout it produces afterwards must still be eager's, exactly.
 
     The second parametrization runs it with the world-model and PPO graphs on
     in BOTH arms - three sets of captured graphs surviving the same device
     round trip, which is the configuration a real run uses."""
-    from curious_george.world_model.device import on_device
+    from curious_george.models.device import on_device
 
     eager, graphed = _paired_algos(extra=extra)
     try:

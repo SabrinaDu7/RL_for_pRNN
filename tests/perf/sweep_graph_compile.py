@@ -25,7 +25,7 @@ import torch
 
 from prnn.utils import ActionEncodingsEnum, MinigridEnvNames, PredictiveNet
 from curious_george import AgentInputType, make_env
-from curious_george.world_model.adapter import _GraphWMTrainer, PRNNAdapter
+from curious_george.models.prnn_adapter import _GraphWMTrainer, PRNNAdapter
 
 SEED, L, GROUP, H, REPS = 5, 256, 8, 500, 15
 dev = torch.device("cuda")

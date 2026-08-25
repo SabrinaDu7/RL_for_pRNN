@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from curious_george.world_model.adapter import PRNNAdapter
+from curious_george.models.prnn_adapter import PRNNAdapter
 from curious_george.utils.timing import timer
 
 

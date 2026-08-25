@@ -19,7 +19,7 @@ the final observation is a real prediction target; no boundary special case).
 import numpy as np
 import torch
 
-from curious_george.world_model.adapter import PRNNAdapter
+from curious_george.models.prnn_adapter import PRNNAdapter
 
 
 REWARD_ALIGNMENTS = {"legacy": 0, "next_obs": 1}  # name -> prediction target offset

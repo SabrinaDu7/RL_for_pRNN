@@ -31,7 +31,7 @@ from curious_george.training.setup import setup_algo
 from curious_george.utils.common import seed as seed_everything
 from curious_george.utils.common import synthesize
 from curious_george.utils.enums import AgentType
-from curious_george.world_model.device import on_device
+from curious_george.models.device import on_device
 
 
 @dataclass
@@ -301,7 +301,7 @@ def collect_eval_rollouts_batched(
     before_each(env) is called per env copy before its reset (e.g. to set
     the start position).
     """
-    from curious_george.world_model.adapter import BatchedSRTrackerShim, PRNNAdapter
+    from curious_george.models.prnn_adapter import BatchedSRTrackerShim, PRNNAdapter
 
     assert hasattr(agent, "acmodel"), "batched eval requires an ActorCriticAgent"
     B = len(envs_eval)

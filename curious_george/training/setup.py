@@ -18,7 +18,7 @@ from prnn.utils import PredictiveNet, load_pN
 from curious_george import provenance
 from curious_george.utils.common import get_device, seed as seed_everything
 from curious_george.envs.factory import make_env
-from curious_george.models import ACModel, ACModelSR
+from curious_george.models.policy import ACModel, ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.format import get_obss_preprocessor
 from curious_george.storage import (

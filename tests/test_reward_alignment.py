@@ -11,12 +11,12 @@ import torch
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
 from curious_george import AgentInputType, make_env
 from curious_george.rl.update.rewards import compute_curious_rewards
-from curious_george.world_model.adapter import (
+from curious_george.models.prnn_adapter import (
     PRNNAdapter,
     infer_past_sr,
     validate_action_encoding,
 )
-from curious_george.world_model.device import on_device, eval_mode
+from curious_george.models.device import on_device, eval_mode
 
 
 class StubAdapter:
