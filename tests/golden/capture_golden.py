@@ -21,6 +21,24 @@ passed vacuously forever. Compare is now the default.
 
 The code must reproduce these tensors exactly (same seed => same RNG
 consumption order) while the `reward_alignment=legacy` default holds.
+
+FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
+
+    golden_v0.pt  pre-migration stack (SabrinaDu7 prnn). Kept for the legacy tree.
+    golden_v1.pt  post-migration, valid up to and including `37aaa1b`.
+    golden_v2.pt  from `d275149` on. <- current
+
+`d275149` ("rl: remove dead `recurrence`") removed a code path that silently
+dropped one transition on odd epochs, so the policy minibatches changed and
+with them the update statistics and the weights. Measured 2026-08-25: v1
+compares OK at `d275149^` and mismatches on 17 leaves at `d275149`, on the
+IDENTICAL 17 leaves at `ba87d81` - so that commit is the only one since that
+moved these numerics. Round 0's ROLLOUT is bitwise unchanged (curious_rewards,
+advantages, actions, log_probs, SRs, locs); only the update and everything
+downstream of it moved.
+
+The bump went unnoticed for three days because nothing ran this file.
+`tests/golden/test_golden.py` now does.
 """
 
 import numpy as np
@@ -35,7 +53,7 @@ FRAMES = 64
 SEQDUR = 32
 UPDATES = 2
 DEVICE = torch.device("cpu")
-OUT = "tests/golden/golden_v1.pt"  # v0 = pre-migration (SabrinaDu7 prnn) fixture, kept for the legacy stack
+OUT = "tests/golden/golden_v2.pt"  # see FIXTURE VERSIONS in the module docstring
 
 
 def build_fixture() -> dict:

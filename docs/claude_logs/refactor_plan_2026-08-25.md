@@ -149,9 +149,40 @@ tests/golden/                           capture_golden.py, compare_io.py,
 ```
 
 **This is the single strongest reason to pilot on OMT**: the bitwise mechanism the
-port needs already exists there and nowhere else. Writing
-`tests/golden/test_golden.py` around the existing `compare_io.py` is an afternoon and
-gives the training path the same protection.
+port needs already exists there and nowhere else.
+
+✅ **DONE 2026-08-25.** `tests/golden/test_golden.py` now exists and the gate is
+**179 passed, 18 skipped, 7 deselected** (+5, skips unchanged).
+
+⚠️ **Correction to this plan.** It said to build the test "around the existing
+`compare_io.py`". That was wrong: `compare_io.py` is a *cross-tree* old-vs-new harness
+that imports through `try: import curious_george except ImportError: import RLutils`
+and needs real `.env` checkpoints — it compares two trees, it does not gate one. The
+self-contained gate is `capture_golden.py`, which builds from scratch on CPU in 5.3 s
+and has compared-by-default since `45d3afd`. `test_golden.py` reuses its
+`build_fixture()` and `compare_fixtures()` rather than duplicating either.
+
+🔴 **And the gate immediately found that its own fixture was stale.** Measured:
+
+```
+d275149^ (37aaa1b)   GOLDEN OK - bitwise identical to golden_v1.pt
+d275149              GOLDEN MISMATCH, 17 leaves
+ba87d81              GOLDEN MISMATCH, the IDENTICAL 17 leaves
+```
+
+`d275149` ("remove dead `recurrence`") removed a path that silently dropped one
+transition on odd epochs; the policy minibatches changed, and with them the update
+statistics and the weights. It is the **only** commit since that moved these numerics.
+Round 0's *rollout* is bitwise unchanged — `curious_rewards`, `advantages`, `actions`,
+`log_probs`, `SRs`, `locs` are all absent from the mismatch — so the change is confined
+to the update and everything downstream of it. The OMT fixture *was* re-captured at the
+time (`golden_omt_v1.pt`); the training one was missed, and nothing noticed for three
+days because nothing ran the file.
+
+Baseline is now `golden_v2.pt`, with `golden_v1.pt` kept and the reason recorded in
+`capture_golden.py`'s FIXTURE VERSIONS block. **Proven to fail:** a 1e-7 *relative*
+perturbation to the PPO clip bound (`losses.py:51`) turns `[rounds]` red while
+`test_rollout_consumes_rng_identically` correctly stays green.
 
 ### 2b. What can be bitwise, and what cannot
 
@@ -195,11 +226,11 @@ The ordering constraints are real; the rest is preference.
 ### Phase 0 — baseline and goldens · hours
 
 - Record `174 / 18 / 7 / 0` (done, above).
-- **Capture fresh goldens from `ba87d81` before anything moves**: re-run
-  `tests/golden/capture_golden.py` and `tests/golden_omt/capture_golden_omt.py`, and
-  write `tests/golden/test_golden.py` around `compare_io.py` so the training path's
-  fixtures finally run.
-- Confirm each new gate fails on deliberately broken code.
+- ✅ **Capture fresh goldens from `ba87d81` before anything moves** and write
+  `tests/golden/test_golden.py` so the training path's fixtures finally run — done;
+  see §2a for what it found. `test_golden.py` wraps `capture_golden.py`, NOT
+  `compare_io.py` (correction in §2a).
+- ✅ Confirm each new gate fails on deliberately broken code — done, §2a.
 
 ### Phase 1 — `provenance.json` · BLOCKING
 
@@ -605,6 +636,25 @@ a document with no command behind it; a comment that contradicts the code below 
 path that climbs (`../..`); two things with the same name meaning different things.
 Flag it in this section with a file:line — do not fix it in passing during a port, and
 do not build around it silently.
+
+### Found while executing (2026-08-25)
+
+- 🔴 **`tests/golden/golden_v1.pt` was stale from `d275149` to `ba87d81`** and nothing
+  noticed, because `capture_golden.py` is not a `test_*.py`. Resolved: `golden_v2.pt` +
+  `tests/golden/test_golden.py` (§2a). This is the concrete cost of a gate that cannot
+  fire, and it is worth remembering that the OMT fixture *was* re-captured at the same
+  commit — so the discipline was there and only the mechanism was missing.
+- `tests/golden/compare_io.py` and `tests/golden/compare_omt.py` are **cross-tree
+  harnesses**, not gates: they branch on `try: import curious_george except ImportError:
+  import RLutils` to run inside a pre-refactor worktree, and they need real `.env`
+  checkpoints. They are the right shape for *this* refactor (old tree vs new tree) and
+  the wrong shape for a pytest gate. Keep them, use them for the port, and do not
+  mistake them for coverage. Their dead `from RLutils import ...` /
+  `from utils import ...` fallbacks (M1) can never be taken on any current branch.
+- `capture_golden.py` exits 1 on mismatch, so a shell pipeline like
+  `... | tail -20` silently reports success. Any CI or script wrapping it must read
+  `PIPESTATUS`, not `$?`. Caught this while measuring — the first run of it in this
+  session printed `EXIT=0` under a mismatch.
 
 ### Already flagged, not yet resolved
 
