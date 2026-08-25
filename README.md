@@ -1,137 +1,200 @@
 # RL for pRNN
 
-This project is focused on modelling rat exploratory behavior, leveraging curiosity as an intrinsic reward signal for RL. We use a learned policy instead of a fixed one to feed environmental observations
-to the pRNN. The agent only uses the hidden state of the pRNN to make decisions within an episode.
-An overview of the code layout and training flow is found at the end of the README.
+**This repository is machinery, not an experiment.** It holds the components you assemble
+to launch a training run or an evaluation — environments, an actor–critic policy, the seam
+to the world model, the rollout and update loop, and the online metrics. It is deliberately
+modular so that a new question takes the pieces it needs rather than forking the whole
+thing.
 
-To get started, run `uv run pypatree` to see the directory structure.
+`main_train.py` is *an example* of assembling those components into a training run, not
+the only way to use them. Likewise the online evaluations are plain functions —
+`run_spatial_analysis`, `run_behavior_analysis` in `curious_george/training/loop.py` — that
+a different loop can call, reorder, or ignore.
 
-## Project Setup
+**What it trains.** A predictive recurrent neural network (pRNN) — the model from
+Levenstein et al. 2024, installed from
+[`LevensteinLab/pRNN`](https://github.com/LevensteinLab/pRNN) — driven by a
+**curiosity-driven policy network** rather than the fixed random action selection the
+original used. The agent's reward is the pRNN's own prediction error, so the policy learns
+to seek out what the world model cannot yet predict, and the world model learns from the
+observations that policy generates. The two train together; that coupling is the point of
+this repository.
 
-This project is managed using [`uv`](https://docs.astral.sh/uv/).
-See [workspace documentation](https://docs.astral.sh/uv/concepts/projects/workspaces).
-A `justfile` is defined to automate common tasks like running files with [`just`](https://github.com/casey/just).
+The experiments themselves live in a separate repository, which depends on this one by
+pinned revision.
 
-This project utilizes a custom [minigrid](https://github.com/SabrinaDu7/minigrid) package and a custom
-[pRNN](https://github.com/LevensteinLab/pRNN) package. Both are pinned in `pyproject.toml`
-(`[tool.uv.sources]`) and resolved to exact commits in `uv.lock`; `uv sync` is the source of truth for
-which revision you are running.
+---
+
+## Setup
+
+Managed with [`uv`](https://docs.astral.sh/uv/). Two dependencies are custom forks pinned
+in `pyproject.toml` under `[tool.uv.sources]` and resolved to exact commits in `uv.lock` —
+`uv sync` is the source of truth for which revision you are running.
 
 ```bash
-# Clone the pRNN and minigrid repos beforehand.
 git clone https://github.com/SabrinaDu7/RL_for_pRNN.git
-cd RL_for_pRNN/
-
-# Create and activate venv
+cd RL_for_pRNN
 uv sync
-source .venv/bin/activate
 ```
 
-Then, set the environment variables in ```.env``` (checkpoint paths, wandb
-entity/project, and `RL_STORAGE` — the single source of truth for where run
-outputs land; it points at the repo-local `./outputs` by default).
-
-Training in this repo logs to wandb. Ensure that you run `wandb login` and
-set the correct entity and project in `.env`.
-
-## Training Runs
-
-### Training from scratch
-
-A training run from scratch is started with ```main_train.py``` (```trainRL_Adel.py``` is deprecated). Construction, the loop, and wandb logging live in
-```curious_george/training/{setup,loop,logging}.py```. Configs use
-[Hydra](https://hydra.cc/docs/intro/): `Configs/main.yaml` composes swappable
-groups, and any key can be overridden from the CLI. Run `uv run main_train.py --cfg job`
-to print the fully composed config — that, not this file, is where the defaults live.
+Copy `.env.example` to `.env` and fill it in. `RL_STORAGE` is the single source of truth
+for where run outputs land. Runs log to wandb, so `wandb login` first.
 
 ```bash
-# default run: the groups listed under `defaults:` in Configs/main.yaml
-uv run main_train.py
-
-# override single keys. Run length is set in EPISODES; total environment steps
-# (and both optimizer-step budgets) are derived - see the schedule printed at
-# startup, and curious_george/training/schedule.py.
-uv run main_train.py rl.episodes_total=40 logging.save_every_steps=0
-
-# swap whole components (Configs/<group>/*.yaml)
-uv run main_train.py algo=a2c                      # loss function (rl.loss)
-uv run main_train.py rewards=curious                # curiosity reward alignment variant
-uv run main_train.py world_model=thrnn5win_prevact # pRNN arch + matching action encoding
-uv run main_train.py env=fourrooms model=plain_ac  # environment / AC architecture
-uv run main_train.py exp.num_envs=4                # parallel rollout collection
+uv run python main_train.py                              # defaults from Configs/main.yaml
+uv run python main_train.py exp.seed=3 rl.frames=2048    # override single keys
+uv run python main_train.py env=lroom_multi run=multienv # swap whole config groups
 ```
 
-Possible inputs the agent can receive (config group `model=`):
+Hydra composes `Configs/main.yaml` from the groups beside it (`env/`, `model/`, `algo/`,
+`rewards/`, `world_model/`, `run/`, `performance/`). Run length is set in episodes;
+environment steps and both optimizer-step budgets are **derived** — read the schedule
+printed at startup rather than a comment (`curious_george/training/schedule.py`).
 
-- FO: full observation (often used as a positive control)
-- PO: partial observation (the same type of input as the pRNN)
-- h: the hidden state of the pRNN
-- h+PO: the hidden state of the pRNN and a partial observation
+`uv run pypatree` prints the module tree with every public signature.
 
-**HOWEVER, we almost always only use h.**
+---
 
-### Training for a task (from scratch or checkpoint)
+## How the modules fit together
 
-To run additional analyses, we may change the task/environment that
-the pRNN-agent interacts with and trains in. For example, to train
-on the Object Memory Task, which involves the introduction of a 
-novel object if a familiar environment (ie we train from a checkpoint):
-
-```bash
-uv run ../curious-george-questions/src/omt/main_task.py
-```
-
-`justfile` holds the canonical invocations (`just omt-start-rand` and friends).
-`../curious-george-questions/src/omt/` documents how a task loads its checkpoints, what each one
-freezes, and where its outputs land.
-
-## Hardware: Mila's cluster
-
-This repo can be run locally (GPU or CPU) or on Mila's cluster. On the cluster,
-you can use slurm scripts listed in `slurm/` to get started.
-
-
-## Training (from scratch) flow
+Six subpackages, and a handful of files that are the joints between them. If you are
+reading the code for the first time, read the **anchors** in this order.
 
 ```
 main_train.py
-    │
-    ├─> setup_training(cfg)  →  envs, pRNN, ACModelSR, PredictivePPOAlgo, agents
-    │
-    └─> run_training():
-            │
-            ├─> algo.collect_experiences()          [rl/collect/collector.py]
-            │       ├─> per step (batched over B envs):
-            │       │   ├─> acmodel(obs, SR) → dist, value; action = dist.sample()
-            │       │   ├─> obs, reward = env.step(action)
-            │       │   └─> SR tracker step (pRNN predict_single / batched rnn)
-            │       ├─> curiosity rewards from pRNN prediction error
-            │       │   (rl/update/rewards.py; rl.reward_alignment: legacy|next_obs)
-            │       └─> GAE per env stream → experiences
-            │
-            ├─> algo.update_parameters(exps)        [rl/update/]
-            │       ├─> updater: epochs/minibatches; loss from LOSSES[rl.loss]
-            │       └─> pRNN trained per episode segment (if predNet.train)
-            │
-            ├─> every log_every_steps: wandb metrics
-            ├─> every plot_every_steps: sample-trajectory + behaviour figures
-            ├─> every analysis_every_steps: sRSA + SWdist (evaluation/spatial.py)
-            │   and on-policy analysis (reuses the training rollout - free)
-            └─> every save_every_steps: status.pt + predictiveNet_state.pt
-                (0 = disabled; everything lands under RL_STORAGE)
-
-All four cadences are counted in ENVIRONMENT STEPS, not updates, because an
-update is rl.frames steps and therefore scales with exp.num_envs.
+      │
+      ├─ training/setup.py     setup_run  -> a run directory + provenance.json
+      │                        setup_training -> TrainingComponents (envs, pRNN,
+      │                        acmodel, algo, agents) in ONE construction order
+      │
+      └─ training/loop.py      run_training: the while-loop over updates
+                               + run_spatial_analysis / run_behavior_analysis
+                               + save_checkpoint, all fired by StepCadence
+                                          │
+                                          ▼
+                               rl/algo.py  PredictivePPOAlgo
+                                 collect_experiences() ──► rl/collect/collector.py
+                                 update_parameters()   ──► rl/update/updater.py
+                                                       └─► rl/update/world_model.py
+                                                                    │
+                                                                    ▼
+                                                    world_model/adapter.py
+                                                       PRNNAdapter — the only
+                                                       place that imports `prnn`
 ```
 
-## Behavior guarantees
+### `curious_george/rl` — the agent
 
-`uv run pytest` is the gate. `throwaway/ported/docs_legacy/refactor_notes.md` documents the
-temporal-alignment contract, device policy, and batched-mode constraints.
+**`rl/algo.py` is the hub.** `PredictivePPOAlgo` owns the environments, the actor–critic,
+the world-model adapter and the optimizer, and exposes exactly two calls the loop uses:
+`collect_experiences()` and `update_parameters()`. Everything below it is a plain function
+it delegates to, which is what makes the pieces reusable outside this loop.
 
-⚠️ **The training golden fixture is not enforced.** `tests/golden/` holds
-`golden_v0.pt` (pre-migration stack) and `golden_v1.pt` (current stack), written
-by `capture_golden.py` and compared by the standalone `compare_io.py` — but
-neither is a `test_*.py`, so pytest never collects them and no run of the suite
-reads either fixture. The training path is currently gated only by the ordinary
-unit tests. The OMT path *is* gated, by `../curious-george-questions/tests/golden_omt/test_golden_omt.py`.
+- `rl/collect/collector.py` — `collect_rollout`, the rollout itself. One implementation for
+  B ≥ 1 environments. Returns a `CollectResult` carrying the transitions, the per-frame
+  curiosity rewards, positions, and the diagnostics the loop logs.
+- `rl/collect/agent.py` — the actor–critic agent used to act; `format.py` — observation
+  preprocessing; `diagnostics.py` — location statistics and the policy/space joint
+  distribution accumulated during the rollout.
+- `rl/update/updater.py` — `update_policy`, loss-agnostic: it drives the PPO epochs and
+  minibatching and calls whichever loss `rl.loss` names.
+- `rl/update/losses.py` — the losses (`ppo_clip`, `a2c`); `advantage.py` — GAE;
+  `rewards.py` — the curiosity reward, i.e. the pRNN's prediction error.
+- `rl/update/world_model.py` — `train_world_model_on_episodes`, the pRNN's gradient steps
+  for a rollout. This is where the two learners meet.
+- `rl/collect/rollout_graph.py`, `rl/update/policy_graph.py` — CUDA-graph capture of the
+  rollout timestep and the PPO minibatch step. Optional, off by default, and gated against
+  the eager path.
+
+### `curious_george/world_model` — the pRNN seam
+
+**`world_model/adapter.py` is the boundary.** `PRNNAdapter` is the only module that imports
+`prnn`; everything else talks to it. It owns the SR (hidden-state) trackers, the action and
+observation encoding, the training step, and the prediction-error computation the curiosity
+reward is built from. If the upstream pRNN API changes, this is the file that changes.
+
+`world_model/device.py` — `on_device` / `eval_mode`, the context managers that move models
+between CPU and accelerator without losing their identity. Load-bearing: the spatial
+evaluation runs on CPU, and a naive `.to()` there silently invalidated captured CUDA
+graphs.
+
+### `curious_george/envs` — the world
+
+- `envs/factory.py` — `make_env`, the one way to build an environment shell.
+- `envs/access.py` — accessors that reach into the wrapped MiniGrid env (walkable mask,
+  grid shape, subroom ids). Use these rather than reaching through wrappers yourself.
+- `envs/vector.py` — `DeviceTableShellPool` and `AsyncShellPool`, the multi-environment
+  backends. The device pool keeps observations and transitions resident on the accelerator
+  and is what the fast configurations use.
+- `envs/obs_bank.py` — precomputed `(position, direction) → observation` tables that make
+  the device pool possible.
+- `envs/layouts.py` — seeded pools of landmark layouts for multi-room training.
+
+### `curious_george/evaluation` — the online metrics
+
+Called by `training/loop.py` on a cadence, but importable on their own.
+
+- `evaluation/spatial.py` — `evaluate_spatial_representation` and
+  `evaluate_multi_room_representation`: spatial information, sRSA, and sleep–wake distance.
+  The metrics themselves are computed by `prnn`; this module collects the activity and
+  reports the coverage of the SI estimate alongside it.
+- `evaluation/on_policy.py` — `OnPolicyAnalysis`, `occupancy_counts`, `mutual_info_policy`:
+  what the policy did, as arrays and as figures.
+- `evaluation/probe.py` — the one way to turn a checkpoint into (hidden state, position),
+  with a fixed seed and fixed actions so repeated scoring of a checkpoint agrees.
+- `evaluation/task.py` — reusable machinery for evaluations that train further from a
+  checkpoint (`setup_task`, `train_phase`, `collect_eval_rollouts`).
+
+### `curious_george/training` — assembly and the loop
+
+- `training/setup.py` — construction, in a fixed order that matters for reproducibility.
+- `training/loop.py` — the loop and the interval-triggered sections.
+- `training/schedule.py` — every derived count for a run, from one ground truth (episodes).
+  Read `TrainingSchedule.summary()`, not a comment.
+- `training/logging.py` — the wandb surface.
+
+### Supporting
+
+- `models.py` — `ACModel` / `ACModelSR`, the actor–critic. `ACModelSR` is the one that takes
+  the pRNN hidden state as input.
+- `provenance.py` — every artifact records what produced it: the resolved commits of this
+  repo, `prnn`, `minigrid` and the caller, plus the config and its input artifacts.
+- `storage.py` — where things are written; `io/wandb.py` — reading runs back out;
+  `check/wandb_compare.py` — comparing two runs on matched environment steps.
+- `utils/` — the device handle, seeding, timing, checkpoint keys, enums.
+
+---
+
+## `slurm/` — how this was run on the Mila cluster
+
+Each script is a self-contained sbatch job: it clones this repo at a named branch into
+`$SLURM_TMPDIR`, syncs the environment, runs training, and rsyncs the outputs to
+`$SCRATCH`. They are the record of how a result was actually produced, and their headers
+carry the reasoning for the settings they pass.
+
+| script | what it launches |
+|---|---|
+| `train_prnn.sh` | a single training run |
+| `train_fast.sh` | the tuned production configuration, parameterised by positional arguments (layout set, seed, entropy coefficient, budget, and the CUDA-graph switches) |
+| `multienv.sh` | multi-room training |
+| `bsweep.sh` | a job array sweeping parallel-environment counts against seeds |
+| `async_bench.sh` | a benchmark of async against synchronous rollout collection |
+
+Two things worth knowing before adapting one: the GPU type is load-bearing for anything
+with a wall-clock target, and every job fetches into the same shared checkout, so the fetch
+is serialised under `flock` and a lost race is non-fatal.
+
+---
+
+## Not documented here yet
+
+**Outputs layout and the test suite are deliberately absent.** Both are mid-prune: this
+codebase is larger than the science needs, and the next step is stripping it to essentials
+— launching wandb runs throughout and holding bitwise equality against the golden fixtures
+while doing it. Documenting the current shape would only have to be rewritten.
+
+What that pruning has to preserve is already gated. `tests/golden/test_golden.py`
+compares the training path's tensors against a pinned fixture, and `docs/invalid-runs.md`
+records the commits after which previously-reported numbers no longer mean what they did.
+The Object Memory Task's equivalent gate moved to the questions repository with the task
+itself, and passes there against the same fixture captured here.
