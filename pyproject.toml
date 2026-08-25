@@ -92,6 +92,14 @@ include = [
     "main_train.py",
 ]
 
+[tool.ruff.lint]
+# jaxtyping shape annotations - Float[Tensor, "B T H"] - read as forward
+# references to ruff, so it reports F722 (syntax error in forward annotation)
+# and F821 (undefined name) on every one. 41 of the 103 findings the widened
+# `include` surfaced were these. ../curious-george-questions carries the same
+# two ignores for the same reason.
+ignore = ["F722", "F821"]
+
 [tool.pyright]
 venvPath = "."
 venv = ".venv"

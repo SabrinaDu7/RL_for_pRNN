@@ -566,7 +566,11 @@ green, and that commit says which gate proved each file safe to drop.
   are dropped: `test/*.py` names a directory that is `tests/`, and `trainRL_Adel.py`
   does not exist.
 
-  ⚠️ **This exposes a backlog of 103 ruff findings**, previously invisible. Not fixed
+  ⚠️ **This exposes a backlog of 62 ruff findings**, previously invisible — 29 `F401`
+  (unused import), 14 `E702`, 5 `E402`, 4 `E721`, 3 `F841`. It read as 103 until
+  `[tool.ruff.lint] ignore = ["F722", "F821"]` was added: jaxtyping shape annotations
+  look like forward references to ruff, and the questions repo already carries those
+  two ignores for the same reason. Not fixed
   here — a lint sweep during a refactor makes every bitwise diff harder to read, and
   some may be deliberate. It is now VISIBLE, which is the point; clearing it is its own
   commit. `ruff` is not part of `pytest`, so nothing is red.
