@@ -15,6 +15,7 @@ import torch.nn as nn
 
 from prnn.utils import PredictiveNet, load_pN
 
+from curious_george import provenance
 from curious_george.utils.common import get_device, seed as seed_everything
 from curious_george.envs.factory import make_env
 from curious_george.models import ACModel, ACModelSR
@@ -76,6 +77,15 @@ def setup_run(cfg) -> RunContext:
         create_folders_if_necessary(video_dir)
     else:
         video_dir = ""
+
+    # Before this, main_train.py only PRINTED the resolved config, so a finished
+    # run carried no record of what produced it and could not be placed on any
+    # of the timelines in docs/invalid-runs.md.
+    provenance.write(
+        model_dir,
+        kind="training",
+        params={"run_name": run_name, "config": provenance.resolved_config(cfg)},
+    )
 
     print("\n\n\nLOGGING TO: ", model_dir, "\n\n\n")
     return RunContext(

@@ -13,6 +13,7 @@ from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 from prnn.utils.Shell import FaramaMinigridShell
 from tasks.omt.task import ObjectMemoryTask
 from curious_george import get_ckpt_env_vars, get_env_var, get_model_dir, AgentType, AgentInputType
+from curious_george import provenance
 from curious_george import make_env
 
 # ===== Constants =====
@@ -70,6 +71,25 @@ def main(args: DictConfig):
     
     prnn_ckpt, ac_ckpt = get_ckpt_env_vars(agent_type)
 
+    # THE source checkpoint arrives from a SHELL VARIABLE (CUR_CKPT_DIR et al),
+    # so without this the most important input to an OMT run appears nowhere in
+    # its record. Recording it - with the checkpoint's own provenance, when it
+    # has one - is what makes a task run replayable from the artifact alone.
+    save_path = get_model_dir(run_name)
+    provenance.write(
+        save_path,
+        kind="task",
+        params={
+            "run_name": run_name,
+            "agent_type": agent_type.value,
+            "config": provenance.resolved_config(args),
+            "inputs": {
+                "prnn_ckpt": provenance.input_artifact(prnn_ckpt),
+                "acmodel_status_ckpt": provenance.input_artifact(ac_ckpt),
+            },
+        },
+    )
+
     # Get environments
     env_orig_name = MinigridEnvNames.LRoom
 
@@ -100,7 +120,7 @@ def main(args: DictConfig):
         agent_type=agent_type,
         env_orig=env_orig,
         env_novel=env_novel,
-        save_path=get_model_dir(run_name),
+        save_path=save_path,
         prnn_ckpt=prnn_ckpt,
         acmodel_status_ckpt=ac_ckpt,
         device=DEVICE,

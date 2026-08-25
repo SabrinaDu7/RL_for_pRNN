@@ -214,6 +214,16 @@ def save_pN_and_acmodel(
     step_dir = f"{save_path}/{count}"
     save_pN(pN, f"{step_dir}/{PRNN_CKPT_FILENAME}")
     print(f"Saved trained net to {step_dir}/{PRNN_CKPT_FILENAME}")
+    # A step directory is handed straight to CUR_CKPT_DIR to seed another run,
+    # so it is an artifact in its own right and needs its own provenance - not
+    # just the run directory's one level up.
+    from curious_george import provenance
+
+    provenance.write(
+        step_dir,
+        kind="checkpoint",
+        params={"count": count, "run_dir": str(save_path)},
+    )
     status_save = {
         StatusCkptKeys.MODEL_STATE.value: ac_model.state_dict(),
         StatusCkptKeys.PRNN_OPTIMIZER_STATE.value: pN.optimizer.state_dict(),

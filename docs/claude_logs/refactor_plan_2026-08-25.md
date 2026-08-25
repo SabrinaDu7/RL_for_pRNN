@@ -283,6 +283,46 @@ lands.
 **Gate:** a test that fails if any artifact-writing path produces a directory without a
 `provenance.json`, and a test that the recorded `prnn` commit matches the installed one.
 
+✅ **DONE 2026-08-25.** `curious_george/provenance.py` + `tests/test_provenance.py`.
+Gate **188 passed, 18 skipped, 7 deselected** (+9, skips unchanged).
+
+Wired at three sites, chosen so no artifact-producing path can skip it:
+
+```
+training/setup.py::setup_run          run dir      kind="training"
+storage.py::save_pN_and_acmodel       step dir     kind="checkpoint"
+tasks/omt/main_task.py                run dir      kind="task"  + the SOURCE CHECKPOINTS
+```
+
+The OMT one is the point: its source checkpoint arrives from a shell variable
+(`CUR_CKPT_DIR`), so before this the most important input to a task run appeared
+nowhere in its record. `provenance.input_artifact()` records an input's path *and* its
+own commits, so a chain can be walked without every intermediate directory still being
+on disk — and reports `provenance: null` when the input predates the mechanism, which
+says the chain breaks *here* rather than leaving a reader to guess.
+
+Resolution works as designed against the real installs, verified:
+
+```
+rl-for-prnn   origin=worktree  commit=<sha>  requested=<branch>  dirty=<bool>
+prnn          origin=vcs       commit=163cb578...  requested="sdu/rl-integration"
+minigrid      origin=vcs       commit=ce375b05...  requested=null
+```
+
+`requested` is recorded deliberately: a **branch name there means the pin floats**, so
+the drift risk §1b describes stays visible in every artifact rather than only in
+`pyproject.toml`. `test_a_floating_pin_is_recorded_as_such` asserts it and tells the
+next reader to invert the assertion once the pin becomes a sha.
+
+**Proven to fail:** deleting the `provenance.write` call from `setup_run` turns
+`test_setup_run_writes_provenance` red.
+
+Notes for the questions repo: pass `packages=TRACKED_PACKAGES + ("<questions-pkg>",)`
+to add its own commit. Archive checkpoints under `<run>/checkpoints/` are files inside
+a directory that already has provenance and are all from one run, so they inherit it;
+OMT step directories get their own because they are handed to `CUR_CKPT_DIR` as inputs
+to other runs.
+
 ### Phase 2 — metric semantics: one name, one thing · days
 
 Decided 2026-08-25. All three are in the library, so they must land before the
