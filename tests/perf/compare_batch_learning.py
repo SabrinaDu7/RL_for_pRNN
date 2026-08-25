@@ -10,7 +10,7 @@ this GPU, so per-second comparisons flatter large batches for a reason that has
 nothing to do with learning. The reference curve is the finished serial B=8 run
 on wandb, on its true `trial` (gradient step) axis.
 
-    uv run python tests/perf/results/../compare_batch_learning.py \
+    uv run python tests/perf/compare_batch_learning.py \
         --sweep tests/perf/results/batch_learning_sweep.json
 
 Prints a table; writes nothing.

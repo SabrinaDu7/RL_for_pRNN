@@ -1,7 +1,7 @@
 #!/bin/bash
 # Phase C gate: learning-curve comparison across parallel-env counts.
 # Array of 9 CPU jobs: B in {1,4,8} x seeds {2,3,4}, 1500 updates each
-# (rl.steps=3072000 frames). Compare with scripts/analysis_bsweep.py; flip
+# (rl.steps=3072000 frames). Compare with throwaway/ported/legacy/analysis_bsweep.py; flip
 # exp.num_envs default only if the B>1 curves match B=1 across seeds.
 #
 #SBATCH --job-name=bsweep

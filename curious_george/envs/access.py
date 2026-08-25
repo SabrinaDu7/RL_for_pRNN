@@ -94,7 +94,7 @@ def hidden_image(h: torch.Tensor, width: int = 25):
 
 
 # --- walkable geometry -------------------------------------------------------
-# Promoted out of scripts/analysis_OMT.py 2026-08-25: ten call sites across the
+# Promoted out of throwaway/ported/analysis_OMT.py 2026-08-25: ten call sites across the
 # probe, the task code and the figure scripts, so this is env geometry the
 # library owns, not analysis.
 

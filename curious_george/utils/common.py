@@ -6,7 +6,7 @@ import collections
 
 
 # CG_DEVICE=cpu|cuda overrides the default. NOTE: at B=1 / hidden 500 the CPU
-# is ~2x faster than CUDA end-to-end (docs/perf_baseline.md). DEVICE binds at
+# is ~2x faster than CUDA end-to-end (throwaway/ported/docs_legacy/perf_baseline.md). DEVICE binds at
 # import time, so control is via env var, not the hydra config (the unused
 # `hardware:` config block was removed 2026-07-09 with Sabrina's approval).
 #

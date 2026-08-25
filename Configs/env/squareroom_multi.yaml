@@ -5,7 +5,7 @@
 # information and the landmarks are the ONLY cue to where you are.
 #
 # This is the first design in the project that closes BOTH routes by which the
-# network has localised without an object (docs/results/result-summary-2026-08-12.md,
+# network has localised without an object (throwaway/ported/docs_results/result-summary-2026-08-12.md,
 # "The shape of the problem"):
 #   geometry       - removed by the square walls
 #   dead reckoning - removed by the room changing every episode

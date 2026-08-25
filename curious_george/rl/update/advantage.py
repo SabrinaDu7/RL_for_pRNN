@@ -29,7 +29,7 @@ def compute_gae(
     reassociates the float32 sum and perturbs the result by ~6e-8, which is
     below one ULP yet enough to break the bitwise oracle in
     tests/golden_omt/. The scan was measured at ~1 ms/update against a
-    ~1.3 s update (docs/throughput_investigation_2026-07-23.md), so the
+    ~1.3 s update (throwaway/ported/docs_legacy/throughput_investigation_2026-07-23.md), so the
     sequential form costs ~0.1% of wall-clock and keeps that gate meaningful.
 
     Everything stays on device either way; the sequential loop launches T

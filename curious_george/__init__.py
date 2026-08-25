@@ -1,6 +1,6 @@
 # Curious George: curiosity-driven RL with pRNN spatial representations.
 #
-# Package layout (see docs/refactor_baseline.md and the refactor plan):
+# Package layout (see throwaway/ported/docs_legacy/refactor_baseline.md and the refactor plan):
 #   utils        - get_device/on_cuda/DEVICE, seeding, small stat helpers, checkpoints, enums, dev_env
 #   envs         - env construction (factory) and wrapper accessors (access)
 #   models       - actor-critic models (ACModel, ACModelSR)

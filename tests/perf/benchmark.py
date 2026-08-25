@@ -1,7 +1,7 @@
 """Perf + metric benchmark: run N training updates, record stage timings and
 learning metrics, dump JSON. This is the gate for performance refactors
 (replaces bitwise golden comparison where RNG order changes - see
-docs/perf_baseline.md).
+throwaway/ported/docs_legacy/perf_baseline.md).
 
 Usage:
     uv run python tests/perf/benchmark.py --updates 5 --out results/baseline.json

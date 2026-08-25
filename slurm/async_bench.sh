@@ -1,7 +1,7 @@
 #!/bin/bash
 # Cluster benchmark: async vs sync rollout collection at B=8 on a wide CPU
 # node (the 8-core dev box showed only +6-9% for async because workers
-# contended with torch threads - docs/perf_log.md Phase C1). 16 cores give
+# contended with torch threads - throwaway/ported/docs_legacy/perf_log.md Phase C1). 16 cores give
 # the 8 env workers their own cores. Compares FPS + per-stage timings; JSONs
 # land in $SCRATCH/pRNN/<job>/ - inspect with tests/perf/compare_metrics.py.
 #

@@ -78,11 +78,11 @@ on the Object Memory Task, which involves the introduction of a
 novel object if a familiar environment (ie we train from a checkpoint):
 
 ```bash
-uv run tasks/omt/main_task.py
+uv run ../curious-george-questions/src/omt/main_task.py
 ```
 
 `justfile` holds the canonical invocations (`just omt-start-rand` and friends).
-`tasks/README.md` documents how a task loads its checkpoints, what each one
+`../curious-george-questions/src/omt/` documents how a task loads its checkpoints, what each one
 freezes, and where its outputs land.
 
 ## Hardware: Mila's cluster
@@ -126,7 +126,7 @@ update is rl.frames steps and therefore scales with exp.num_envs.
 
 ## Behavior guarantees
 
-`uv run pytest` is the gate. `docs/refactor_notes.md` documents the
+`uv run pytest` is the gate. `throwaway/ported/docs_legacy/refactor_notes.md` documents the
 temporal-alignment contract, device policy, and batched-mode constraints.
 
 ⚠️ **The training golden fixture is not enforced.** `tests/golden/` holds
@@ -134,4 +134,4 @@ temporal-alignment contract, device policy, and batched-mode constraints.
 by `capture_golden.py` and compared by the standalone `compare_io.py` — but
 neither is a `test_*.py`, so pytest never collects them and no run of the suite
 reads either fixture. The training path is currently gated only by the ordinary
-unit tests. The OMT path *is* gated, by `tests/golden_omt/test_golden_omt.py`.
+unit tests. The OMT path *is* gated, by `../curious-george-questions/tests/golden_omt/test_golden_omt.py`.

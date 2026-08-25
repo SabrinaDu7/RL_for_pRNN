@@ -538,9 +538,26 @@ green, and that commit says which gate proved each file safe to drop.
 
 ### Phase 7 — make the gates fire
 
-- The **path-existence test**: one test walking every path named in a doc or docstring
-  and failing if it is not in git. Cheapest gate with the best record — see §8, where it
-  would already have caught three findings.
+- ✅ **The path-existence test — DONE 2026-08-25**, `tests/test_referenced_paths_exist.py`,
+  and it landed with **zero allowlist**: all 15 dead references from live files were
+  repointed rather than excused.
+
+  Two scoping decisions the plan did not anticipate, both real:
+  * **`docs/claude_logs/` and `throwaway/` are exempt.** A dated session record that
+    says "X moved to Y" legitimately names a path that no longer exists — that is what
+    a record IS. Gating them would force rewriting history to keep a test green.
+    Without this exemption the count is 58; with it, 15.
+  * **`outputs/` is not matched at all.** It is where artifacts are WRITTEN, and a
+    script naming its own output is not a broken reference. The matcher cannot tell a
+    write path from a read path.
+
+  It also carries a `test_the_gate_can_see_something` (a regex that stops matching
+  would make the main assertion pass forever) and a no-climbing-paths test, which
+  caught `tests/perf/compare_batch_learning.py`'s copy-pasteable
+  `tests/perf/results/../compare_batch_learning.py`.
+
+  **Proven to fail:** adding `# see docs/this_file_does_not_exist.md` to
+  `curious_george/models.py` turns it red.
 - Resolve `outputs/data_cur_lroom_step1608_goal711/trajectories.pt` so the 18 skips run.
 - Extend `[tool.ruff] include` to `curious_george/` recursively and `tests/`; drop the
   two dead entries (`trainRL_Adel.py`, `test/*.py`).
@@ -790,6 +807,18 @@ Flag it in this section with a file:line — do not fix it in passing during a p
 do not build around it silently.
 
 ### Found while executing (2026-08-25)
+
+- ⚠️ `scripts/multienv/remapping_figure.py` reads
+  `outputs/ckpts/pRNN_curious_26-07-23-10-06-25/predictiveNet_state.pt`, which is not
+  tracked. Same class as the OMT golden checkpoint fixed above, and the path gate cannot
+  see it because `outputs/` is out of scope by design. Not fixed: the multi-room question
+  has not been re-ported yet, so it is not yet clear whether that checkpoint is a fixture
+  (track it) or a working input (parameterise it).
+- ⚠️ `tasks/omt/figure.py:19` read `RL_STORAGE` at MODULE SCOPE via `get_env_var`, which
+  RAISES when unset — so `import tasks.omt` failed without a `.env`, and it worked only
+  because `.env` is tracked (H8). **Two defects propping each other up**: untracking
+  `.env`, which this plan intends, would have broken OMT import. Fixed by resolving it
+  where it is used. `curious_george/` itself has no module-scope env reads.
 
 - 🔴 **The OMT bitwise gate depended on an UNTRACKED checkpoint.**
   `tests/golden_omt/capture_golden_omt.py` pins

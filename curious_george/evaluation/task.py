@@ -294,7 +294,7 @@ def collect_eval_rollouts_batched(
 
     NOT bit-comparable to the serial collector: per-env pRNN states start
     from zeros (no cross-trajectory pN.state carry-over) and RNG order
-    differs. Zero-noise equivalence is pinned by tests/test_omt_batched.py.
+    differs. Zero-noise equivalence is pinned by ../curious-george-questions/tests/test_omt_batched.py.
 
     Per-trajectory stats still go through the SAME traj_stats_fn as the
     serial path (called with per-env slices), so tasks are mode-agnostic.

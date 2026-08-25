@@ -1,6 +1,6 @@
 """predNet.cuda_graph: graphed per-segment world-model trainStep equivalence.
 
-Gates (see docs/exp_cuda_graphs_wm.md):
+Gates (see docs/exp_cuda_graph_rollout.md):
 - With dropout + internal noise OFF the graphed step has no RNG, so a graphed
   segment must move the weights BITWISE-identically to the eager trainStep it
   replaces (same 1 optimizer step, same math).

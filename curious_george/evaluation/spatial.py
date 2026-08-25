@@ -1,6 +1,6 @@
 """Spatial-representation metrics: SI, sRSA and sleep-wake distance (SWdist).
 
-The three headline correctness metrics for the pRNN (see docs/refactor_baseline.md):
+The three headline correctness metrics for the pRNN (see throwaway/ported/docs_legacy/refactor_baseline.md):
 - sRSA should be HIGH: representational similarity tracks spatial proximity.
 - SWdist should be LOW: spontaneous ("sleep") activity stays on the wake manifold.
 - SI: per-unit spatial information of the place fields.

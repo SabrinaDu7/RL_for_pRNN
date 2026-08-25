@@ -327,7 +327,7 @@ def generate_layouts(
 # because the search costs minutes and because a training run must not depend on
 # a regenerable file under outputs/. Re-derive and check with
 #
-#     uv run python scripts/layout_figures.py --pool 500 --rooms 3
+#     uv run python throwaway/ported/layout_figures.py --pool 500 --rooms 3
 #
 # which reports configuration distance 12 and cross-room landmark distance 3 -
 # the latter being the ceiling over the whole admissible set, not a search
@@ -377,7 +377,7 @@ ROOMS_RUN1: tuple[Layout, ...] = tuple(
 #     which tests one configuration moved around rather than three rooms.
 #
 # Re-derive with:
-#     uv run python scripts/layout_figures.py --room square --pool 500 --rooms 3
+#     uv run python throwaway/ported/layout_figures.py --room square --pool 500 --rooms 3
 ROOMS_SQUARE: tuple = tuple(
     Layout(tuple(Landmark(shape, color, anchor) for shape, color, anchor in spec))
     for spec in (

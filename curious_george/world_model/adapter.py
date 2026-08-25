@@ -551,7 +551,7 @@ class PRNNAdapter:
         """Per-step observation-prediction MSE over the collected rollout,
         computed per episode segment. Used as the curiosity reward.
 
-        ALIGNMENT CONTRACT (see docs/refactor_baseline.md flaw #1): with
+        ALIGNMENT CONTRACT (see throwaway/ported/docs_legacy/refactor_baseline.md flaw #1): with
         predOffset=0, prediction row t targets obss[t].
         - target_offset=0 (legacy): MSEs[i] is the error reconstructing
           obss[i], the observation BEFORE action i.

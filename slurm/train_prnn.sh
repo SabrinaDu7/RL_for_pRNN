@@ -9,7 +9,7 @@
 #SBATCH --exclusive     # whole node, no neighbours
 
 # CPU-only on purpose: async_bench_10111153 measured CUDA at 558 FPS with the
-# GPU ~91% idle vs 674 FPS on 16 CPUs (docs/perf_log.md cluster verdicts).
+# GPU ~91% idle vs 674 FPS on 16 CPUs (throwaway/ported/docs_legacy/perf_log.md cluster verdicts).
 # sapphire constraint: Sapphire Rapids nodes (cn-m001 class) run this at
 # ~1270 FPS -> full 20.5M frames in ~4.5h (run 10129601); Milan (cn-h*) nodes
 # measured ~2x slower (~656 FPS, run 10150201) and cn-h001 specifically has

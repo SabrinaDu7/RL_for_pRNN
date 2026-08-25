@@ -1,5 +1,5 @@
 """Bitwise gate for the TRAINING path, and the counterpart of
-`tests/golden_omt/test_golden_omt.py`.
+`../curious-george-questions/tests/golden_omt/test_golden_omt.py`.
 
 Scope: given the same seed, does two updates of collect + policy update +
 world-model step move every tensor exactly as the pinned fixture says? It is
