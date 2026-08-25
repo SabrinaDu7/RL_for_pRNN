@@ -80,10 +80,28 @@ with tempfile.TemporaryDirectory() as td:
 "
 ```
 
-So the port is three lines plus a test run: `requires-python`, `[tool.ruff]
-target-version`, `[tool.basedpyright] pythonVersion`. **Do it as the very first
-commit in the new repo and run `make Q0` green before writing anything**, exactly as
-the template's README instructs.
+⚠️ **CORRECTION 2026-08-25: "three lines plus a test run" was wrong, and so was the
+instrument.** `py_compile` proves a file PARSES under 3.10; it says nothing about what
+it imports. Two real blockers only appeared on `uv sync` and `make Q0`:
+
+```
+uv sync    ipython>=9.9.0 (dev group) requires Python >=3.11 -> unsatisfiable
+make Q0    src/render.py:23, src/subs.py:25  `from datetime import UTC`  -> 3.11+
+```
+
+The right instrument is to **import every module**, not compile it. That sweep now
+reports `15 modules imported, 0 failures` under 3.10.15. Fixes: drop the floors on the
+notebook dev tooling (they are conveniences, and 3.10 resolves ipython 8.39), and use
+`datetime.timezone.utc`.
+
+✅ **DONE 2026-08-25.** `../curious-george-questions`, `rename.sh` run, git history
+started. Under Python 3.10.15: **94 tests pass**, `make Q0` renders end to end, and
+`uv run exp check Q0` reports *"all 14 reported value(s) and 24 check value(s)
+reproduce exactly"* — the mechanism `CLAUDE.md:24` mandates and that RL_for_pRNN does
+not have.
+
+⚠️ The repo NAME is still open (§7.5). `rename.sh` makes it cheap to change, but only
+until real work lands on the history.
 
 Accept that the questions repo stops being small: its five dependencies (numpy,
 matplotlib, jaxtyping, beartype, tyro) become ~30 including torch, gymnasium,
@@ -99,6 +117,27 @@ rl-for-prnn = { git = "https://github.com/SabrinaDu7/RL_for_pRNN.git", rev = "<s
 **`rev`, not `branch`.** And fix the same defect one level down inside RL_for_pRNN
 itself: `prnn` is currently `branch = "sdu/rl-integration"`, so `uv sync` can silently
 swap the world model, with the commit recorded only in `uv.lock`.
+
+✅ **DONE 2026-08-25**, and two things the plan did not anticipate:
+
+⚠️ **A consumer does NOT inherit `[tool.uv.sources]`.** uv reads only the dependency
+NAMES out of `rl-for-prnn`, so `prnn` and `minigrid` are looked up on PyPI and not
+found. Both are redeclared in the questions repo's own `[tool.uv.sources]`, which means
+**that pin now has two homes** and they can drift. Whoever changes one must change the
+other; a check for it belongs in Phase 7.
+
+🔴 **`torch` was resolving to a different version in the two repos.** RL_for_pRNN
+declares `torch>=2.7.1` — a floor, not a pin — so a fresh resolve in the questions repo
+picked **2.13.0+cu130** while every measurement and every golden fixture in
+RL_for_pRNN was made under **2.8.0+cu128**. `capture_golden.py` treats a torch bump as
+a reason a bitwise diff may be expected and `test_fixture_matches_this_torch` fails on
+one, so this would have silently put analysis on a different numerical stack from the
+runs it analyses. Pinned to `torch==2.8.0` in the questions repo.
+
+Verified from the consumer side: `curious_george` imports, and
+`provenance.build()` resolves **all three** commits correctly — `rl-for-prnn` as
+`origin=vcs` with the full rev, `prnn` as `vcs` with `requested="sdu/rl-integration"`
+(the floating pin, visible as designed), `minigrid` as `vcs`.
 
 Three pieces make the pin real rather than nominal:
 
