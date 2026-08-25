@@ -266,7 +266,7 @@ Phase 1  provenance.json                               DONE
 Phase 2  metric semantics (a UpdateLogs, b return, c SI)  DONE
 Phase 3  stage discards in throwaway/ported/           DONE
 Phase 4  questions repo, Python 3.10, pinned dep       DONE
-Phase 5  OMT ported and PROVEN BITWISE                 port done; Q1 harness wiring open
+Phase 5  OMT ported, PROVEN BITWISE, Q1 answered       DONE
 Phase 6  prune (delete throwaway/ported/)              deliberately last, not started
 Phase 7  gates                                         path gate, ruff, .env, pypatree DONE
                                                        skips, *.png, obs_bank open
@@ -286,11 +286,7 @@ Gate, read from its own final line at each step:
 
 **What is left, in order of value**
 
-1. **Q1's harness wiring** — `instructions-Q1.md`, `results_Q1.in`, `collect.py`,
-   `analyze.py`. The OMT is ported and bitwise; it is not yet a *question* in the
-   `exp` sense, and no run has been made to compare against the twelve
-   `omt-cur-dot-0730-*` runs (§5).
-2. **The 18 skips**, now in the questions repo, still on a missing
+1. **The 18 skips**, now in the questions repo, still on a missing
    `outputs/data_cur_lroom_step1608_goal711/trajectories.pt`.
 3. **62 ruff findings** the widened `include` exposed.
 4. **`.gitignore`'s blanket `*.png`** — `git ls-files '*.png'` is still 0, so no figure
