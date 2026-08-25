@@ -201,20 +201,56 @@ The ordering constraints are real; the rest is preference.
   fixtures finally run.
 - Confirm each new gate fails on deliberately broken code.
 
-### Phase 1 — make a run self-describing · hours · BLOCKING
+### Phase 1 — `provenance.json` · BLOCKING
 
 `main_train.py:28` is `print(OmegaConf.to_yaml(cfg))` — printed, never written.
 `find outputs -maxdepth 2 -name '*.yaml'` returns nothing.
 
-Write the **resolved config, git commit, dirty flag and timestamp** into the run
-directory from `main_train.py` and `tasks/omt/main_task.py`.
+**Every artifact this project produces — a training run, a task run, a checkpoint, a
+collected dataset — carries a `provenance.json` beside it.** One schema, two halves.
+
+**The default half is identical everywhere** and is what makes an artifact
+self-identifying:
+
+```json
+{
+  "created":  "2026-08-25T14:02:11Z",
+  "kind":     "training | task | checkpoint | dataset",
+  "commits": {
+    "questions":  "<sha>",   // the repo that launched it, when there is one
+    "rl_for_prnn":"<sha>",   // + dirty flag
+    "prnn":       "<sha>",   // resolved, NOT the branch name
+    "minigrid":   "<sha>"
+  },
+  "dirty":    {"rl_for_prnn": false, "questions": false},
+  "host":     {"node": "...", "gpu": "...", "slurm_job_id": "..."},
+  "python":   "3.10.15",
+  "torch":    "2.8.0+cu128"
+}
+```
+
+**The question-specific half is whatever it takes to re-run this exact thing** — the
+resolved hydra config, the seed, and every input artifact named by path *and* by its own
+provenance. For OMT that means the source checkpoint is a recorded field, not a shell
+variable (§8). For a collected dataset it means the checkpoint(s) it was replayed
+through. Provenance composes: a chain of artifacts is a chain of `provenance.json`
+files, each naming its inputs.
+
+Resolving the four commits is not hand-written. `prnn` and `minigrid` are git
+dependencies, so `uv.lock` already holds their resolved revisions — read them from
+there, or from `importlib.metadata` `direct_url.json`, which
+`tests/perf/benchmark.py::package_git_commit` already does for `prnn`. Reuse that
+function rather than writing a second one.
 
 **Do this before the split.** Otherwise the questions repo inherits checkpoints that
 cannot identify themselves, and you build provenance tooling around artifacts with no
 provenance. Three invalidating lines already run through the run series and all three
-exist only as prose plus job numbers; a run directory that names its own commit turns
-each of them into a property of the checkpoint, retroactively for everything made
-after this lands.
+exist only as prose plus job numbers; an artifact that names its own commits turns each
+of them into a property of the artifact, retroactively for everything made after this
+lands.
+
+**Gate:** a test that fails if any artifact-writing path produces a directory without a
+`provenance.json`, and a test that the recorded `prnn` commit matches the installed one.
 
 ### Phase 2 — metric semantics: one name, one thing · days
 
@@ -406,7 +442,9 @@ Two things in `docs/` are not results and are not reconstructible:
    commit, what it invalidates, and how to tell whether a checkpoint predates it.
    Currently these live only as prose plus job numbers in two documents. If those
    documents go, the only record of which past runs are worthless goes with them.
-2. **`docs/pitfalls.md`** — the methodology that cost the most to learn: wandb history
+2. **`docs/sab_context/`** — now tracked (§7.2), so it stops being an untracked
+   dependency of two configs, a test and a figure generator.
+3. **`docs/pitfalls.md`** — the methodology that cost the most to learn: wandb history
    caps at 10,000 samples and `scan_history` fails on these runs;
    `tests/perf/benchmark.py` defaults `--sync-stages` off and `--warmup-updates` to 0;
    do not quote a g8 rate before 15 minutes elapsed; a CUDA graph fails silently;
@@ -505,39 +543,53 @@ after two questions disagree about a cache.
 
 ## 6. wandb
 
-**Every run produced by this refactor carries the tag `refactoring-aug25`.**
+Projects and entity stay as they are: `curious-george` for training,
+`curious-george-omt` for the task, entity `blake-richards`.
 
-⚠️ **There is no tag support in the code today.** Both entry points omit `tags=`:
-
-```
-curious_george/training/logging.py::init_wandb       entity, project, group, name, id, dir, resume, config
-tasks/omt/main_task.py::create_wandb_run             entity, project, name, group
-```
-
-```bash
-grep -rn "tags" curious_george/ tasks/ Configs/ | grep -i wandb    # -> nothing
-```
-
-So Phase 1 adds `logging.wandb_tags: []` to `Configs/main.yaml` and threads it through
-both call sites. Small, but it is a code change and it must be in place *before* the
-first comparison run, or the runs are unfindable.
-
-Projects stay as they are: `curious-george` for training, `curious-george-omt` for the
-task. Same entity, `blake-richards`.
+**No refactor tag.** Runs are found by their `provenance.json` commits (§ Phase 1),
+which is a stronger key than a tag: it says *which* code produced the run rather than
+*that* it belonged to a batch. Note for the record that there is no `tags=` support in
+either entry point today (`init_wandb`, `create_wandb_run`); if a tag is ever wanted it
+is a config field plus two call sites.
 
 ---
 
-## 7. Open decisions
+## 7. Decisions
 
-1. **The `UpdateLogs` fix invalidates every historical eager entropy curve** (§2a).
-   Fix and record the fourth invalidating line, or freeze the eager convention and make
-   graphed match it instead? Fixing is right, but it is a call.
-2. **Name of the questions repo.**
-3. **Does `docs/sab_context/` become tracked?** It is gitignored and cited twelve times
-   — from `Configs/run/multienv.yaml:8`, `Configs/performance/ultra.yaml:27`,
-   `tests/perf/benchmark.py:176`, and `scripts/summary_figures.py:194,242`, where a
-   committed figure generator carries results as source literals.
-4. **Which of the four probe implementations is promoted** (§4).
+**Taken 2026-08-25:**
+
+1. **`UpdateLogs` averages over ALL PPO epochs** — the eager path is fixed to match the
+   graphed one, not the reverse. Three reasons, in order of weight:
+   - The quantity is logged **once per update** and named for the update. An update *is*
+     four passes over the batch, so the mean over all gradient steps in it is what the
+     name says. Averaging the last quarter is an accident of `torch_ac`'s list
+     placement, and it discards three-quarters of the data for no stated reason.
+   - **It is the lower-damage choice.** The graphed path already computes all-epochs, and
+     graphed is the direction of travel (four CUDA graphs, 5.37x). So graphed runs' logged
+     numbers are unchanged and only eager ones move.
+   - The affected metrics are **policy diagnostics only** — `policy_entropy`,
+     `value_loss`, `grad_norm`, `policy_loss`. `pRNN loss`, `sRSA`, `SWdist` and `SI` do
+     not pass through `UpdateLogs` and are untouched.
+
+   ⚠️ The fourth invalidating line stands and covers every eager arm, including the
+   2026-07 reference `pRNN_curious_26-07-08-16-04-37`. Record it in
+   `docs/invalid-runs.md` with the metric list above, so a reader can see at a glance
+   that the world-model line is unaffected.
+2. **`docs/sab_context/` becomes tracked.** It is cited twelve times from
+   `Configs/run/multienv.yaml:8`, `Configs/performance/ultra.yaml:27`,
+   `tests/perf/benchmark.py:176` and `scripts/summary_figures.py:194,242` — a committed
+   figure generator carrying results as source literals. Untracked and load-bearing is
+   the worst combination. Track it, then the path-existence gate (Phase 7) can hold it.
+3. **No refactor wandb tag** (§6).
+4. **The OMT-h and reward-map analyses are thrown away**, not ported. Note that
+   `scripts/analysis_OMT_h.py`, `scripts/isomap.py` and `scripts/analysis_reward_map.py`
+   **do not exist** — so the work is deleting the `tasks/README.md` paragraphs that send
+   the next reader to them, including the whole "Where this is going" section.
+
+**Still open:**
+
+5. **Name of the questions repo.**
+6. **Which of the four probe implementations is promoted** (§4).
 
 ---
 
@@ -585,7 +637,8 @@ test in Phase 7, which is why that test is cheap and valuable)
     [ -e "$f" ] && echo "EXISTS $f" || echo "ABSENT $f"; done
   ```
   The README's "Where this is going" section points the next analysis at the first of
-  them.
+  them. **Resolved (§7.4): these analyses are thrown away**, so the work is deleting
+  those paragraphs rather than repairing the paths.
 - `docs/claude_logs/speed-30min-2026-08-23.md` names
   `tests/test_cuda_graph_diag_guard.py` three times including as a copy-pasteable
   command; the file was deleted and its tests folded into `test_cuda_graph_wm.py`.
