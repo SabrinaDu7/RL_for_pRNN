@@ -413,13 +413,42 @@ def _scan_occupancy_refs(
         List of ``(step_value, media_ref_dict)`` pairs.
     """
     refs: list[tuple[int, dict]] = []
-    for row in run.scan_history(keys=[step_key, metric]):
+    for row in _history_rows(run, metric=metric, step_key=step_key):
         if metric not in row or step_key not in row:
             continue
         media_ref = row[metric]
         if isinstance(media_ref, dict):
             refs.append((int(row[step_key]), media_ref))
     return refs
+
+
+def _history_rows(run, *, metric: str, step_key: str) -> list[dict]:
+    """History rows for `metric`, via `scan_history` when it works.
+
+    `scan_history` is the streaming reader and the right default, but it raises
+    `Step column '_step' not found in schema` on runs whose media were logged
+    through their own `wandb.log()` calls rather than the update log - which is
+    every OMT run, and is recorded in this project's methodology notes.
+    `run.history()` reads the same rows through a different endpoint and works
+    there, at the cost of being capped (10,000 samples) and materialising in
+    memory.
+
+    The cap does NOT bite here: this reads media REFERENCES for an eval that
+    fires a handful of times per run, not a dense scalar series. It would bite
+    on a training curve, and a caller reading one should say so.
+    """
+    try:
+        return list(run.scan_history(keys=[step_key, metric]))
+    except Exception:  # noqa: BLE001 - any backend refusal, not just the known one
+        frame = run.history(keys=[metric], pandas=True)
+        if frame is None or len(frame) == 0:
+            return []
+        if step_key not in frame.columns:
+            frame = frame.reset_index().rename(columns={"index": step_key})
+        return [
+            row for row in frame.to_dict("records")
+            if isinstance(row.get(metric), dict)
+        ]
 
 
 def _download_and_extract(
