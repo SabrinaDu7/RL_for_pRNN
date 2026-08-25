@@ -27,7 +27,7 @@ import torch
 from typing import Literal, Sequence
 from pathlib import Path
 import numpy as np
-from scripts.legacy.wandb_data import (
+from curious_george.io.wandb import (
     fetch_subroom_counts,
     plot_subroom_percentage,
     save_subroom_data,

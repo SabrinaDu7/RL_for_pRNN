@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from scripts.legacy.wandb_data import fetch_run_traces, plot_metric, add_sig_line
+from curious_george.io.wandb import fetch_run_traces, plot_metric, add_sig_line
 from scripts.legacy.figure4 import CACHE_DIR, save_df, load_df, df_to_tensor, align_tensors
 
 plt.rcParams["figure.dpi"] = 300

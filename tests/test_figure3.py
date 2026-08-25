@@ -96,7 +96,7 @@ def test_fetch_by_names_uses_cache(tmp_path):
 def test_pipeline_two_groups():
     """Two groups of runs produce aligned tensors usable by plot_metric."""
     import matplotlib.pyplot as plt
-    from scripts.legacy.wandb_data import plot_metric
+    from curious_george.io.wandb import plot_metric
 
     rng = np.random.default_rng(0)
     steps = [0, 100, 200]

@@ -24,7 +24,7 @@ point proves nothing. This reports, per metric, the reference's own
 adjacent-sample spread as the error band, and flags a difference only when it
 exceeds that band.
 
-    uv run python scripts/compare_wandb_runs.py \\
+    uv run python -m curious_george.check.wandb_compare \\
         --reference pRNN_curious_26-07-08-16-04-37 \\
         --run <run-id-or-name> [--metric sRSA_onPolicy ...]
 

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 
-from scripts.legacy.wandb_data import fetch_run_traces, plot_metric
+from curious_george.io.wandb import fetch_run_traces, plot_metric
 
 plt.rcParams["figure.dpi"] = 300
 plt.rcParams["savefig.dpi"] = 300
