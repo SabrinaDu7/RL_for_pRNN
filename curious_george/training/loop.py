@@ -200,6 +200,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         fps=logs["num_frames"] / update_duration,
                         duration=int(time.time() - start_time),
                         random_agent=cfg.exp.random_action_agent,
+                        **schedule.gradient_steps_at(update),
                     )
                     mi = (
                         None

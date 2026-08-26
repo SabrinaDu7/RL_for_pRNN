@@ -125,6 +125,31 @@ class TrainingSchedule:
         return self.frames_per_update // max(1, self.world_model_steps_per_update)
 
     @property
+    def env_steps_per_policy_step(self) -> int:
+        """The policy's counterpart to `env_steps_per_world_model_step`.
+
+        A DIFFERENT number, on DIFFERENT knobs: the world model's ratio is
+        `episode_steps * pool_group` (or `* segment_stride` when serial), the
+        policy's is `ppo_batch_size / ppo_epochs` and does not involve seqdur at
+        all. In the 2026-08 reference config they are 2048 and 512 - a factor of
+        4 - which is why "gradient steps" is never one axis here.
+        """
+        return self.frames_per_update // max(1, self.policy_steps_per_update)
+
+    def gradient_steps_at(self, update: int) -> dict[str, int]:
+        """Cumulative optimizer steps after `update` updates, per learner.
+
+        Logged alongside `frames` so a wandb panel can be read on either axis.
+        Environment steps answer "how much experience", gradient steps answer
+        "how much training" - and the two come apart exactly when the rollout
+        shape changes, which is the failure this module exists to prevent.
+        """
+        return {
+            "wm_grad_steps": self.world_model_steps_per_update * update,
+            "policy_grad_steps": self.policy_steps_per_update * update,
+        }
+
+    @property
     def _wm_regime(self) -> str:
         if self.pooled_world_model:
             g = self.pool_group
@@ -146,7 +171,8 @@ class TrainingSchedule:
                 f"({self.world_model_steps_per_update}/update{self._wm_regime}"
                 f") = 1 per {self.env_steps_per_world_model_step} env steps",
                 f"  policy gradient steps:      {self.total_policy_steps} "
-                f"({self.policy_steps_per_update}/update)",
+                f"({self.policy_steps_per_update}/update)"
+                f" = 1 per {self.env_steps_per_policy_step} env steps",
             ]
         )
 

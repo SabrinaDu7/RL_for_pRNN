@@ -24,6 +24,11 @@ class UpdateStats:
     fps: float
     duration: int
     random_agent: bool
+    #: Cumulative optimizer steps, from `TrainingSchedule.gradient_steps_at`.
+    #: TWO counters because the learners train at different rates against the
+    #: same experience; one "gradient steps" axis would hide that.
+    wm_grad_steps: int = 0
+    policy_grad_steps: int = 0
 
 
 def init_wandb(cfg, run_ctx):
@@ -53,6 +58,9 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
         "loc_entropy": logs["loc_entropy"],
         "loc_entropy_5": logs["loc_entropy_5"],
         "frames": stats.num_frames,
+        # Logged beside `frames` so any panel can be read on either axis.
+        "wm_grad_steps": stats.wm_grad_steps,
+        "policy_grad_steps": stats.policy_grad_steps,
         "FPS": stats.fps,
         "duration": stats.duration,
     }
