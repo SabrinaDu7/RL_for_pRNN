@@ -76,17 +76,28 @@ def resolve(api, ident: str):
 def _rows(run, metric: str, step_key: str = "_step"):
     """History rows for (STEP_KEY, metric), exact if the backend allows it.
 
-    `scan_history(keys=...)` is the exact path but raises "Step column '_step'
-    not found in schema" on older runs whose history lacks the column the
-    keyed-scan endpoint requires. `history()` uses a different endpoint and
-    works there, at the cost of sampling - so which one served a number is
-    recorded in the output rather than left ambiguous.
+    `scan_history(keys=...)` is the exact path but fails two DIFFERENT ways, and
+    only one of them is loud. It raises "Step column '_step' not found in
+    schema" on older runs; on others it returns the full row count with the
+    REQUESTED KEY SIMPLY ABSENT from every row. The second is the dangerous one:
+    it looks like success, every row is then dropped as None, and the caller
+    reports "logs no `frames`" for a run whose frames `history()` returns
+    happily. Measured on fast-single-e0.001-...-19-30-36: scan_history gave
+    87,761 rows with no `frames` key, history() gave the series.
+
+    So success is judged by whether the metric actually came back, not by the
+    absence of an exception. `history()` uses a different endpoint at the cost
+    of sampling - which one served a number is recorded in the output rather
+    than left ambiguous.
     """
     try:
-        return list(run.scan_history(keys=[step_key, metric])), "scan_history"
+        rows = list(run.scan_history(keys=[step_key, metric]))
+        if any(row.get(metric) is not None for row in rows):
+            return rows, "scan_history"
     except Exception:
-        df = run.history(keys=[step_key, metric], samples=100_000)
-        return df.to_dict("records"), "history(sampled)"
+        pass
+    df = run.history(keys=[step_key, metric], samples=100_000)
+    return df.to_dict("records"), "history(sampled)"
 
 
 def _series(run, metric: str, step_key: str) -> tuple[np.ndarray, np.ndarray, str]:

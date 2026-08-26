@@ -436,19 +436,27 @@ def _history_rows(run, *, metric: str, step_key: str) -> list[dict]:
     The cap does NOT bite here: this reads media REFERENCES for an eval that
     fires a handful of times per run, not a dense scalar series. It would bite
     on a training curve, and a caller reading one should say so.
+
+    `scan_history` also fails SILENTLY on some runs: it returns the full row
+    count with the requested key simply absent from every row, which reads as
+    success and yields an empty series downstream. Measured on
+    fast-single-e0.001-...-19-30-36: 87,761 rows, no `frames` key, while
+    `history()` returned the series. So the result is judged by whether the
+    metric came back, not by the absence of an exception.
     """
     try:
-        return list(run.scan_history(keys=[step_key, metric]))
+        rows = list(run.scan_history(keys=[step_key, metric]))
+        if any(row.get(metric) is not None for row in rows):
+            return rows
     except Exception:  # noqa: BLE001 - any backend refusal, not just the known one
-        frame = run.history(keys=[metric], pandas=True)
-        if frame is None or len(frame) == 0:
-            return []
-        if step_key not in frame.columns:
-            frame = frame.reset_index().rename(columns={"index": step_key})
-        return [
-            row for row in frame.to_dict("records")
-            if isinstance(row.get(metric), dict)
-        ]
+        pass
+
+    frame = run.history(keys=[metric], pandas=True)
+    if frame is None or len(frame) == 0:
+        return []
+    if step_key not in frame.columns:
+        frame = frame.reset_index().rename(columns={"index": step_key})
+    return [row for row in frame.to_dict("records") if isinstance(row.get(metric), dict)]
 
 
 def _download_and_extract(

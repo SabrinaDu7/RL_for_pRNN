@@ -29,6 +29,22 @@ class _Refuses:
         return pd.DataFrame(ROWS)
 
 
+class _SilentlyOmits:
+    """The dangerous branch: scan_history returns rows and NO exception, but the
+    requested key is absent from every one. Measured live on
+    fast-single-e0.001-...-19-30-36 (87,761 rows, no `frames`). Judging success
+    by "it did not raise" reads this as an empty series and reports the run as
+    logging nothing."""
+
+    def scan_history(self, keys=None):
+        return iter([{"_step": 3}, {"_step": 4}])
+
+    def history(self, keys=None, pandas=True):
+        import pandas as pd
+
+        return pd.DataFrame(ROWS)
+
+
 class _Works:
     def scan_history(self, keys=None):
         return iter(ROWS)
@@ -71,3 +87,10 @@ def test_non_media_rows_are_dropped():
 
     rows = _history_rows(_Mixed(), metric=METRIC, step_key="_step")
     assert [r["_step"] for r in rows] == [3]
+
+
+def test_falls_back_when_scan_history_omits_the_key_without_raising():
+    """Silence is a failure mode too, and it is the one that looks like success."""
+    rows = _history_rows(_SilentlyOmits(), metric=METRIC, step_key="_step")
+    assert rows, "silent scan_history must fall through to history()"
+    assert rows[0][METRIC] == ROWS[0][METRIC]
