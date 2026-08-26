@@ -145,6 +145,10 @@ Called by `training/loop.py` on a cadence, but importable on their own.
   with a fixed seed and fixed actions so repeated scoring of a checkpoint agrees.
 - `evaluation/task.py` — reusable machinery for evaluations that train further from a
   checkpoint (`setup_task`, `train_phase`, `collect_eval_rollouts`).
+- `evaluation/checkpoint_series.py` — the only module here with a CLI: scores a run's
+  step-tagged checkpoint archive offline, one row per checkpoint. `slurm/train_fast.sh`
+  calls it because the in-run spatial eval is skipped under CUDA graphs.
+  `uv run python -m curious_george.evaluation.checkpoint_series --run <run> --env lroom_multi`
 
 ### `curious_george/training` — assembly and the loop
 

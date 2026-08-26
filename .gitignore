@@ -60,3 +60,7 @@ tests/perf/results/*.prof
 
 # macOS finder droppings
 .DS_Store
+
+# Retired run output, parked not deleted. NEVER tracked: 1.7 GB of binaries
+# in history is permanent - a later `rm` does not reclaim it.
+throwaway/outputs/

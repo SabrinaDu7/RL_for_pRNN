@@ -1,8 +1,8 @@
 """One way to turn a checkpoint into (hidden state, position).
 
-Promoted out of scripts/trace/ 2026-08-25. It was one of FOUR competing
+Promoted out of the retired scripts/trace/ (now throwaway/ported/trace/) 2026-08-25. It was one of FOUR competing
 implementations of this - the others were
-scripts/multienv/checkpoint_curve.py::fixed_probe,
+evaluation/checkpoint_series.py::fixed_probe (still live, see its docstring),
 moser_analysis.py::_build_probe (whose own docstring said it was the same
 construction as build_probe here), and evaluation/task.py::collect_eval_rollouts.
 This one won because it is the only one with a FIXED SEED (PROBE_SEED) and

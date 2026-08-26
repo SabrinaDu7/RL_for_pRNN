@@ -336,7 +336,7 @@ RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}${ENT_FINAL:+to${ENT_FINAL}}-g${POOL
 # the ordinary single-room eval path instead.
 if [ -n "$RUN" ] && [ "$LAYOUTS" != "single" ]; then
   echo "=== offline spatial scoring of $RUN ==="
-  uv run python scripts/multienv/checkpoint_curve.py --run "$RUN" \
+  uv run python -m curious_george.evaluation.checkpoint_series --run "$RUN" \
       --env $ENVCFG --layouts $LAYOUTS --spatial 2>&1 | tail -25
   save
 fi

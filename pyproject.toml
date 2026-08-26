@@ -88,7 +88,6 @@ include = [
     # directory that is `tests/`, and `trainRL_Adel.py` no longer exists.
     "curious_george/**/*.py",
     "tests/**/*.py",
-    "scripts/**/*.py",
     "main_train.py",
 ]
 
@@ -103,7 +102,7 @@ ignore = ["F722", "F821"]
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-include = ["curious_george", "tests", "scripts", "*.py"]
+include = ["curious_george", "tests", "*.py"]
 
 # OVerride specific rules
 reportPossiblyUnboundVariable = "none"

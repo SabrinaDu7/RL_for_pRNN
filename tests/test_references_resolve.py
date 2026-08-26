@@ -121,7 +121,7 @@ def test_exemptions_are_real_directories(exempt):
 # ---------------------------------------------------------------------------
 # Modules. The other half of "a reference resolves", and the half that was
 # missing: `io/` -> `log_and_store/` left `curious_george.storage` in
-# `slurm/train_fast.sh` and `scripts/multienv/checkpoint_curve.py`. Both are
+# `slurm/train_fast.sh` and the then-`scripts/multienv/checkpoint_curve.py`. Both
 # live, neither is imported by any test, and a shell heredoc is invisible to
 # every linter here - so the rename shipped broken and the suite stayed green.
 

@@ -33,7 +33,7 @@ def my_app(cfg: DictConfig):
         # 10444214 died 61 s in because wandb could not initialise on a compute
         # node, losing the whole allocation for a metrics sink whose numbers
         # are also recoverable offline from the archived checkpoints
-        # (scripts/multienv/checkpoint_curve.py). Degrade, do not abort.
+        # (curious_george/evaluation/checkpoint_series.py). Degrade, do not abort.
         try:
             init_wandb(cfg, run_ctx)
         except Exception as exc:  # noqa: BLE001 - any backend failure is survivable

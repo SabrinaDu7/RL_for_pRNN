@@ -1,17 +1,26 @@
 """Prediction loss and per-room spatial metrics across a run's checkpoint series.
 
 Reads the step-tagged archive a multi-room run writes under `<run>/checkpoints/`
-and replays ONE fixed probe through every checkpoint, so differences between
-points are in the weights and nothing else. That is the same "replay, don't
-re-collect" rule the probe runs on (`curious_george/evaluation/probe.py`).
+and replays ONE fixed probe through every checkpoint: the rollouts are collected
+once per room and reused, so no point carries its own BEHAVIOURAL noise.
+
+WHAT IS NOT PINNED, and it is not cosmetic. `score` wraps the forward in
+`torch.no_grad()` alone, which stops gradients and NOT dropout. Every checkpoint
+is therefore scored under a fresh dropout mask (predNet.dropout, 0.15), a fresh
+noise draw (predNet.noisestd, 0.05) and an unpinned initial hidden state.
+`probe.py` measures that wobble at ~0.4 in h between two identical calls, so
+row-to-row differences here are NOT weights alone. `probe.py::replay_checkpoint`
+is the same idea carried through - `eval_mode` around the forward, torch seeded
+immediately before it so every checkpoint sees one realisation, and a fixed
+initial state. Moving this file onto it is an OPEN ITEM, not an oversight.
 
 Two jobs:
   - the local gate: is prediction loss actually going down?
   - babysitting a cluster run: are sRSA still high, SWdist still low, and is the
     prediction still correct - without waiting for the job to finish.
 
-    uv run python scripts/multienv/checkpoint_curve.py --run outputs/<dir> --env lroom_multi
-    uv run python scripts/multienv/checkpoint_curve.py --run outputs/<dir> --env squareroom_multi
+    uv run python -m curious_george.evaluation.checkpoint_series --run <run> --env lroom_multi
+    uv run python -m curious_george.evaluation.checkpoint_series --run <run> --env squareroom_multi
 
 THE ROOM COMES FROM THE RUN'S OWN CONFIG, NOT FROM THIS FILE. `--env` names the
 config the job was launched with (`slurm/multienv.sh`'s second argument), and
