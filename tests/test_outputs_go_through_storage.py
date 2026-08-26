@@ -33,6 +33,11 @@ LIVE = sorted(REPO.glob("curious_george/**/*.py")) + [REPO / "main_train.py"]
 #: A literal run-output path. `get_storage_dir()` is the only correct source.
 HARDCODED = re.compile(r"""["']outputs/""")
 
+#: An output path anchored to the user's home rather than the storage root.
+#: `get_video_dir` wrote to $HOME/pRNN-RL/RLvideos, outside every rsync in
+#: slurm/, so a cluster run's videos never left the node.
+HOME_ANCHORED = re.compile(r"""environ\[.HOME.\]|Path\.home\(\)|expanduser""")
+
 #: `wandb.init(` and everything up to its closing paren, so `dir=` is visible.
 WANDB_INIT = re.compile(r"wandb\.init\((.*?)\)", re.DOTALL)
 
@@ -53,6 +58,17 @@ def test_no_hardcoded_output_path(path):
         "hardcoded output path - use log_and_store.storage.get_storage_dir():\n"
         + "\n".join(hits)
     )
+
+
+@pytest.mark.parametrize("path", LIVE, ids=_relative)
+def test_no_home_anchored_output_path(path):
+    """Run output does not hang off $HOME; slurm/ only rsyncs RL_STORAGE."""
+    hits = [
+        f"{_relative(path)}:{i}: {line.strip()}"
+        for i, line in enumerate(path.read_text().splitlines(), 1)
+        if HOME_ANCHORED.search(line)
+    ]
+    assert not hits, "output path anchored to $HOME:\n" + "\n".join(hits)
 
 
 @pytest.mark.parametrize("path", LIVE, ids=_relative)

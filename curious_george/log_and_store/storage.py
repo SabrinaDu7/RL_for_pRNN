@@ -52,7 +52,13 @@ def get_model_dir(model_name: str | Path):
 
 
 def get_video_dir(model_name: str):
-    return os.path.join(os.environ["HOME"], "pRNN-RL/RLvideos", model_name)
+    """Videos beside the run that produced them, under RL_STORAGE.
+
+    Was $HOME/pRNN-RL/RLvideos/<run>, which is not the storage root and so was
+    invisible to every rsync in slurm/ - a cluster run's videos never left the
+    node. Inert until logging.video_log_freq > 0, wrong either way.
+    """
+    return os.path.join(get_model_dir(model_name), "videos")
 
 
 def get_tmp_dir():
