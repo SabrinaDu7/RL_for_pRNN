@@ -39,6 +39,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from enum import Enum
+from typing import Union
 from itertools import permutations
 
 import numpy as np
@@ -207,8 +209,14 @@ def enumerate_anchor_triples(
     min_testable_offsets: int = 40,
     dedupe_d4: bool = False,
     span: int = 14,
+    stencils: tuple[str, ...] = SHAPES,
 ) -> list[tuple[tuple[int, int], ...]]:
-    """EVERY anchor assignment the room admits, one per shape in `SHAPES` order.
+    """EVERY anchor assignment the room admits, one per stencil in order.
+
+    `stencils` was the module constant `SHAPES`, read at four places inside this
+    function. It is an argument so a run can carry a different landmark set -
+    different shapes, or solid objects - without editing a global that every
+    other layout function also reads.
 
     Exhaustive rather than sampled, for two reasons. It makes the size of the
     design space a measured fact instead of a property of a sampler - rejection
@@ -222,19 +230,19 @@ def enumerate_anchor_triples(
             valid_anchors(walkable=walkable, shape=s, min_wall_distance=min_wall_distance),
             dtype=int,
         )
-        for s in SHAPES
+        for s in stencils
     }
     if any(len(a) == 0 for a in anchors.values()):
         raise ValueError(f"no anchor has wall clearance {min_wall_distance}")
 
-    grids = np.meshgrid(*[np.arange(len(anchors[s])) for s in SHAPES], indexing="ij")
-    picks = [anchors[s][g.ravel()] for s, g in zip(SHAPES, grids)]
+    grids = np.meshgrid(*[np.arange(len(anchors[s])) for s in stencils], indexing="ij")
+    picks = [anchors[s][g.ravel()] for s, g in zip(stencils, grids)]
 
     def cheb(a, b):
         return np.maximum(np.abs(a[:, 0] - b[:, 0]), np.abs(a[:, 1] - b[:, 1]))
 
     sep = np.min(
-        [cheb(picks[i], picks[j]) for i in range(len(SHAPES)) for j in range(i + 1, len(SHAPES))],
+        [cheb(picks[i], picks[j]) for i in range(len(stencils)) for j in range(i + 1, len(stencils))],
         axis=0,
     )
 
@@ -245,7 +253,7 @@ def enumerate_anchor_triples(
         layout = Layout(
             tuple(
                 Landmark(s, c, a)
-                for s, c, a in zip(SHAPES, LANDMARK_COLORS[: len(SHAPES)], triple)
+                for s, c, a in zip(stencils, LANDMARK_COLORS[: len(stencils)], triple)
             )
         )
         painted = [c for lm in layout.landmarks for c in lm.cells]
@@ -497,3 +505,359 @@ def resolve_layouts(cfg) -> list[Layout] | None:
             dedupe_d4=square,
         )
     raise TypeError(f"unknown layout spec {spec!r}")
+
+
+# ===========================================================================
+# The environment as SHAPE x CONTENT, and the set of rooms a run trains over.
+#
+# Four layers, and the split is the point:
+#
+#   EnvShape       the WALLS. Nothing about what is in them.
+#   EnvContent     WHAT is in them. No coordinates.
+#   RoomRules      WITHIN one room: when is a placement legal?
+#   RoomSetRules   BETWEEN rooms: what makes a SET an experiment?
+#
+# Mixing shape with content is what produces rooms, and it happens in three
+# stages because content assignment must be separable from placement. It was
+# not: `generate_layouts` drew a fresh colour permutation per room, so colour
+# ALWAYS varied and "same objects, different places" could not be expressed.
+
+
+class Symmetry(str, Enum):
+    """The symmetries a room's walls leave intact.
+
+    Not a setting. Two placements related by a rotation of a square room ARE
+    the same room, and that is a fact about the geometry - it used to be a
+    `dedupe_d4` boolean derived by string-comparing the room id.
+    """
+
+    TRIVIAL = "trivial"  # the L-shaped wall breaks all eight
+    D4 = "d4"  # square: 4 rotations x 2 reflections
+
+
+@dataclass(frozen=True)
+class EnvShape:
+    """The room's walls."""
+
+    room: str = BASE_ROOM_ID
+
+    @property
+    def walkable(self) -> frozenset[tuple[int, int]]:
+        return base_walkable(self.room)
+
+    @property
+    def symmetry(self) -> Symmetry:
+        return Symmetry.D4 if self.room == SQUARE_ROOM_ID else Symmetry.TRIVIAL
+
+    @property
+    def span(self) -> int:
+        """Max interior coordinate, matching `_d4`'s "interior runs 1..span".
+
+        NOT max+1. Computing it that way maps every cell one step outside the
+        walkable set - 225 images for a 196-cell room - which would silently
+        corrupt the D4 orbits the square-room dedup is built on.
+        """
+        cells = self.walkable
+        return max(max(x for x, _ in cells), max(y for _, y in cells))
+
+
+@dataclass(frozen=True)
+class LandmarkKind:
+    """One landmark's identity, independent of where it goes.
+
+    `size` and `solid` are DECLARED BUT INERT: the stencil table and the object
+    class both live in the minigrid fork, so a 2-cell landmark or a movement-
+    blocking one needs a change there first. They are here because the axis is
+    what makes a shape or solid-object experiment a config change rather than a
+    refactor - and because a field that does nothing is better than a field
+    that silently does something else.
+    """
+
+    stencil: str
+    size: int = 3
+    solid: bool = False
+
+
+@dataclass(frozen=True)
+class EnvContent:
+    """What is in the room. No coordinates - placement is the mix."""
+
+    kinds: tuple[LandmarkKind, ...] = tuple(LandmarkKind(s) for s in SHAPES)
+    palette: tuple[str, ...] = LANDMARK_COLORS
+
+    @property
+    def stencils(self) -> tuple[str, ...]:
+        return tuple(k.stencil for k in self.kinds)
+
+    @property
+    def n_landmarks(self) -> int:
+        return len(self.kinds)
+
+    def __post_init__(self) -> None:
+        if not self.kinds:
+            raise ValueError("a room needs at least one landmark kind")
+        if len(self.palette) < self.n_landmarks:
+            raise ValueError(
+                f"{self.n_landmarks} landmarks need at least that many colours; "
+                f"palette has {len(self.palette)}"
+            )
+
+
+@dataclass(frozen=True)
+class RoomRules:
+    """WITHIN one room: when is a placement legal?"""
+
+    min_cell_gap: int = 2
+    min_anchor_separation: int = 6
+    """Between landmarks INSIDE one room. Not to be confused with
+    `RoomSetRules.min_configuration_distance`, which is between rooms -
+    conflating them is how a set came to be three translations of one room."""
+    min_wall_distance: int = 2
+    min_testable_offsets: int = 40
+    max_coverage: float = 1.0
+    """Landmark cells as a fraction of walkable cells - the "% of environment"
+    axis.
+
+    INERT by default, deliberately. Measured: the committed designs sit at
+    11.0% (L-room, 19 cells of 172) and 9.7% (square, 19 of 196), so a default
+    of 0.10 would have silently excluded this project's own L-room design from
+    every generated pool. A new constraint must not move the admissible set
+    until someone asks it to.
+    """
+
+
+class Vary(str, Enum):
+    """What DIFFERS between rooms in a set.
+
+    Anything NOT listed is held constant across the set - and what is held
+    constant IS the manipulation. `{POSITION}` is "same objects, different
+    places"; `{KIND}` is "same places, different shapes".
+    """
+
+    POSITION = "position"
+    COLOR = "color"
+    KIND = "kind"
+
+
+@dataclass(frozen=True)
+class RoomSetRules:
+    """BETWEEN rooms: what makes a set an experiment rather than a bag of rooms?"""
+
+    varies: frozenset[Vary] = frozenset({Vary.POSITION, Vary.COLOR})
+    distinct_signatures: bool = True
+    """Reject a set whose rooms are congruent. Selecting on distance alone
+    returned three rooms all at separation signature (6,6,6) - one configuration
+    moved around, which tests nothing about room identity."""
+    min_configuration_distance: int | None = None
+
+
+# --- where a set of rooms comes from --------------------------------------
+
+
+@dataclass(frozen=True)
+class EnvDefault:
+    """The landmarks the environment CLASS ships with.
+
+    One room, content not chosen here, and the only source that runs on the
+    plain env id rather than the `-Multi-v0` variant that accepts `landmarks=`.
+    Nearly every checkpoint in this project trained on this; naming it is what
+    makes those runs describable.
+    """
+
+
+@dataclass(frozen=True)
+class Committed:
+    """Literal rooms, pinned by identity.
+
+    Survives changes to the generator, which is the job: ROOMS_RUN1 was produced
+    before the `distinct_signatures` fix, so re-deriving it today yields a
+    DIFFERENT set and every historical result would silently refer to rooms it
+    never trained on. Not validated against RoomSetRules - it records what ran,
+    it does not propose a design.
+    """
+
+    rooms: tuple[Layout, ...]
+
+
+@dataclass(frozen=True)
+class Curated:
+    """`n` rooms chosen to be a good design, under RoomSetRules."""
+
+    n: int = 3
+    seed: int = 20260813
+
+
+@dataclass(frozen=True)
+class Uniform:
+    """`n` rooms drawn uniformly from the admissible set. No design criteria -
+    a broad sample, where degeneracy between any two rooms does not matter."""
+
+    n: int = 500
+    seed: int = 20260813
+
+
+RoomSource = Union[EnvDefault, Committed, Curated, Uniform]
+
+#: A placement: one anchor per landmark, in `EnvContent.kinds` order.
+AnchorSet = tuple[tuple[int, int], ...]
+
+
+# --- the mix: shape x content -> rooms, in three stages -------------------
+#
+# Three and not one because content assignment has to be separable from
+# placement. It was not: `generate_layouts` drew a fresh colour permutation
+# inside the same loop that chose anchors, so colour ALWAYS varied and "same
+# objects, different places" was inexpressible.
+
+
+def admissible_placements(
+    shape: EnvShape, content: EnvContent, rules: RoomRules
+) -> list[AnchorSet]:
+    """WITHIN-room stage: every placement of `content` that `shape` admits.
+
+    Exhaustive, so the size of the design space is a measured fact rather than
+    a property of a sampler. Symmetry dedup is taken from the SHAPE, not passed:
+    two placements related by a rotation of a square room are the same room.
+    """
+    placements = enumerate_anchor_triples(
+        walkable=shape.walkable,
+        min_cell_gap=rules.min_cell_gap,
+        min_anchor_separation=rules.min_anchor_separation,
+        min_wall_distance=rules.min_wall_distance,
+        min_testable_offsets=rules.min_testable_offsets,
+        dedupe_d4=shape.symmetry is Symmetry.D4,
+        span=shape.span,
+        stencils=content.stencils,
+    )
+    if rules.max_coverage < 1.0:
+        budget = rules.max_coverage * len(shape.walkable)
+        placements = [
+            p for p in placements
+            if len(_layout_of(p, content).cells) <= budget
+        ]
+    return placements
+
+
+def _layout_of(anchors: AnchorSet, content: EnvContent,
+               colors: tuple[str, ...] | None = None,
+               stencils: tuple[str, ...] | None = None) -> Layout:
+    cols = colors if colors is not None else content.palette[: content.n_landmarks]
+    kinds = stencils if stencils is not None else content.stencils
+    return Layout(tuple(Landmark(k, c, a) for k, c, a in zip(kinds, cols, anchors)))
+
+
+def separation_signature(anchors: AnchorSet) -> tuple[int, ...]:
+    """Sorted pairwise Chebyshev distances - a room's internal GEOMETRY.
+
+    Two rooms with the same signature are congruent: the same configuration
+    moved around. That is what `RoomSetRules.distinct_signatures` rejects.
+    """
+    return tuple(sorted(
+        _chebyshev(anchors[i], anchors[j])
+        for i in range(len(anchors)) for j in range(i + 1, len(anchors))
+    ))
+
+
+def select_rooms(
+    placements: list[AnchorSet], source: RoomSource, *,
+    set_rules: RoomSetRules,
+) -> list[AnchorSet]:
+    """BETWEEN-room stage: which placements form the set.
+
+    When POSITION is not varied every room shares one placement, and the set is
+    an experiment about something else - `{KIND}` is "same places, different
+    shapes".
+    """
+    if isinstance(source, (EnvDefault, Committed)):
+        raise TypeError(f"{type(source).__name__} does not select from a pool")
+    n, seed = source.n, source.seed
+    rng = np.random.default_rng(seed)
+
+    if Vary.POSITION not in set_rules.varies:
+        return [placements[int(rng.integers(len(placements)))]] * n
+
+    if isinstance(source, Uniform):
+        if n > len(placements):
+            raise ValueError(f"asked for {n} rooms; only {len(placements)} admissible")
+        return [placements[i] for i in rng.choice(len(placements), size=n, replace=False)]
+
+    # Curated: distinct geometry, and far apart if asked.
+    order = rng.permutation(len(placements))
+    chosen: list[AnchorSet] = []
+    seen: set = set()
+    for i in order:
+        cand = placements[int(i)]
+        sig = separation_signature(cand)
+        if set_rules.distinct_signatures and sig in seen:
+            continue
+        if set_rules.min_configuration_distance is not None and any(
+            min(_chebyshev(a, b) for a, b in zip(cand, other))
+            < set_rules.min_configuration_distance
+            for other in chosen
+        ):
+            continue
+        chosen.append(cand)
+        seen.add(sig)
+        if len(chosen) == n:
+            return chosen
+    raise ValueError(
+        f"only {len(chosen)} of {n} rooms satisfy {set_rules}; "
+        f"{len(placements)} placements were admissible"
+    )
+
+
+def dress(
+    placements: list[AnchorSet], content: EnvContent, *,
+    set_rules: RoomSetRules, seed: int,
+) -> list[Layout]:
+    """BETWEEN-room stage: attach kind and colour to each placement.
+
+    Anything not in `set_rules.varies` is assigned ONCE and reused, which is
+    what holds identity constant across the set.
+    """
+    rng = np.random.default_rng(seed)
+    n_lm = content.n_landmarks
+    fixed_colors = tuple(content.palette[:n_lm])
+    fixed_kinds = content.stencils
+
+    out = []
+    for anchors in placements:
+        colors = (
+            tuple(content.palette[i] for i in rng.choice(len(content.palette), n_lm, replace=False))
+            if Vary.COLOR in set_rules.varies else fixed_colors
+        )
+        kinds = (
+            tuple(fixed_kinds[i] for i in rng.permutation(n_lm))
+            if Vary.KIND in set_rules.varies else fixed_kinds
+        )
+        out.append(_layout_of(anchors, content, colors=colors, stencils=kinds))
+    return out
+
+
+def resolve_rooms(
+    *, shape: EnvShape, content: EnvContent, source: RoomSource,
+    room_rules: RoomRules = RoomRules(),
+    set_rules: RoomSetRules = RoomSetRules(),
+    indices: tuple[int, ...] | None = None,
+) -> list[Layout] | None:
+    """The one interpreter: a spec in, the rooms a run trains on out.
+
+    None means "the environment's own landmarks" - the plain env id, no
+    `landmarks=` argument - which is what nearly every checkpoint here used.
+    """
+    if isinstance(source, EnvDefault):
+        return None
+    if isinstance(source, Committed):
+        rooms = list(source.rooms)
+    else:
+        placements = admissible_placements(shape, content, room_rules)
+        seed = source.seed
+        rooms = dress(
+            select_rooms(placements, source, set_rules=set_rules),
+            content, set_rules=set_rules, seed=seed,
+        )
+    if indices is None:
+        return rooms
+    if any(i >= len(rooms) for i in indices):
+        raise ValueError(f"indices {indices} out of range for {len(rooms)} rooms")
+    return [rooms[i] for i in indices]
