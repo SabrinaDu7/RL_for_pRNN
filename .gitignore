@@ -57,7 +57,6 @@ tests/perf/results/*.prof
 # cache saves half a second per distinct grid per process. It was 246 files with
 # only 2 tracked - a split that answers "which of these is canonical?" with
 # "nobody knows". Nothing is tracked now, and a fresh machine rebuilds.
-data/obs_bank/
 
 # macOS finder droppings
 .DS_Store
