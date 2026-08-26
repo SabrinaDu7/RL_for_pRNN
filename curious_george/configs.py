@@ -1,33 +1,18 @@
-"""The whole run, as one typed value.
+"""
+`tyro.cli` builds a `Config` from the command line.
+Frozen throughout, so the object handed to `provenance.write` is the object training ran on.
 
-`tyro.cli` builds a `Config` from the command line; nothing else reads a loose
-constant or a YAML file. Frozen throughout, so the object handed to
-`provenance.write` is the object training ran on.
+Philosophy: We separate content from process/transformation. For example, architecture
+(content) and training (process)are separate; training acts on architecture.
+Another example: environment (content) versus collecting episodes from the
+environment (process) are separate.
 
-WHERE DOES A FIELD GO? One question decides it:
+KEYWORDS: gradient steps, environment steps, and episodes as measurement
+units (instead of previous "rollouts" and "frames").
 
-    Does this describe the WORLD, or how we GATHER EXPERIENCE from it?
-
-An L-room is an L-room whether it is stepped serially, in async worker
-processes, or as a GPU-resident table - so the backend is collection, and lives
-in `CollectCfg`. Occlusion changes what there is to see, so it is the world, and
-lives in `EnvCfg`.
-
-THE VOCABULARY IS THREE WORDS: gradient steps, environment steps, episodes.
-"Update" and "frames" are gone. An "update" was one rollout - 256 episodes, 32
-pRNN gradient steps and 128 policy gradient steps at once - and naming that
-single thing "update" made it read as one gradient step. `rl.frames` was the
-environment steps in one rollout, written by hand in five places.
-
-WHAT IS DERIVED. `TrainPrnnCfg.total_grad_steps` and
-`TrainPolicyCfg.total_grad_steps` are the ground truth. Environment steps,
-episode counts and `ppo_batch_size` all follow from them.
-
-TRAINING SPEED. Fields marked (SPEED) change wall-clock without changing the
+TRAINING SPEED: Fields marked (SPEED) change wall-clock without changing the
 science. Fields marked (SPEED+SEMANTICS) change both - those need a learning
-curve to justify them, not a benchmark. The speed-bearing sections are
-`CollectCfg` (all of it), `TrainPrnnCfg` (the world model dominates a step),
-and `TrainPolicyCfg.cuda_graph`.
+curve to justify them, not a benchmark.
 """
 
 from __future__ import annotations
@@ -42,9 +27,7 @@ from prnn.utils import ActionEncodingsEnum, pRNNtypes
 from curious_george.utils.enums import AgentInputType, AgentType
 
 # ---------------------------------------------------------------------------
-# Enumerations. Reused where one already exists: AgentInputType and AgentType
-# from utils/enums.py, ActionEncodingsEnum and pRNNtypes from prnn.
-
+# Enums
 
 class MinigridEnv(str, enum.Enum):
     """Registered gymnasium ids. The registry in minigrid is the authority;
@@ -138,7 +121,21 @@ class SpatialEvalPath(str, enum.Enum):
 @dataclass(frozen=True)
 class SingleLayout:
     """One room. The control for every multi-room number: same environment
-    class, same landmarks, one room instead of several."""
+    class, same landmarks, one room instead of several - so a change in sRSA is
+    attributable to room COUNT rather than to scale or schedule.
+
+    WHICH room is a real choice, not a detail. The control is only a control if
+    it is representative of the set it stands against; index 0 was hardcoded
+    before this field existed, so a room that happened to be atypical would have
+    biased every multi-room comparison with nothing in the config to show it.
+    """
+
+    index: int = 0
+    """Position in the frozen set (`envs/layouts.py`)."""
+
+    def __post_init__(self) -> None:
+        if self.index < 0:
+            raise ValueError(f"index must be >= 0, got {self.index}")
 
 
 @dataclass(frozen=True)
@@ -155,11 +152,15 @@ class LayoutPool:
     seed: int = 20260813
 
 
-LayoutSpec = Union[SingleLayout, FrozenLayouts, LayoutPool]
+#: Which rooms a multi-room run trains on. A UNION, not a mode string plus two
+#: orphan fields: `size` and `seed` exist only under `LayoutPool`, so asking for
+#: a pool size on a frozen set is not expressible. The old config carried both
+#: on every env and raised AttributeError when `layouts` was not "pool".
+EnvLayoutSpec = Union[SingleLayout, FrozenLayouts, LayoutPool]
 
 
 # ---------------------------------------------------------------------------
-# The world.
+# pRNN
 
 
 @dataclass(frozen=True)
@@ -235,7 +236,7 @@ class MultiRoomEnvCfg(EnvCfg):
     from this pool at every episode boundary.
     """
 
-    layouts: LayoutSpec = field(default_factory=FrozenLayouts)
+    layouts: EnvLayoutSpec = field(default_factory=FrozenLayouts)
     eval_rooms_max: int = 4
     """Spatial evaluation scores this many rooms, as a fixed prefix so the
     series stays comparable across checkpoints. Measured 4.5-8.9 s per room, and
@@ -777,7 +778,7 @@ def _jsonable(value: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Presets: what `run=multienv` and `performance=ultra` were.
+# Preset configurations: what `run=multienv` and `performance=ultra` were.
 
 
 def _reference() -> Config:

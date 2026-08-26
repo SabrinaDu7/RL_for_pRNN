@@ -479,7 +479,12 @@ def resolve_layouts(cfg) -> list[Layout] | None:
         # landmark shapes and sizes, identical optimizer - one room instead of
         # several. Without it a change in sRSA cannot be attributed to the room
         # COUNT rather than to the scale or the schedule.
-        return [frozen[0]]
+        if spec.index >= len(frozen):
+            raise ValueError(
+                f"SingleLayout(index={spec.index}) but the frozen set has "
+                f"{len(frozen)} rooms"
+            )
+        return [frozen[spec.index]]
     if isinstance(spec, FrozenLayouts):
         return list(frozen)
     if isinstance(spec, LayoutPool):
