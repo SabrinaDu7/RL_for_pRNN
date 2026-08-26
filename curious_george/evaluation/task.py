@@ -86,7 +86,7 @@ def setup_task(
     collection via the unified algo)."""
     envs_train = env_train if isinstance(env_train, (list, tuple)) else [env_train]
     env_train = envs_train[0]
-    seed_everything(cfg.exp.seed)
+    seed_everything(cfg.run.seed)
 
     pN = get_pN(args=cfg, env=env_eval, device=device, pRNN_ckpt=prnn_ckpt)
     pN_control = None
@@ -96,9 +96,9 @@ def setup_task(
         pN_control.pRNN.eval()
     pN.pRNN.train()
 
-    pN.wandb_log = cfg.logging.wandb_log
+    pN.wandb_log = cfg.run.wandb
     if pN_control is not None:
-        pN_control.wandb_log = cfg.logging.wandb_log
+        pN_control.wandb_log = cfg.run.wandb
 
     obs_space, preprocess_obss = get_obss_preprocessor(env_train.observation_space)
     acmodel = get_SR_acmodel(
@@ -113,7 +113,7 @@ def setup_task(
     algo = setup_algo(cfg, list(envs_train), acmodel, pN, preprocess_obss, status, device=device)
     # NOTE: freezing the world model must NOT zero prnn_seqdur (episode cuts
     # still apply), so it is applied post-construction rather than via
-    # cfg.predNet.train.
+    # cfg.train_prnn.train.
     if freeze.world_model:
         algo.train_pN = False
         pN.pRNN.eval()

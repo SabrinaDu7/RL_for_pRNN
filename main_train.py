@@ -1,17 +1,21 @@
-"""Training entry point: hydra config -> setup -> loop.
+"""Training entry point: a typed config -> setup -> loop.
 
-Replaces trainRL_Adel.py (kept as a thin shim). All construction lives in
-curious_george/training/setup.py, the loop in training/loop.py, wandb
-logging in training/logging.py.
+    uv run python main_train.py reference
+    uv run python main_train.py multienv --run.seed 3
+    uv run python main_train.py ultra --train-prnn.total-grad-steps 1000
+
+`curious_george/configs.py` owns the schema and the presets; every default has
+exactly one home there. Construction lives in `training/setup.py`, the loop in
+`training/loop.py`, wandb logging in `training/logging.py`.
 """
 
+import json
 import warnings
 from dataclasses import replace
 
-import hydra
 import wandb
-from omegaconf import DictConfig, OmegaConf
 
+from curious_george import configs
 from curious_george.training.logging import init_wandb
 from curious_george.training.loop import run_training
 from curious_george.training.setup import setup_run, setup_training
@@ -19,13 +23,23 @@ from curious_george.training.setup import setup_run, setup_training
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-@hydra.main(config_path="Configs", config_name="main")
-def my_main(cfg: DictConfig):
-    my_app(cfg)
+def train(cfg: configs.Config) -> None:
+    """Run one training job from an already-built config.
 
+    ORDER MATTERS, and it is the reverse of what this used to do. Everything is
+    BUILT before anything is RECORDED, because a constructor may override what
+    was requested - PredictiveNet can round the hidden size - and a record of
+    the requested value is a record of a run that did not happen. The old order
+    wrote provenance and opened wandb first, then mutated the config, so every
+    provenance.json carried a width the run never used.
 
-def my_app(cfg: DictConfig):
-    print(OmegaConf.to_yaml(cfg))
+    Safe to do in this order: PredictiveNet's constructor stores `wandb_log`
+    and never logs, so nothing needs wandb to exist yet.
+    """
+    print(json.dumps(cfg.to_dict(), indent=2))
+
+    comps = setup_training(cfg)
+    cfg = comps.cfg  # the EFFECTIVE config: what was built, not what was asked
 
     run_ctx = setup_run(cfg)
     if run_ctx.wandb_log:
@@ -45,7 +59,6 @@ def my_app(cfg: DictConfig):
             )
             run_ctx = replace(run_ctx, wandb_log=False)
 
-    comps = setup_training(cfg)
     run_training(cfg, run_ctx, comps)
 
     if run_ctx.wandb_log:
@@ -53,4 +66,4 @@ def my_app(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-    my_main()
+    train(configs.cli())

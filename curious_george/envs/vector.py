@@ -63,21 +63,28 @@ class PosInfo(Wrapper):
 def _make_worker_thunk(cfg, seed_offset: int):
     """One worker env: factory.make_env minus the FaramaMinigridShell wrap,
     identical seeding (env.reset(seed=...) at construction)."""
-    env_key = str(cfg.exp.env_name)
-    input_type = str(cfg.exp.input_type)
-    seed = int(cfg.exp.seed) + 10000 + seed_offset
-    start_room = None if cfg.exp.start_rand else cfg.exp.start_room
+    from curious_george.configs import FourRoomsCfg
+
+    env_key = cfg.env.env_name.value
+    input_type = cfg.arch_policy.input_type.value
+    seed = cfg.run.seed + 10000 + seed_offset
     kwargs = dict(
         agent_start_pos=None,
         agent_start_dir=None,
         render_mode="rgb_array",
-        open_all_paths=False,
-        subroom_size=cfg.exp.env_subroom_size,
-        door_poss=cfg.exp.door_poss,
-        agent_start_room=start_room,
     )
+    if isinstance(cfg.env, FourRoomsCfg):
+        # Kept in step with factory.setup_env: only FourRooms reads these, and
+        # MiniGridEnv silently discards them for every other environment.
+        kwargs |= dict(
+            open_all_paths=False,
+            subroom_size=cfg.env.subroom_size,
+            door_poss=list(cfg.env.door_poss),
+            agent_start_room=cfg.env.start_room,
+        )
 
-    see_through = cfg.exp.get("see_through_walls", None)
+    see_through = cfg.env.see_through_walls
+    tabled = cfg.collect.backend.tabled
 
     def thunk():
         env = gym.make(env_key, **kwargs)
@@ -95,7 +102,7 @@ def _make_worker_thunk(cfg, seed_offset: int):
 
             wrapper_cls = (
                 TableDrivenRGBPartialObsWrapper
-                if cfg.exp.get("table_env", False)
+                if tabled
                 else BankedRGBPartialObsWrapper
             )
             env = wrapper_cls(env, tile_size=1)
@@ -119,7 +126,7 @@ class AsyncShellPool:
     """
 
     def __init__(self, cfg, eval_shell):
-        self.B = int(cfg.exp.num_envs)
+        self.B = cfg.collect.num_envs
         self.eval_shell = eval_shell
         self.envs = gym.vector.AsyncVectorEnv(
             [_make_worker_thunk(cfg, seed_offset=1000 * i) for i in range(self.B)],

@@ -27,6 +27,19 @@ captured after the change proves nothing.
     uv run python tests/golden/capture_golden_setup.py            # GATE: compare
     uv run python tests/golden/capture_golden_setup.py --recapture
 
+RE-PINNED ONCE, on 2026-08-26, for exactly two leaves:
+
+    multienv.kwargs.wm_pool_group: 0 -> 8
+    ultra.kwargs.wm_pool_group:    0 -> 128
+
+and nothing else - all 33 constructor kwargs, both weight hashes and the whole
+derived schedule were identical in all three compositions. Those two are a
+SPELLING change, not a semantic one: `prnn_adapter.py` resolves the group with
+`g = int(group) if group and group > 0 else obs_b.size(0)`, so the old 0
+sentinel meant "the whole batch" and the new value IS the whole batch. The
+migration stopped emitting a sentinel whose meaning depended on the rollout
+size.
+
 `wandb_log=False` is forced on every composition: it reaches
 `PredictiveNet(wandb_log=...)` and would otherwise open a network connection
 during a test. It is identical on both sides of the migration, so it cancels.
@@ -44,13 +57,14 @@ OUT = REPO / "tests" / "golden" / "golden_setup_v1.pt"
 #: `episodes_total` is pinned small everywhere: it changes the derived budget
 #: (which IS captured) but not a single constructed object, so it keeps the
 #: fixture cheap without weakening it.
-COMPOSITIONS: dict[str, list[str]] = {
-    "default": [],
-    "multienv": ["env=lroom_multi", "run=multienv"],
-    "ultra": ["performance=ultra"],
+#: fixture key -> preset name. The keys are the ones the pre-migration fixture
+#: was captured under, so the comparison still lines up; `default` was the bare
+#: composition, which is now the `reference` preset.
+COMPOSITIONS: dict[str, str] = {
+    "default": "reference",
+    "multienv": "multienv",
+    "ultra": "ultra",
 }
-
-COMMON = ["logging.wandb_log=False"]
 
 
 def _hash_state_dict(module) -> str:
@@ -92,13 +106,6 @@ def _scalar(value):
         return value.value if isinstance(value, __import__("enum").Enum) else value
     if isinstance(value, (list, tuple)):
         return [_scalar(v) for v in value]
-    try:
-        from omegaconf import ListConfig
-
-        if isinstance(value, ListConfig):
-            return [_scalar(v) for v in value]
-    except ImportError:
-        pass
     if callable(value):
         return f"<callable {getattr(value, '__qualname__', type(value).__name__)}>"
     return f"<{type(value).__name__}>"
@@ -106,8 +113,9 @@ def _scalar(value):
 
 def build_fixture() -> dict:
     """Compose each configuration, run `setup_training`, record what it built."""
-    from hydra import compose, initialize_config_dir
+    from dataclasses import replace
 
+    from curious_george.configs import PRESETS
     from curious_george.rl.algo import PredictivePPOAlgo
     from curious_george.training.schedule import TrainingSchedule
     from curious_george.training.setup import setup_training
@@ -123,11 +131,11 @@ def build_fixture() -> dict:
 
     fixture: dict = {"meta": {"torch": torch.__version__}}
 
-    # `initialize_config_dir` is NOT reentrant (see checkpoint_series.py), so
-    # each composition gets its own context manager.
-    for name, overrides in COMPOSITIONS.items():
-        with initialize_config_dir(config_dir=str(REPO / "Configs"), version_base=None):
-            cfg = compose(config_name="main", overrides=overrides + COMMON)
+    for name, preset in COMPOSITIONS.items():
+        base = PRESETS[preset][1]
+        # wandb off: it reaches PredictiveNet(wandb_log=...) and would otherwise
+        # open a network connection. Identical on both sides, so it cancels.
+        cfg = replace(base, run=replace(base.run, wandb=False))
 
         PredictivePPOAlgo.__init__ = recording_init
         try:
@@ -135,6 +143,7 @@ def build_fixture() -> dict:
         finally:
             PredictivePPOAlgo.__init__ = original_init
 
+        cfg = comps.cfg  # the EFFECTIVE config
         schedule = TrainingSchedule.from_config(cfg)
         fixture[name] = {
             "kwargs": captured["kwargs"],
@@ -143,11 +152,11 @@ def build_fixture() -> dict:
                 "acmodel": _hash_state_dict(comps.acmodel),
             },
             "schedule": {
-                "total_env_steps": schedule.total_steps,
-                "total_rollouts": schedule.total_updates,
-                "prnn_grad_steps": schedule.total_world_model_steps,
+                "total_env_steps": schedule.total_env_steps,
+                "total_rollouts": schedule.total_rollouts,
+                "prnn_grad_steps": schedule.total_prnn_steps,
                 "policy_grad_steps": schedule.total_policy_steps,
-                "env_steps_per_prnn_step": schedule.env_steps_per_world_model_step,
+                "env_steps_per_prnn_step": schedule.env_steps_per_prnn_step,
                 "env_steps_per_policy_step": schedule.env_steps_per_policy_step,
             },
             "pastSR": comps.pastSR,

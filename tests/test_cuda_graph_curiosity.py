@@ -233,29 +233,13 @@ def test_flag_reaches_the_device_curiosity_path():
     """End-to-end wiring: `predNet.curiosity_cuda_graph` in the config must
     reach `prediction_mses_device`, the path a device_env run actually takes.
     The unit gates above prove the graph is correct; this proves it is used."""
-    from pathlib import Path
-
-    from hydra import compose, initialize_config_dir
+    from dataclasses import replace
 
     from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
 
-    repo = Path(__file__).resolve().parents[1]
-    with initialize_config_dir(config_dir=str(repo / "Configs"), version_base=None):
-        cfg = compose(
-            config_name="main",
-            overrides=[
-                "logging.wandb_log=false",
-                "exp.num_envs=4",
-                "exp.table_env=true",
-                "exp.device_env=true",
-                "rl.frames=128",
-                "rl.reward_alignment=next_obs",
-                "predNet.seqdur=16",
-                "predNet.hiddensize=64",
-                "predNet.batched_curiosity=true",
-                "predNet.curiosity_cuda_graph=true",
-            ],
-        )
+    cfg = small_config()
+    cfg = replace(cfg, train_prnn=replace(cfg.train_prnn, curiosity_cuda_graph=True))
     algo = setup_training(cfg).algo
     try:
         assert algo.adapter._graph_curiosity is None, "captured before any rollout"

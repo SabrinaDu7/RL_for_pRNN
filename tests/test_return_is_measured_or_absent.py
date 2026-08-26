@@ -11,7 +11,6 @@ exists and is exercised by tests/test_table_env.py.
 The rule these gate: absent, not zero.
 """
 
-from pathlib import Path
 
 import pytest
 
@@ -23,12 +22,9 @@ SMALL = [
 
 
 def _logs(overrides):
-    from hydra import compose, initialize_config_dir
-
     from curious_george.training.setup import setup_training
 
-    with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
-        cfg = compose(config_name="main", overrides=SMALL + overrides)
+    cfg = overrides
     comps = setup_training(cfg)
     _, logs = comps.algo.collect_experiences()
     return cfg, logs
@@ -36,18 +32,19 @@ def _logs(overrides):
 
 @pytest.fixture(scope="module")
 def device_logs():
-    return _logs([
-        "env=lroom", "run=multienv", "exp.device_env=True",
-        "exp.num_envs=4", "rl.frames=128", "rl.ppo_batch_size=32",
-    ])
+    from curious_george.configs import EnvBackend
+    from tests.small_config import small_config
+
+    return _logs(small_config(num_envs=4, backend=EnvBackend.DEVICE, ppo_batch_size=32))
 
 
 @pytest.fixture(scope="module")
 def cpu_logs():
-    return _logs([
-        "env=lroom", "exp.device_env=False", "exp.num_envs=1",
-        "rl.frames=64", "rl.ppo_batch_size=16",
-    ])
+    from curious_george.configs import EnvBackend
+    from tests.small_config import small_config
+
+    return _logs(small_config(num_envs=1, episodes_per_env=4,
+                              backend=EnvBackend.SERIAL, ppo_batch_size=16))
 
 
 @pytest.mark.parametrize("key", ["return_per_episode", "reshaped_return_per_episode"])
@@ -77,23 +74,24 @@ def test_the_counts_that_are_real_stay(device_logs, key):
 
 
 def test_early_stop_refuses_rather_than_never_firing(tmp_path, monkeypatch):
-    """`logging.early_stop` reads extrinsic return. With the fabricated zero it
-    compared `0.0 > 0.9` every update and silently never fired; now it says so."""
-    from hydra import compose, initialize_config_dir
+    """`early_stop` reads extrinsic return. With the fabricated zero it compared
+    `0.0 > 0.9` every update and silently never fired; then it raised mid-run.
 
-    from curious_george.training.loop import run_training
-    from curious_george.training.setup import setup_run, setup_training
+    Now it cannot be BUILT: the refusal moved from `run_training` into
+    `Config.__post_init__`, so a run that could never stop early fails at parse
+    time instead of after the allocation is already spent. That is the whole
+    point of typing the config - job 10444304 and its kin died minutes in on
+    contradictions that were knowable at t=0.
+    """
+    from curious_george.configs import EnvBackend
+    from tests.small_config import small_config
 
     monkeypatch.setenv("RL_STORAGE", str(tmp_path))
-    with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
-        cfg = compose(config_name="main", overrides=SMALL + [
-            "env=lroom", "run=multienv", "exp.device_env=True",
-            "exp.num_envs=4", "rl.frames=128", "rl.ppo_batch_size=32",
-            "rl.episodes_total=4", "logging.early_stop=True",
-            "logging.analysis_every_steps=0", "logging.plot_every_steps=0",
-            "logging.save_every_steps=0", "logging.archive_every_steps=0",
-        ])
-    assert cfg.logging.early_stop, "override did not take; the test proves nothing"
 
-    with pytest.raises(ValueError, match="exp.device_env does not measure"):
-        run_training(cfg, setup_run(cfg), setup_training(cfg))
+    with pytest.raises(ValueError, match="early_stop needs extrinsic return"):
+        small_config(num_envs=4, backend=EnvBackend.DEVICE, early_stop=True)
+
+    # ...and it is allowed on a backend that CAN measure it.
+    ok = small_config(num_envs=1, episodes_per_env=4,
+                      backend=EnvBackend.SERIAL, early_stop=True)
+    assert ok.run.early_stop

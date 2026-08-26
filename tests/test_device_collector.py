@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
-from hydra import compose, initialize_config_dir
 import numpy as np
 import pytest
 import torch
 
+from dataclasses import replace
+
+from curious_george.configs import EnvBackend, RewardAlignment
 from curious_george.training.setup import setup_training
+from tests.small_config import small_config
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -31,32 +34,15 @@ def _set_rng_state(device, state):
         torch.mps.set_rng_state(accelerator)
 
 
-def _config(
-    device_env: bool,
-    reward_alignment: str = "next_obs",
-    extra_overrides: tuple[str, ...] = (),
-):
-    with initialize_config_dir(
-        config_dir=str(REPO / "Configs"), version_base=None
-    ):
-        return compose(
-            config_name="main",
-            overrides=[
-                "logging.wandb_log=false",
-                "exp.num_envs=4",
-                "exp.async_envs=false",
-                "exp.table_env=true",
-                f"exp.device_env={str(device_env).lower()}",
-                "rl.frames=128",
-                "predNet.seqdur=16",
-                "predNet.hiddensize=64",
-                "predNet.noisestd=0",
-                "predNet.dropout=0",
-                "predNet.batched_curiosity=true",
-                f"rl.reward_alignment={reward_alignment}",
-                *extra_overrides,
-            ],
-        )
+def _config(device_env: bool, reward_alignment=RewardAlignment.NEXT_OBS, **kwargs):
+    """The same small run on either stepping backend - the comparison this
+    module exists to make. `rl.frames=128` with `seqdur=16` used to spell
+    "8 episodes per rollout"; small_config says it directly."""
+    return small_config(
+        backend=EnvBackend.DEVICE if device_env else EnvBackend.SERIAL_TABLE,
+        reward_alignment=reward_alignment,
+        **kwargs,
+    )
 
 
 def _assert_rollouts_equal(
@@ -99,7 +85,7 @@ def _assert_rollouts_equal(
         assert np.array_equal(expected_logs[field], actual_logs[field]), field
 
 
-@pytest.mark.parametrize("reward_alignment", ["legacy", "next_obs"])
+@pytest.mark.parametrize("reward_alignment", list(RewardAlignment), ids=lambda a: a.value)
 def test_device_collector_is_exactly_equal_to_cpu_table_collector(
     reward_alignment: str,
 ):
@@ -142,17 +128,17 @@ def test_device_collector_is_exactly_equal_to_cpu_table_collector(
             shell.env.close()
 
 
-@pytest.mark.parametrize(
-    "extra_overrides",
-    (
-        ("exp.with_obs=true",),
-        ("exp.pRNN=false",),
-    ),
-)
-def test_device_collector_supports_policy_observation_variants(extra_overrides):
-    algo = setup_training(
-        _config(device_env=True, extra_overrides=extra_overrides)
-    ).algo
+def test_device_collector_supports_policy_observation_variants():
+    """The device collector must serve a policy that also reads the image.
+
+    Was parametrized over TWO variants; the second was `exp.pRNN=false`, which
+    selected the plain actor-critic on raw observations. That model is retired
+    along with its config, so the boolean that chose between them
+    has nothing left to choose and the variant is gone with it.
+    """
+    cfg = _config(device_env=True)
+    cfg = replace(cfg, arch_policy=replace(cfg.arch_policy, with_obs=True))
+    algo = setup_training(cfg).algo
     try:
         experiences, _ = algo.collect_experiences()
         assert len(experiences.action) == 128
@@ -181,12 +167,9 @@ def test_random_init_control_does_not_update_either_model():
 
 
 def test_optimizer_betas_are_configurable():
-    algo = setup_training(
-        _config(
-            device_env=True,
-            extra_overrides=("rl.optim_betas=[0.8,0.97]",),
-        )
-    ).algo
+    cfg = _config(device_env=True)
+    cfg = replace(cfg, train_policy=replace(cfg.train_policy, optim_betas=(0.8, 0.97)))
+    algo = setup_training(cfg).algo
     try:
         assert algo.optimizer.param_groups[0]["betas"] == (0.8, 0.97)
     finally:

@@ -10,8 +10,6 @@ but silently dropped before).
 from dataclasses import dataclass
 
 import wandb
-from omegaconf import OmegaConf
-
 from curious_george.utils.common import synthesize
 
 
@@ -33,14 +31,14 @@ class UpdateStats:
 
 def init_wandb(cfg, run_ctx):
     return wandb.init(
-        entity=cfg.logging.wandb_entity,
-        project=cfg.logging.wandb_project,
-        group=cfg.exp.exp_name,
+        entity=cfg.run.wandb_entity,
+        project=cfg.run.wandb_project,
+        group=cfg.run.exp_name,
         name=run_ctx.run_name,
         id=run_ctx.run_name,
         dir=run_ctx.model_dir,
         resume="allow",
-        config=OmegaConf.to_container(cfg, resolve=True),  # type: ignore
+        config=cfg.to_dict(),
     )
 
 

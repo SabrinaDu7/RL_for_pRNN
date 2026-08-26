@@ -17,7 +17,6 @@ recompute it from every `LossTerms` the update produced, so they hold for any
 config, any device, and any future change to the loss itself.
 """
 
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -32,23 +31,17 @@ EPOCHS = 4
 
 @pytest.fixture(scope="module")
 def algo_and_exps():
-    from hydra import compose, initialize_config_dir
-
     from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
 
     torch.manual_seed(SEED)
     np.random.seed(SEED)
-    with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
-        cfg = compose(
-            config_name="main",
-            overrides=[
-                "env=lroom", "run=multienv", "exp.device_env=True",
-                "predNet.batched_wm=True", "predNet.wm_pool_group=8",
-                "exp.num_envs=8", "rl.frames=2048", "rl.ppo_batch_size=256",
-                f"rl.ppo_epochs={EPOCHS}", "rl.entropy_coef=0",
-                "logging.wandb_log=false", f"exp.seed={SEED}",
-            ],
-        )
+    cfg = small_config(
+        num_envs=8, episodes_per_env=1, episode_steps=256, hidden_size=500,
+        noise_std=0.05, dropout=0.15,
+        batched=True, episodes_per_grad_step=8,
+        ppo_batch_size=256, ppo_epochs=EPOCHS, seed=SEED,
+    )
     comps = setup_training(cfg)
     exps, _ = comps.algo.collect_experiences()
     for key in ("done_indices", "last_observations"):

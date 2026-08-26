@@ -73,17 +73,34 @@ def checkpoint_hiddensize(ckpt: Path) -> int:
 def run_config(*, env_cfg: str, layouts: str | None, hiddensize: int):
     """The launched run's config - the single source of room and layout set.
 
-    Composed once: hydra's `initialize_config_dir` is not reentrant, and a
-    per-checkpoint compose would also make the layout set a function of when it
-    was asked for rather than of the config.
+    Built once, so the layout set is a function of the config rather than of
+    when it was asked for.
     """
-    from hydra import compose, initialize_config_dir
+    from dataclasses import replace
 
-    overrides = [f"env={env_cfg}"] + ([f"exp.layouts={layouts}"] if layouts else [])
-    with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
-        cfg = compose(config_name="main", overrides=overrides)
-    cfg.predNet.hiddensize = hiddensize
-    return cfg
+    from curious_george.configs import (
+        Config,
+        EnvBackend,
+        EvalCfg,
+        EvalKind,
+        FrozenLayouts,
+        LayoutPool,
+        LRoomMultiCfg,
+        SingleLayout,
+        SquareRoomMultiCfg,
+    )
+
+    spec = {
+        None: FrozenLayouts(), "rooms": FrozenLayouts(),
+        "one": SingleLayout(), "pool": LayoutPool(),
+    }[layouts]
+    env_cls = {"lroom_multi": LRoomMultiCfg, "squareroom_multi": SquareRoomMultiCfg}[env_cfg]
+    base = Config(
+        env=env_cls(layouts=spec),
+        collect=replace(Config().collect, backend=EnvBackend.DEVICE),
+        eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM})),
+    )
+    return replace(base, arch_prnn=replace(base.arch_prnn, hidden_size=hiddensize))
 
 
 def build(*, cfg, landmarks, ckpt: str):
@@ -92,7 +109,7 @@ def build(*, cfg, landmarks, ckpt: str):
     from curious_george import get_pN, make_env
 
     env = make_env(
-        env_key=cfg.exp.env_name, input_type=AgentInputType.H_PO.value,
+        env_key=cfg.env.env_name.value, input_type=AgentInputType.H_PO.value,
         act_enc=ActionEncodingsEnum.SpeedHD.value, seed=0, landmarks=list(landmarks),
     )
     pN = get_pN(args=cfg, env=env, device="cpu", pRNN_ckpt=ckpt)
@@ -151,7 +168,7 @@ def main() -> None:
     ap.add_argument("--spatial", action="store_true", help="also compute sRSA/SWdist (slower)")
     a = ap.parse_args()
 
-    from curious_george.envs.layouts import BASE_ROOM_ID, resolve_layouts
+    from curious_george.envs.layouts import resolve_layouts
 
     run_dir = Path(a.run)
     points = archived(run_dir)
@@ -162,14 +179,14 @@ def main() -> None:
                      hiddensize=checkpoint_hiddensize(points[0][1]))
     layouts = resolve_layouts(cfg)
     if not layouts:
-        raise SystemExit(f"env={a.env} resolves to no layouts (exp.layouts={cfg.exp.get('layouts')})")
+        raise SystemExit(f"env={a.env} resolves to no layouts (layouts={cfg.env.layouts!r})")
     # A fixed PREFIX, matching what the training loop scores, so this series and
     # the wandb one are the same measurement.
-    n_scored = a.rooms_scored or int(cfg.exp.get("eval_rooms_max", 8))
+    n_scored = a.rooms_scored or cfg.env.eval_rooms_max
     rooms = layouts[:n_scored]
-    print(f"{len(points)} checkpoints in {cfg.exp.env_name} "
-          f"(base room {cfg.exp.get('room_id', BASE_ROOM_ID)}), "
-          f"exp.layouts={cfg.exp.layouts}: {len(rooms)}/{len(layouts)} rooms scored, "
+    print(f"{len(points)} checkpoints in {cfg.env.env_name.value} "
+          f"(base room {cfg.env.base_room.value}), "
+          f"layouts={cfg.env.layouts!r}: {len(rooms)}/{len(layouts)} rooms scored, "
           f"{a.n_trajs} probe trajectories x {a.steps} steps")
     for r in rooms:
         print(f"    {r.key}  {r.describe()}")
@@ -220,9 +237,10 @@ def main() -> None:
     # and between 3 rooms and a 500-room pool - which is exactly the confusion a
     # figure built from this file would inherit.
     out.write_text(json.dumps({
-        "meta": {"run": run_dir.name, "env_config": a.env, "env_name": cfg.exp.env_name,
-                 "room_id": cfg.exp.get("room_id", BASE_ROOM_ID),
-                 "layouts": str(cfg.exp.layouts), "n_layouts": len(layouts),
+        "meta": {"run": run_dir.name, "env_config": a.env,
+                 "env_name": cfg.env.env_name.value,
+                 "room_id": cfg.env.base_room.value,
+                 "layouts": repr(cfg.env.layouts), "n_layouts": len(layouts),
                  "n_rooms_scored": len(rooms), "room_keys": [r.key for r in rooms],
                  "n_trajs": a.n_trajs, "steps": a.steps},
         "rows": rows}, indent=2, default=float))

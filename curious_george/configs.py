@@ -94,6 +94,17 @@ class CompileMode(str, enum.Enum):
     CELL = "cell"  # fuse the LayerNorm chain inside one step
     LAYER = "layer"  # compile the whole recurrence over an episode
 
+    @property
+    def adapter_arg(self) -> "bool | str":
+        """What `PRNNAdapter` expects, which is a `bool | str` and not an enum.
+
+        It tests `if compile_cell:` (models/prnn_adapter.py), so the STRING
+        "off" is TRUTHY there and would silently enable compilation for a config
+        that says off - caught by a stray inductor warning in a smoke run. OFF
+        must cross that boundary as False.
+        """
+        return False if self is CompileMode.OFF else self.value
+
 
 class RewardAlignment(str, enum.Enum):
     """Which observation the curiosity reward credits an action with."""
@@ -676,6 +687,15 @@ class Config:
     @property
     def ppo_batch_size(self) -> int:
         return self.train_policy.ppo_batch_size(self.total_env_steps)
+
+    @property
+    def schedule(self):
+        """Every derived count, as the shared dataclass. A property, not a
+        field: a field can drift out of sync with what it was derived from,
+        and `to_dict()` must stay a record of what was ASKED for."""
+        from curious_george.training.schedule import TrainingSchedule
+
+        return TrainingSchedule.from_config(self)
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-safe, for provenance.json and the wandb config record.

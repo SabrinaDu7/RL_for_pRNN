@@ -104,19 +104,19 @@ def test_input_artifact_marks_a_broken_chain(tmp_path):
 def test_setup_run_writes_provenance(tmp_path, monkeypatch):
     """The gate the whole phase exists for: the training entry point cannot
     produce a run directory without one."""
-    from hydra import compose, initialize_config_dir
-    from pathlib import Path
-
     from curious_george.training.setup import setup_run
+    from tests.small_config import small_config
 
     monkeypatch.setenv("RL_STORAGE", str(tmp_path))
-    with initialize_config_dir(config_dir=str(Path("Configs").resolve()), version_base=None):
-        cfg = compose(config_name="main", overrides=["logging.wandb_log=false"])
+    cfg = small_config()
 
     run_ctx = setup_run(cfg)
     record = provenance.read(run_ctx.model_dir)
     assert record["kind"] == "training"
     assert record["params"]["run_name"] == run_ctx.run_name
     # the resolved config, not a config still carrying ${...}
-    assert record["params"]["config"]["exp"]["seed"] == cfg.exp.seed
+    assert record["params"]["config"]["run"]["seed"] == cfg.run.seed
     assert "${" not in json.dumps(record["params"]["config"])
+    # The RESOLVED budget beside the config that asked for it. Absent before the
+    # dataclass migration, so a run's step axis had to be re-derived by hand.
+    assert record["params"]["schedule"]["total_env_steps"] == cfg.total_env_steps

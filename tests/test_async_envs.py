@@ -4,11 +4,12 @@ same construction seeds + same reset chain + deterministic env stepping.
 
 import numpy as np
 import pytest
-from hydra import compose, initialize_config_dir
 from pathlib import Path
 
 from curious_george.envs.vector import AsyncShellPool
+from curious_george.configs import EnvBackend
 from curious_george.training.setup import setup_envs
+from tests.small_config import small_config, with_backend
 
 REPO = Path(__file__).resolve().parents[1]
 B = 4
@@ -17,21 +18,16 @@ T = 30
 
 @pytest.fixture(scope="module")
 def cfg():
-    with initialize_config_dir(config_dir=str(REPO / "Configs"), version_base=None):
-        return compose(
-            config_name="main",
-            overrides=[
-                f"exp.num_envs={B}",
-                "exp.async_envs=true",  # the pool is opt-in; this tests it
-                "logging.wandb_log=false",
-            ],
-        )
+    # ASYNC is opt-in and this is what tests it. Rendered observations, not
+    # tabled ones, because the worker path builds its own wrappers.
+    return small_config(num_envs=B, backend=EnvBackend.ASYNC, episode_steps=256,
+                        episodes_per_env=1)
 
 
 def _serial_envs(cfg):
-    cfg2 = cfg.copy()
-    cfg2.exp.async_envs = False
-    return setup_envs(cfg2)
+    """The same config stepped in-process. One field, because the backend is
+    ONE axis now - it used to be a copy-and-mutate of a struct-mode config."""
+    return setup_envs(with_backend(cfg, EnvBackend.SERIAL))
 
 
 def test_pool_matches_serial_transitions(cfg):

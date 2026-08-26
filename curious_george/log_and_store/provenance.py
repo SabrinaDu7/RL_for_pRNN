@@ -197,21 +197,6 @@ def write(
     return path
 
 
-def resolved_config(cfg: Any) -> dict[str, Any]:
-    """A hydra/OmegaConf config as plain data, with interpolations resolved.
-
-    A config that still contains `${...}` is not a record of what ran. Falls
-    back to a string rather than losing the whole record to one odd value -
-    provenance must never break the run it describes.
-    """
-    try:
-        from omegaconf import OmegaConf
-
-        return OmegaConf.to_container(cfg, resolve=True)  # type: ignore[return-value]
-    except Exception:  # noqa: BLE001
-        return {"unresolved": str(cfg)}
-
-
 def input_artifact(path: str | Path) -> dict[str, Any]:
     """Describe one input artifact for the `params` of the thing it feeds.
 

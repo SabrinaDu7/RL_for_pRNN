@@ -1,13 +1,11 @@
 import torch
 import pytest
 import numpy
-from dataclasses import dataclass
 
 from prnn.utils import (
     PredictiveNet,
     ActionEncodingsEnum,
     MinigridEnvNames,
-    pRNNtypes,
     RandomActionAgent,
 )
 from prnn.utils.Shell import FaramaMinigridShell
@@ -30,59 +28,35 @@ def _check_same_device(model: torch.nn.Module, device: torch.device):
     param = next(model.parameters())
     assert param.device.type == device_type, f"Parameter on device {param.device.type}, expected {device.type}"
 
-def _get_pRNN(prnn_ckpt:str, device: torch.device, env: FaramaMinigridShell | None = None) -> PredictiveNet:
-    @dataclass
-    class PredNetArgs:
-        hiddensize: int = 500
-        pRNNtype: str = pRNNtypes.masked.value
-        lr: float = 3e-3
-        bptttrunc: float = 1e8
-        weight_decay: float = 3e-3
-        ntimescale: int = 2
-        dropout: float = 0.15
-        noisemean: float = 0
-        noisestd: float = 0.05
-        sparsity: float = 0.5
+def _ckpt_config():
+    """The REAL config sections, not a look-alike namespace.
 
-    @dataclass
-    class LoggingArgs:
-        wandb_log: bool = False
+    `get_pN` and `get_SR_acmodel` read `arch_prnn`, `train_prnn`, `arch_policy`
+    and `run`. Two hand-rolled dataclasses used to mirror those field names,
+    which meant a rename in configs.py could not fail here - it would just
+    silently keep reading the stale copy. Using the real thing removes the
+    second spelling.
 
-    @dataclass
-    class Args:
-        predNet: PredNetArgs = PredNetArgs()
-        logging: LoggingArgs = LoggingArgs()
-    
+    The .env checkpoints are from the noObs config, hence with_obs=False.
+    """
+    from tests.small_config import small_config
+
+    return small_config(hidden_size=500, noise_std=0.05, dropout=0.15)
+
+
+def _get_pRNN(prnn_ckpt: str, device: torch.device, env: FaramaMinigridShell | None = None) -> PredictiveNet:
     if env is None:
-        env = make_env(env_key=MinigridEnvNames.LRoom, agent_start_pos=None, input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
-    
-    args = Args()
-    predictive_net = get_pN(args=args, env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
-    return predictive_net
+        env = make_env(env_key=MinigridEnvNames.LRoom, agent_start_pos=None,
+                       input_type=AgentInputType.H_PO, act_enc=ActionEncodingsEnum.SpeedHD)
+    return get_pN(args=_ckpt_config(), env=env, device=DEVICE, pRNN_ckpt=prnn_ckpt)
 
 
 def _get_acmodel(acmodel_status_ckpt: str, env: FaramaMinigridShell, predNet: PredictiveNet, device: torch.device) -> ACModelSR:
     obs_space, _ = get_obss_preprocessor(env.observation_space)
-
-    @dataclass
-    class PredNetArgs:
-        hiddensize: int = 500
-        pRNNtype: str = pRNNtypes.masked.value
-
-    @dataclass
-    class ExperimentArgs:
-        with_obs: bool = False  # .env checkpoints are from the noObs config (matches Conf1_Adel exp.with_obs)
-        rgb: bool = True
-        with_HD: bool = True
-
-    @dataclass
-    class Args:
-        predNet: PredNetArgs = PredNetArgs()
-        exp: ExperimentArgs = ExperimentArgs()
-    
-    args = Args()
-    acmodel = get_SR_acmodel(args=args, env_act_space=env.action_space, obs_space=obs_space, acmodel_status_ckpt=acmodel_status_ckpt, device=device)
-    return acmodel
+    return get_SR_acmodel(
+        args=_ckpt_config(), env_act_space=env.action_space, obs_space=obs_space,
+        acmodel_status_ckpt=acmodel_status_ckpt, device=device,
+    )
 
 
 @pytest.mark.parametrize("prnn_ckpt,ac_status_ckpt", CHECKPOINT_PAIRS)

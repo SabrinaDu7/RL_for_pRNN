@@ -85,21 +85,21 @@ def get_pN(
 ) -> PredictiveNet:
     predictiveNet = PredictiveNet(
         env,
-        hidden_size=args.predNet.hiddensize,
-        pRNNtype=args.predNet.pRNNtype,
-        learningRate=args.predNet.lr,
-        bptttrunc=args.predNet.bptttrunc,
-        weight_decay=args.predNet.weight_decay,
-        neuralTimescale=args.predNet.ntimescale,
-        dropp=args.predNet.dropout,
-        trainNoiseMeanStd=(args.predNet.noisemean, args.predNet.noisestd),
-        f=args.predNet.sparsity,
-        wandb_log=args.logging.wandb_log,
+        hidden_size=args.arch_prnn.hidden_size,
+        pRNNtype=args.arch_prnn.prnn_type.value,
+        learningRate=args.train_prnn.lr,
+        bptttrunc=args.train_prnn.bptt_trunc,
+        weight_decay=args.train_prnn.weight_decay,
+        neuralTimescale=args.arch_prnn.n_timescale,
+        dropp=args.arch_prnn.dropout,
+        trainNoiseMeanStd=(args.arch_prnn.noise_mean, args.arch_prnn.noise_std),
+        f=args.arch_prnn.sparsity,
+        wandb_log=args.run.wandb,
     )
     load_pN(
         model_ckpt_filepath=pRNN_ckpt,
         device=device,
-        pRNNtype=args.predNet.pRNNtype,
+        pRNNtype=args.arch_prnn.prnn_type.value,
         predictive_net=predictiveNet,
     )
     return predictiveNet
@@ -119,10 +119,10 @@ def get_SR_acmodel(
     acmodel = ACModelSR(
         obs_space=obs_space,
         action_space=env_act_space,
-        SR_size=args.predNet.hiddensize,
-        with_CV=args.exp.with_obs,
-        rgb=args.exp.rgb,
-        with_HD=args.exp.with_HD,
+        SR_size=args.arch_prnn.hidden_size,
+        with_CV=args.arch_policy.with_obs,
+        rgb=args.arch_policy.rgb,
+        with_HD=args.arch_policy.with_head_direction,
     )
 
     if acmodel_status_ckpt == "" or acmodel_status_ckpt is None:

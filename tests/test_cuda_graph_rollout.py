@@ -30,12 +30,12 @@ CUDA-only; skipped on CPU boxes.
 from contextlib import contextmanager
 from pathlib import Path
 
-from hydra import compose, initialize_config_dir
 import numpy as np
 import pytest
 import torch
 
 from curious_george.training.setup import setup_training
+from tests.small_config import small_config
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -81,32 +81,15 @@ class _Arm:
             self.rng = self._capture()
 
 
-def _config(
-    *, graphed: bool, deterministic: bool = True, extra: tuple[str, ...] = ()
-):
+def _config(*, graphed: bool, deterministic: bool = True, **extra):
     """Two segments per rollout per env, so a mid-rollout episode boundary -
     where the mask flips and the pRNN phase resets - is inside the gate."""
-    noise = "0" if deterministic else "0.05"
-    dropout = "0" if deterministic else "0.15"
-    with initialize_config_dir(config_dir=str(REPO / "Configs"), version_base=None):
-        return compose(
-            config_name="main",
-            overrides=[
-                "logging.wandb_log=false",
-                "exp.num_envs=4",
-                "exp.table_env=true",
-                "exp.device_env=true",
-                f"exp.rollout_cuda_graph={str(graphed).lower()}",
-                "rl.frames=128",
-                "rl.reward_alignment=next_obs",
-                "predNet.seqdur=16",
-                "predNet.hiddensize=64",
-                f"predNet.noisestd={noise}",
-                f"predNet.dropout={dropout}",
-                "predNet.batched_curiosity=true",
-                *extra,
-            ],
-        )
+    return small_config(
+        rollout_cuda_graph=graphed,
+        noise_std=0.0 if deterministic else 0.05,
+        dropout=0.0 if deterministic else 0.15,
+        **extra,
+    )
 
 
 def _saturate(acmodel) -> None:
@@ -163,14 +146,14 @@ def _collect_both(eager: "_Arm", graphed: "_Arm"):
     return expected, actual
 
 
-def _paired_algos(*, deterministic: bool = True, extra: tuple[str, ...] = ()):
+def _paired_algos(*, deterministic: bool = True, **extra):
     """An eager and a graphed run of the same config, verified to start from
     identical weights - otherwise the comparison below proves nothing.
 
     `extra` goes to BOTH arms, so a config that graphs the world model or the
-    PPO step isolates `exp.rollout_cuda_graph` rather than confounding it.
+    PPO step isolates `collect.rollout_cuda_graph` rather than confounding it.
     """
-    kw = dict(deterministic=deterministic, extra=extra)
+    kw = dict(deterministic=deterministic, **extra)
     eager = setup_training(_config(graphed=False, **kw)).algo
     graphed = setup_training(_config(graphed=True, **kw)).algo
     assert graphed._rollout_graph is not None, "exp.rollout_cuda_graph did not build"
@@ -211,9 +194,9 @@ def test_graphed_rollout_bitwise_equals_eager():
 @pytest.mark.parametrize(
     "extra",
     [
-        pytest.param((), id="rollout_graph_only"),
+        pytest.param({}, id="rollout_graph_only"),
         pytest.param(
-            ("predNet.cuda_graph=true", "rl.cuda_graph=true"), id="all_three_graphs"
+            {"prnn_cuda_graph": True, "policy_cuda_graph": True}, id="all_three_graphs"
         ),
     ],
 )
@@ -229,7 +212,7 @@ def test_graphed_rollout_survives_repeated_spatial_evals(extra):
     round trip, which is the configuration a real run uses."""
     from curious_george.models.device import on_device
 
-    eager, graphed = _paired_algos(extra=extra)
+    eager, graphed = _paired_algos(**extra)
     try:
         for update in range(3):
             expected, actual = _collect_both(eager, graphed)

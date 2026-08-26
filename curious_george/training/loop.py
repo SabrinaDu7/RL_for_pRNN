@@ -15,6 +15,8 @@ from curious_george.evaluation.spatial import (
 )
 from curious_george.log_and_store.storage import save_analysis_of_agent_behav, save_status
 from curious_george.training import logging as train_log
+from curious_george.configs import EvalKind, SpatialEvalPath
+from curious_george.utils.enums import AgentType
 from curious_george.training.schedule import (
     EntropySchedule,
     TrainingCadence,
@@ -26,6 +28,13 @@ from curious_george.utils.checkpoints import StatusCkptKeys
 from curious_george.utils.timing import timer
 
 
+#: Every eval `run_spatial_analysis` can run. Named once, so "is any spatial
+#: eval requested" cannot drift from what the driver actually does.
+_SPATIAL_EVALS = frozenset(
+    {EvalKind.SPATIAL_ONPOLICY, EvalKind.SPATIAL_OFFPOLICY, EvalKind.SPATIAL_MULTIROOM}
+)
+
+
 def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> None:
     """sRSA + SWdist on- and/or off-policy (CPU; placement restored by contexts).
 
@@ -33,22 +42,24 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
     the rows are pooled across rooms, because the DIFFERENCE between those two
     is the remapping index this experiment turns on.
     """
+    random_run = cfg.arch_policy.agent is AgentType.RANDOM
     layouts = getattr(comps.envs, "layouts", None)
-    if layouts:
-        agent = comps.random_agent if cfg.exp.random_action_agent else comps.ac_agent
+
+    if EvalKind.SPATIAL_MULTIROOM in cfg.eval.evals:
+        agent = comps.random_agent if random_run else comps.ac_agent
         # Evaluate a CAPPED, FIXED prefix of the layout set, not all of it. The
         # eval costs one CPU rollout set per room, so a 500-room pool spends more
         # wall-clock measuring than training - measured on the first pool run:
         # 7,167 gradient steps against the 3-room run's 22,542 in the same 5h40m.
         # The prefix is fixed rather than sampled so the series stays comparable
         # across checkpoints, which is the whole point of tracking it over time.
-        scored = layouts[: int(cfg.exp.get("eval_rooms_max", 8))]
+        scored = layouts[: cfg.env.eval_rooms_max]
         result = evaluate_multi_room_representation(
             comps.predictiveNet, comps.env, agent,
             layouts=scored,
-            n_trajs=cfg.exp.get("eval_trajs", 8),
-            traj_timesteps=cfg.predNet.seqdur,
-            sleepstd=0.03,
+            n_trajs=cfg.eval.n_trajs,
+            traj_timesteps=cfg.collect.episode_steps,
+            sleepstd=cfg.eval.sleep_std,
         )
         rooms = " ".join(f"{r['sRSA']:.3f}" for r in result["per_room"])
         print(
@@ -61,22 +72,25 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
         )
         if wandb_log:
             train_log.log_multi_room(result, comps.envs.layout_episodes)
-        return
 
-    for enabled, on_policy, nameext in [
-        (cfg.exp.onpolicy_prnn_eval, True, "_onPolicy"),
-        (cfg.exp.offpolicy_prnn_eval, False, "_offPolicy"),
+    # Requested evaluations RUN. The old code returned after the multi-room
+    # branch, so asking for the on-policy eval and silently getting the
+    # multi-room one instead was invisible from the config.
+    for kind, on_policy, nameext in [
+        (EvalKind.SPATIAL_ONPOLICY, True, "_onPolicy"),
+        (EvalKind.SPATIAL_OFFPOLICY, False, "_offPolicy"),
     ]:
-        if not enabled:
+        if kind not in cfg.eval.evals:
             continue
-        use_ac = on_policy != cfg.exp.random_action_agent
+        use_ac = on_policy != random_run
         agent = comps.ac_agent if use_ac else comps.random_agent
         metrics = evaluate_spatial_representation(
-            comps.predictiveNet, comps.env, agent, sleepstd=0.03, wandb_nameext=nameext,
-            n_trajs=cfg.exp.get("eval_trajs", 8),
-            traj_timesteps=cfg.predNet.seqdur,  # eval trajs match training trajs
-            trainDecoder=cfg.exp.get("eval_decoder", False),
-            legacy_timesteps=cfg.exp.get("eval_timesteps", 15000),
+            comps.predictiveNet, comps.env, agent,
+            sleepstd=cfg.eval.sleep_std, wandb_nameext=nameext,
+            n_trajs=cfg.eval.n_trajs,
+            traj_timesteps=cfg.collect.episode_steps,  # eval trajs match training trajs
+            trainDecoder=cfg.eval.spatial_path is SpatialEvalPath.LEGACY_DECODER,
+            legacy_timesteps=cfg.eval.legacy_decoder_timesteps,
         )
         print(f"{nameext[1:]} sRSA={metrics['sRSA']:.4f} SWdist={metrics['SWdist']:.4f}")
         if wandb_log:
@@ -90,8 +104,8 @@ def run_behavior_analysis(
     # active, which never fills the algo's buffers.
     opa = OnPolicyAnalysis(
         comps.algo,
-        timesteps=25000,
-        reuse_last_rollout=not cfg.exp.random_action_agent,
+        timesteps=cfg.eval.behaviour_timesteps,
+        reuse_last_rollout=cfg.arch_policy.agent is not AgentType.RANDOM,
     )
     if run_ctx.wandb_log:
         train_log.log_behavior(opa, with_figures=with_figures)
@@ -118,13 +132,13 @@ def save_checkpoint(
         StatusCkptKeys.NUM_FRAMES.value: num_frames,
         StatusCkptKeys.UPDATE.value: update,
     }
-    if not cfg.exp.random_action_agent:
+    if cfg.arch_policy.agent is not AgentType.RANDOM:
         status_save[StatusCkptKeys.MODEL_STATE.value] = comps.acmodel.state_dict()
         status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = comps.algo.optimizer.state_dict()
 
     save_status(status_save, run_ctx.model_dir)
 
-    if comps.predictiveNet is not None and cfg.predNet.train:
+    if comps.predictiveNet is not None and cfg.train_prnn.train:
         save_pN(comps.predictiveNet, run_ctx.model_dir + "predictiveNet_state.pt")
         if archive:
             archive_dir = Path(run_ctx.model_dir) / "checkpoints"
@@ -143,7 +157,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     update = comps.status[StatusCkptKeys.UPDATE.value]
     start_time = time.time()
     n_performance = 0
-    prnn_eval = cfg.exp.offpolicy_prnn_eval or cfg.exp.onpolicy_prnn_eval
+    prnn_eval = bool(cfg.eval.evals & _SPATIAL_EVALS)
 
     schedule = TrainingSchedule.from_config(cfg)
     cadence = TrainingCadence.from_config(cfg, start_step=num_frames)
@@ -151,21 +165,21 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     print(schedule.summary())
     print(entropy.summary())
     if num_frames:
-        print(f"  resuming at {num_frames} steps -> {schedule.total_steps - num_frames} to go")
+        print(f"  resuming at {num_frames} steps -> {schedule.total_env_steps - num_frames} to go")
 
-    with tqdm(total=schedule.total_steps, desc="Processing") as pbar:
-        while num_frames < schedule.total_steps:
+    with tqdm(total=schedule.total_env_steps, desc="Processing") as pbar:
+        while num_frames < schedule.total_env_steps:
             update_start = time.time()
             # Read per update: the loss reads algo.entropy_coef fresh each time
             # (rl/algo.py), so a schedule needs no plumbing beyond this.
             algo.entropy_coef = entropy.at(num_frames)
 
-            if cfg.exp.random_action_agent:
+            if cfg.arch_policy.agent is AgentType.RANDOM:
                 logs = algo.randomAgent_collect_exp_and_update(comps.random_agent)
             else:
                 exps, logs1 = algo.collect_experiences()
                 logs2 = algo.update_parameters(
-                    exps=exps, update_params=(not cfg.exp.random_init_control)
+                    exps=exps, update_params=(not cfg.arch_policy.freeze_params)
                 )
                 logs = {**logs1, **logs2}
 
@@ -199,12 +213,12 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         num_frames=num_frames,
                         fps=logs["num_frames"] / update_duration,
                         duration=int(time.time() - start_time),
-                        random_agent=cfg.exp.random_action_agent,
+                        random_agent=cfg.arch_policy.agent is AgentType.RANDOM,
                         **schedule.gradient_steps_at(update),
                     )
                     mi = (
                         None
-                        if cfg.exp.random_action_agent
+                        if cfg.arch_policy.agent is AgentType.RANDOM
                         else mutual_info_policy(logs["joint_dist"])
                     )
                     train_log.log_update(logs, stats, mi)
@@ -214,7 +228,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                 if prnn_eval:
                     with timer("analysis/spatial"):
                         run_spatial_analysis(cfg, comps, run_ctx.wandb_log)
-                if cfg.exp.analyze_agent_behav:
+                if EvalKind.BEHAVIOUR in cfg.eval.evals:
                     with timer("analysis/behavior"):
                         # figures (3 Plotly builds over the full rollout) only
                         # on the plot cadence; the MI scalar every analysis event
@@ -223,7 +237,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         )
 
             # --- early stop -----------------------------------------------
-            if cfg.logging.early_stop and not cfg.exp.random_action_agent:
+            if cfg.run.early_stop and cfg.arch_policy.agent is not AgentType.RANDOM:
                 if "return_per_episode" not in logs:
                     # Loudly, rather than never firing. Under exp.device_env the
                     # backend cannot measure extrinsic return, so this criterion

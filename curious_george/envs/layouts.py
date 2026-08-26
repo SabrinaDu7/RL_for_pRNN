@@ -454,39 +454,41 @@ def d4_canonical(anchors: tuple[tuple[int, int], ...], *, span: int) -> tuple:
 
 
 def resolve_layouts(cfg) -> list[Layout] | None:
-    """The rooms a run trains on, from `exp.layouts`.
+    """The rooms a run trains on, from `cfg.env`.
 
-    None/absent keeps the single-room behaviour. `rooms` is the frozen
-    alternating-room set; `pool` is a seeded uniform sample of the admissible
-    set. Both feed the same machinery - set size is the only difference between
-    the two runs.
+    A single-room environment has no layout set at all, which is why this
+    returns None for one: that is the type, not a mode string that could be
+    spelled wrong. The frozen set and the seeded pool feed the same machinery -
+    set size is the only difference between the two runs.
     """
-    mode = cfg.exp.get("layouts", None)
-    if not mode:
+    from curious_george.configs import (
+        FrozenLayouts,
+        LayoutPool,
+        MultiRoomEnvCfg,
+        SingleLayout,
+    )
+
+    if not isinstance(cfg.env, MultiRoomEnvCfg):
         return None
-    room = cfg.exp.get("room_id", BASE_ROOM_ID)
-    square = room == SQUARE_ROOM_ID
-    if mode == "rooms" and square:
-        return list(ROOMS_SQUARE)
-    if mode == "one" and square:
-        return [ROOMS_SQUARE[0]]
-    if mode == "one":
+    spec = cfg.env.layouts
+    square = cfg.env.base_room.value == SQUARE_ROOM_ID
+    frozen = ROOMS_SQUARE if square else ROOMS_RUN1
+
+    if isinstance(spec, SingleLayout):
         # The control for every multi-room number: identical env class, identical
         # landmark shapes and sizes, identical optimizer - one room instead of
         # several. Without it a change in sRSA cannot be attributed to the room
         # COUNT rather than to the scale or the schedule.
-        return [ROOMS_RUN1[0]]
-    if mode == "rooms":
-        return list(ROOMS_RUN1)
-    if mode == "pool":
+        return [frozen[0]]
+    if isinstance(spec, FrozenLayouts):
+        return list(frozen)
+    if isinstance(spec, LayoutPool):
         return generate_layouts(
-            walkable=base_walkable(room),
-            n=int(cfg.exp.layout_pool_size),
-            seed=int(cfg.exp.layout_seed),
+            walkable=base_walkable(cfg.env.base_room.value),
+            n=spec.size,
+            seed=spec.seed,
             # Only the square room has the symmetries; the L-shaped wall breaks
             # all eight, so deduping there would discard nothing and cost time.
             dedupe_d4=square,
         )
-    raise ValueError(
-        f"exp.layouts must be null, 'one', 'rooms' or 'pool'; got {mode!r}"
-    )
+    raise TypeError(f"unknown layout spec {spec!r}")
