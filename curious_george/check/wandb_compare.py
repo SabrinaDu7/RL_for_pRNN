@@ -28,7 +28,7 @@ exceeds that band.
         --reference pRNN_curious_26-07-08-16-04-37 \\
         --run <run-id-or-name> [--metric sRSA_onPolicy ...]
 
-Writes outputs/summary/wandb_compare[_<tag>].json and prints a table.
+Writes $RL_STORAGE/summary/wandb_compare[_<tag>].json and prints a table.
 """
 
 from __future__ import annotations
@@ -39,6 +39,8 @@ from pathlib import Path
 
 import numpy as np
 import wandb
+
+from curious_george.log_and_store.storage import get_storage_dir
 
 ENTITY, PROJECT = "blake-richards", "curious-george"
 STEP_KEY = "frames"
@@ -193,7 +195,11 @@ def main() -> None:
     print(f"\n* = outside the reference's own adjacent-sample band. {n_out} of "
           f"{sum(len(r['within_band']) for r in rows)} matched points.")
 
-    out = Path("outputs/summary"); out.mkdir(parents=True, exist_ok=True)
+    # RL_STORAGE, not a path literal: a hardcoded run-output path works on
+    # the machine that wrote it and lands in $SLURM_TMPDIR on the cluster,
+    # which is deleted when the job ends.
+    out = Path(get_storage_dir()) / "summary"
+    out.mkdir(parents=True, exist_ok=True)
     path = out / f"wandb_compare{'_' + args.tag if args.tag else ''}.json"
     path.write_text(json.dumps(
         {"reference": {"id": ref.id, "name": ref.name},
