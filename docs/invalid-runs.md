@@ -15,6 +15,43 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `d6ace4c` .. `edce59f` — the config cutover · 2026-08-26
+
+**What changed.** Hydra YAML was replaced by typed dataclasses
+(`curious_george/configs.py`). This is a RECORDING line, not a numerics line: the
+`tests/golden/capture_golden_setup.py` gate compares `setup_training` across all three
+live compositions and the migration produced **two differing leaves in total**, both a
+spelling change (`wm_pool_group: 0 -> 8` and `0 -> 128`, where `0` had meant "the whole
+batch" — `prnn_adapter.py:874`). Same 33 constructor kwargs, same module weight hashes,
+same derived schedule. **A run's numbers are comparable across this line.**
+
+**What is NOT comparable across it: the config RECORD.** wandb stores each run's config
+under the shape the code had at the time. Before: `exp.* / rl.* / predNet.* / logging.*`.
+After: `env / collect / arch_prnn / arch_policy / train_prnn / train_policy / eval / run`.
+A filter like `config.exp.curious_agent` matches nothing on a post-cutover run, and
+matching nothing is indistinguishable from a field that was never set.
+
+**How to cross it.** `curious_george/check/config_keys.py`:
+
+```python
+from curious_george.check.config_keys import to_new, to_old, describe
+to_new("predNet.seqdur")   # "collect.episode_steps"
+to_old("run.seed")         # "exp.seed"
+describe("rl.frames")      # why it has no counterpart
+```
+
+Three kinds of correspondence, and the map does not pretend otherwise: **renamed**
+(1:1, invertible), **folded** (several old keys became one field — forward only, because
+`collect.backend` does not say whether a reader meant `table_env`, `device_env` or
+`async_envs`), and **gone** (derived or dropped: `rl.frames`, `rl.episodes_total` and
+`rl.ppo_batch_size` are all computed now).
+
+**One wandb metric key also changed:** `wm_grad_steps` -> `prnn_grad_steps` (`b02aaaf`).
+Environment steps (`frames`) are untouched, so `wandb_compare`, which matches on env
+steps, works across the line unchanged.
+
+---
+
 ## `d275149` — `recurrence` removal · 2026-08-23
 
 **What changed.** Removed a dead `recurrence` parameter and, with it, a code path that
