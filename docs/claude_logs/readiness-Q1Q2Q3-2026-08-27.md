@@ -2,18 +2,19 @@
 
 # Can we run Q1, Q2 and Q3 tomorrow? Findings and action items
 
-**Read this first.** Nothing in this session changed any code. Everything below is
-either measured today on this box, or read out of the source with a file:line. Where
-I inferred rather than confirmed, it says so.
-
-**Baseline for tomorrow**, so any fix below can be diffed against it:
+**Read this first.** This happened in two passes. **§1–§4 are the review**: read-only,
+measured on this box or read out of the source with a file:line, and where I inferred
+rather than confirmed it says so. **§5 then fixed the blockers** — so the "is broken"
+sections describe what was found, and each carries a ✅ in §5 if it no longer is.
 
 ```
-uv run pytest -q   ->  391 passed, 1 deselected, 13 warnings in 76.40s
+before   uv run pytest -q  ->  391 passed, 1 deselected
+after    uv run pytest -q  ->  417 passed, 1 deselected     (commit ff6e63a)
 ```
 
-Note what that green does *not* cover: `evaluation/checkpoint_series.py` is imported by
-no test and is broken (§2.2), and nothing exercises a two-phase resume (§2.3).
+What the BEFORE green did not cover, and why these survived a full config migration:
+`evaluation/checkpoint_series.py` was imported by no test at all, and nothing exercised
+a two-phase resume or a novel-object placement. All three now have one.
 
 **Bottom line.** The 30-minute budgets are achievable and multi-room training is much
 cheaper than feared — **many rooms is nearly free**. What sets the budget is the
@@ -64,31 +65,56 @@ the only real cost and it happens once per pool per machine.
 
 ### 🔴 The analysis cadence, not the training loop, is what sets the budget
 
-**One analysis event costs ~76 s.** Measured on the 3-room arm by diffing wall clock
-against pure-training rate: 4,128,768 steps in 520 s where training alone accounts for
-214 s, over the 4 events that had fired — 306 s / 4 = 76 s each.
+**One analysis event costs ~88 s** with the settings we actually run (three-room pool,
+`rooms_max=4`, including the behaviour eval that fires on the same cadence).
 
-That is **2–4x what the code says it costs.** `configs.py:513` records "4.5–8.9 s per
-room", which at the default `rooms_max=4` predicts 18–36 s. Something has grown since
-that was measured, and §2.5 is a likely part of it. Worth resolving — the comment is
-what anyone sizing a run will read.
+That is **far more than the code says.** `configs.py:513` records "4.5-8.9 s per room",
+which at `rooms_max=4` predicts 18-36 s. The comment is stale and it is what anyone
+sizing a run will read.
 
-At 76 s an event, the cadence dominates everything:
+**Where the extra time goes — measured.** Four arms, run SEQUENTIALLY so nothing
+contends (my first attempt at this was invalidated by running the test suite alongside
+it, so that number is not quoted anywhere). 3,145,728 env steps each, three rooms; times
+are progress-bar time, which excludes startup:
+
+| compile | analysis off | analysis on (3 events) | per event | training rate |
+|---|---|---|---|---|
+| `LAYER` | 180 s | 443 s | **87.7 s** | 17,476 env steps/s |
+| `OFF` | 392 s | 504 s | **37.3 s** | 8,025 env steps/s |
+
+**So the failing inductor recompile (§2.5) really is about half the analysis event** —
+88 s against 37 s. But turning the compile off is the wrong response, because it also
+costs **2.18x on the training loop**. The two effects pull opposite ways, and where they
+balance is a property of the cadence:
+
+| analysis events in 30 min | `compile=LAYER` | `compile=OFF` |
+|---|---|---|
+| 0 | 30.8M env steps | 14.1M |
+| 2 | 27.7M | 13.5M |
+| 5 | 23.1M | 12.6M |
+| 10 | 15.4M | 11.1M |
+| 20 | 0.1M | 8.1M |
+
+**`LAYER` wins below ~13 analysis events in a 30-minute run**, which is every cadence
+anyone would actually pick. **Keep the compile on.** The real fix is to stop the
+recompile happening at all — see action item 10 — not to trade away 2.18x of training.
+
+### Sizing table
+
+Using the steady-state rates from §1 (a 30-minute run amortises the compile warm-up that
+the short arms above pay) and 88 s an event:
 
 | analysis events in 30 min | 3 rooms (Q2) | 500 rooms (Q3) |
 |---|---|---|
-| 0 | 34.0M env steps | 31.3M |
-| 2 | 31.1M | 28.7M |
-| 5 | 26.8M | 24.7M |
-| 10 | 19.7M | 18.2M |
-| 20 | — budget exhausted | — |
+| 0 | 35.1M env steps | 31.3M |
+| 2 | 31.6M | 28.2M |
+| 5 | 26.3M | 23.5M |
+| 10 | 17.6M | 15.7M |
+| 20 | 0.1M - the whole run is measurement | 0.1M |
 
-(1800 s, minus ~40 s startup/compile, minus 76 s per event, times the measured rate.)
-
-**So: pick the number of curve points first, then the step budget.** Ten points costs
-you 42% of a 30-minute run. The 2026-08-23 speed log reached the same conclusion for
-single-room runs — *"the spatial eval dominates sizing, not the loop"* — and it is more
-true here, not less.
+**Pick the number of curve points first, then the step budget.** Ten points costs half a
+30-minute run. The 2026-08-23 speed log reached the same conclusion for single-room runs
+- *"the spatial eval dominates sizing, not the loop"* - and it is more true here.
 
 **Q2 phase 2 fits comfortably**, and is the easier of the two — it is a continuation,
 not a full training run.
@@ -207,9 +233,12 @@ Backend compiler exception
 
 These are warnings — dynamo falls back to eager and the run continues, correctly. But
 they recur with fresh recompile ids (`[0/6]`, `[0/6_1]`, `[1/0]`) at each event, so the
-cost is paid every time, not once. This is a plausible contributor to the 76 s vs
-18–36 s gap in §1, though I did not isolate it by running an arm with `compile=OFF`.
-That is the experiment that would settle it, and it is cheap.
+cost is paid every time, not once.
+
+**Isolated and confirmed** (§1): the event costs 87.7 s with `compile=LAYER` and 37.3 s
+with `OFF`, so **the recompile is roughly half of every analysis event**. It is still
+not worth turning the compile off — that costs 2.18x on the training loop — so the fix
+is to stop the recompile, not to stop compiling.
 
 ### 2.6 🟡 You cannot watch a run's sRSA live
 
@@ -311,34 +340,43 @@ harmless — the multi-room eval over one room is just the single-room eval.
 
 Ordered by what blocks what. Each is self-contained enough to hand to an agent.
 
+**✅ DONE marks work landed in `ff6e63a` the same day, each verified by
+reintroducing the defect and watching the new tests fail.** Gate went from
+391 passed / 1 deselected to **417 passed / 1 deselected**.
+
 **Before any Q1 work**
 
-1. **Decide where a novel object lives, then make it reachable.** `setup.py:111` reads
-   a field that does not exist. Either restore it as a typed field on `EnvCfg`, or —
-   better, and consistent with the cutover note — express it as content, and delete the
-   dead read. Whichever way, add a test that placing a novel object actually places it,
-   and prove the test fails without the fix.
+1. ✅ **DONE — novel object restored and reachable.** `EnvCfg.novel_object: tuple[int,
+   int] | None`, validated against the room's walkable cells, because an invisible
+   object and a null result are indistinguishable downstream. `setup.py` reads it
+   directly now; the `getattr` default that turned a removed field into "no object
+   requested" is gone. `tests/test_novel_object.py` checks both that the object reaches
+   the grid and that it changes a pixel the agent actually sees.
 
 **Before any Q2 work**
 
-2. **Fix `checkpoint_series.py::build`** — `cfg.env.env_name.value` on a `str`. Add a
-   test that imports and runs the module against a two-checkpoint fixture; there is no
-   test on it at all today, which is how this survived.
-3. **Rename its CLI off the retired Hydra vocabulary.** `--env lroom_multi` and
-   `--layouts one|rooms|pool` name config groups that no longer exist.
-4. **Make the resume budget unambiguous.** Today `total_grad_steps` on a resumed run
-   means the grand total. Either rename it at the point of use, or make the loop print
-   refuse to start when the remaining budget is <= 0 instead of exiting silently as
-   success. A run that trains nothing and exits 0 is the worst available behaviour.
+2. ✅ **DONE — `checkpoint_series.py` fixed.** It was broken in **four** reads, not the
+   one §2.2 reported: `env.base_room`, `env.layouts` and `env.eval_rooms_max` do not
+   exist either. All four moved into `SeriesContext`, which resolves from a `Config`
+   alone; `tests/test_checkpoint_series.py` covers them and 11 of its 13 fail if a
+   single read is reverted.
+3. ✅ **DONE — CLI renamed off the retired Hydra vocabulary.** Now `--room
+   lroom|squareroom` and `--source frozen|one|uniform`, which are words `configs.py`
+   actually uses.
+4. ✅ **DONE — the resume budget now refuses rather than exiting clean.** It still means
+   the grand total, which is the honest semantics; what changed is that a budget already
+   spent raises and names the number to raise it past, instead of producing a run
+   directory and a wandb run for a phase that never trained.
 5. **Decide: 30 minutes per Q2 arm, or 30 minutes across every arm?** The arms are
    variant A, variant B, variant C, the no-recolour continuation and the recolour-all
    control. See §1; my recommendation is per-arm, run sequentially.
 
 **Before any Q3 work**
 
-6. **Canonicalise placements when landmark kinds are interchangeable.** Deduplicate by
-   the unordered anchor set when the stencils and colours are identical, so `Uniform(n)`
-   returns `n` distinct rooms or raises. Today it silently returns 418 of 500.
+6. ✅ **DONE — placements canonicalised for interchangeable landmarks.** Slots sharing a
+   stencil AND a colour are collapsed, so `Uniform(n)` now returns `n` distinct rooms.
+   Conservative: slots differing in either are never grouped, so a colour-varying design
+   is untouched.
 7. **Decide Q3's object type.** Walkable objects work today and run at 17,790 steps/s.
    Solid *and* moving is unrepresentable (§3.1) and needs a minigrid fork change plus
    device-path work. This is a scope call, not an engineering one.
@@ -352,10 +390,16 @@ Ordered by what blocks what. Each is self-contained enough to hand to an agent.
 
 **Sizing, before launching anything long**
 
-10. **Re-measure the analysis event and fix the stale comment.** It costs ~76 s;
-    `configs.py:513` says 4.5–8.9 s per room. Run one arm with `--train-prnn.compile OFF`
-    against one with `LAYER` to see how much of the gap is §2.5. Then update the comment
-    with what it actually costs, because that comment is what people size runs from.
+10. ✅ **MEASURED — and it leaves one real fix.** The event costs **87.7 s** at
+    `compile=LAYER` and **37.3 s** at `OFF`, so the failing inductor recompile is about
+    half of it. Keep the compile (it is 2.18x on training; the crossover is ~13 events
+    per 30-minute run). **The remaining fix is to stop the recompile:** the spatial
+    analysis runs the pRNN forward on CPU at a different batch shape than training, and
+    inductor fails there on `aten._local_scalar_dense.default` from
+    `thetaRNN.py:406`'s `torch.zeros(1, 500, cell_input_size)`. Options worth trying, in
+    order: mark that dim dynamic, exclude the eval forward from the compiled region, or
+    run the eval at the training batch shape. Worth ~50 s per curve point.
+    **Also update `configs.py:513`**, which still says 4.5–8.9 s per room.
 11. **Set `PYTHONUNBUFFERED=1` on every run tomorrow** so the sRSA lines are readable
     while the job is alive (§2.6).
 

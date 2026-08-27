@@ -533,10 +533,18 @@ class EvalCfg:
 
     rooms_max: int = 4
     """How many rooms the multi-room spatial eval scores, as a fixed PREFIX so
-    the series stays comparable across checkpoints. Measured 4.5-8.9 s per room,
-    and the pooled estimate saturates at 2-3 because prnn caps the pairwise
-    sample. Lived on the env before, which is where it was read with a code
-    default of 8 that contradicted the config's 4."""
+    the series stays comparable across checkpoints. The pooled estimate
+    saturates at 2-3 because prnn caps the pairwise sample. Lived on the env
+    before, which is where it was read with a code default of 8 that
+    contradicted the config's 4.
+
+    ⚠️ COST. One analysis event - this eval at rooms_max=4, plus the behaviour
+    eval on the same cadence - is ~88 s measured 2026-08-27 on an RTX 4060 with
+    `train_prnn.compile=LAYER`, and ~37 s with the compile off. It is therefore
+    `eval.analysis_every_steps`, NOT the training loop, that sizes a short run:
+    ten curve points is about half of a 30-minute budget. An earlier note here
+    said 4.5-8.9 s per room; that was measured before the behaviour eval shared
+    the cadence and before the compile, and runs were sized from it."""
 
     n_trajs: int = 8
     """Pooled trajectories of `CollectCfg.episode_steps` each, so evaluation
