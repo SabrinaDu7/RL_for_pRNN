@@ -9,14 +9,15 @@ count updates and trajectories, which mean different amounts of experience at
 different rollout shapes - a num_envs=1 reference and a num_envs=128 arm are
 128x apart on `_step` and identical on env steps.
 
-Getting that axis is not as simple as reading `frames` alongside the metric.
+Getting that axis is not as simple as reading `env_steps` alongside the metric.
 `sRSA_onPolicy`, `SWdist_onPolicy`, `mean SI_onPolicy` and `pRNN loss` are
 logged BY PRNN in its own `wandb.log()` calls (see
 `curious_george/training/logging.py::log_spatial`), on different wandb steps
-from the update log that carries `frames`. Asking for both keys in one row
+from the update log that carries `env_steps`. Asking for both keys in one row
 therefore returns NOTHING for exactly the metrics this comparison is about.
 So each metric is fetched against `_step`, and `_step` is converted to env
-steps through the run's own (`_step`, `frames`) series.
+steps through the run's own (`_step`, `env_steps`) series. Runs older than the
+2026-08-27 rename carry `frames` instead, and both are read.
 
 Because the metrics are noisy (an untrained net scores sRSA 0.062 +/- 0.040,
 and SWdist has a measured 27.5% coefficient of variation), a single matched
@@ -43,7 +44,13 @@ import wandb
 from curious_george.log_and_store.storage import get_storage_dir
 
 ENTITY, PROJECT = "blake-richards", "curious-george"
-STEP_KEY = "frames"
+#: The cumulative environment-step series, newest name first. `frames` was
+#: renamed to `env_steps` on 2026-08-27 (retired vocabulary; see the README's
+#: terminology section), and BOTH are read so a post-cutover run can still be
+#: compared against every run that came before it - which is the entire point of
+#: this tool. Order matters: a run that somehow logged both is read on the new
+#: name.
+STEP_KEYS = ("env_steps", "frames")
 
 # The metrics that decide whether a speed change was free. Off-policy keys are
 # included but a reference with offpolicy_prnn_eval=false simply will not have
@@ -52,7 +59,7 @@ DEFAULT_METRICS = (
     "sRSA_onPolicy", "SWdist_onPolicy", "mean SI_onPolicy",
     "sRSA_offPolicy", "SWdist_offPolicy",
     "pRNN loss", "MI_policy", "loc_entropy", "policy_entropy",
-    "return_mean", "cur_reward_mean",
+    "cur_reward_mean",
 )
 
 
@@ -74,7 +81,7 @@ def resolve(api, ident: str):
 
 
 def _rows(run, metric: str, step_key: str = "_step"):
-    """History rows for (STEP_KEY, metric), exact if the backend allows it.
+    """History rows for (step key, metric), exact if the backend allows it.
 
     `scan_history(keys=...)` is the exact path but fails two DIFFERENT ways, and
     only one of them is loud. It raises "Step column '_step' not found in
@@ -121,20 +128,27 @@ def _series(run, metric: str, step_key: str) -> tuple[np.ndarray, np.ndarray, st
 
 
 def env_step_axis(run):
-    """The run's (`_step` -> env steps) mapping, from its own update log."""
-    xs, ys, _ = _series(run, STEP_KEY, "_step")
-    if xs.size == 0:
-        raise SystemExit(f"run {run.id} logs no `{STEP_KEY}`; cannot build an env-step axis")
-    return xs, ys
+    """The run's (`_step` -> env steps) mapping, from its own update log.
+
+    Tries each name in STEP_KEYS so runs from either side of the 2026-08-27
+    rename are comparable.
+    """
+    for key in STEP_KEYS:
+        xs, ys, _ = _series(run, key, "_step")
+        if xs.size:
+            return xs, ys
+    raise SystemExit(
+        f"run {run.id} logs none of {STEP_KEYS}; cannot build an env-step axis"
+    )
 
 
 def trace(run, metric: str, axis) -> tuple[np.ndarray, np.ndarray, str]:
     """(env_steps, values, source) - the metric on the shared env-step axis."""
-    ax_step, ax_frames = axis
+    ax_step, ax_env_steps = axis
     xs, ys, source = _series(run, metric, "_step")
     if xs.size == 0:
         return xs, ys, source
-    return np.interp(xs, ax_step, ax_frames), ys, source
+    return np.interp(xs, ax_step, ax_env_steps), ys, source
 
 
 def band(values: np.ndarray) -> float:
@@ -215,7 +229,7 @@ def main() -> None:
     path.write_text(json.dumps(
         {"reference": {"id": ref.id, "name": ref.name},
          "run": {"id": new.id, "name": new.name},
-         "step_key": STEP_KEY, "rows": rows,
+         "step_key": "env_steps", "rows": rows,
          "missing": [{"metric": m, "absent_from": w} for m, w in missing]},
         indent=2))
     print(f"wrote {path}")

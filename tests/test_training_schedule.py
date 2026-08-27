@@ -172,5 +172,5 @@ def test_update_stats_accepts_exactly_what_gradient_steps_at_returns():
     assert keys <= fields, f"UpdateStats is missing {sorted(keys - fields)}"
 
     # and it really constructs
-    UpdateStats(update=1, num_frames=1, fps=1.0, duration=1, random_agent=False,
+    UpdateStats(num_frames=1, fps=1.0, duration=1, random_agent=False,
                 **PRESETS["reference"][1].schedule.gradient_steps_at(1))

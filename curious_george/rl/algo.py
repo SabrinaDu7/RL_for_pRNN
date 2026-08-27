@@ -28,7 +28,6 @@ from curious_george.rl.collect.collector import (
     CollectorState,
     RolloutConfig,
     collect_rollout,
-    get_dist_travelled,
 )
 from curious_george.rl.collect.diagnostics import LocationStats
 from curious_george.rl.update.losses import LOSSES
@@ -247,7 +246,6 @@ class PredictivePPOAlgo:
             loc_b=loc_b,
             mask_b=np.ones(self.num_envs, dtype=np.float32),
             sr=self.tracker.initial_sr(),
-            init_loc_b=[torch.tensor(loc) for loc in loc_b],
             ep_return=[0.0] * self.num_envs,
             ep_reshaped=[0.0] * self.num_envs,
             ep_frames=[0] * self.num_envs,
@@ -400,7 +398,6 @@ class PredictivePPOAlgo:
         log_curr_seqdurs = []
         subroom_ids = []
         locs = [None] * self.num_frames
-        dist_travelled = 0
         for bb in range(numtrials):
             curr_seqdur = min(
                 self.prnn_seqdur, self.num_frames - (bb) * self.prnn_seqdur
@@ -424,10 +421,6 @@ class PredictivePPOAlgo:
             if self._subroom_size is not None:
                 subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self._subroom_size))
 
-            init_pos = state["agent_pos"][0, :]
-            final_pos = state["agent_pos"][-1, :]
-            dist_travelled = get_dist_travelled(torch.tensor(init_pos).unsqueeze(0), torch.tensor(final_pos).unsqueeze(0)).item()
-
             startidx = bb * self.prnn_seqdur
             endidx = min(self.num_frames, (bb + 1) * self.prnn_seqdur)
             locs[startidx:endidx] = loc_list_current
@@ -446,5 +439,4 @@ class PredictivePPOAlgo:
             "loc_entropy_5": loc_entropy_5,
             "locs": locs,
             "subroom_ids": subroom_ids,
-            "dist_travelled": dist_travelled,
         }

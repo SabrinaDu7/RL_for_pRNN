@@ -45,9 +45,13 @@ from curious_george.rl.collect.agent import (
 
 from curious_george.rl.algo import (
     compare_trajs,
-    get_dist_travelled,
     PredictivePPOAlgo,
 )
+
+# From its own module, not re-exported through `algo`, which no longer uses it:
+# the training loop stopped logging `dist_travelled`, but the OMT task in
+# ../experiment-curiousgeorge imports this function directly.
+from curious_george.rl.collect.collector import get_dist_travelled
 
 from curious_george.evaluation.on_policy import (
     mutual_info_policy,

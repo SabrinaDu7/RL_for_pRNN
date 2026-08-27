@@ -91,7 +91,6 @@ class CollectorState:
     loc_b: list
     mask_b: np.ndarray
     sr: torch.Tensor  # (B, H)
-    init_loc_b: list
     # episode logging (cumulative done counter never resets - historical)
     ep_return: list
     ep_reshaped: list
@@ -205,7 +204,6 @@ def collect_rollout(
         # position) for one synchronized segment, all still on-device.
         device_last_batches: list[tuple[torch.Tensor, ...]] = []
 
-    dist_travelled = 0
     last_post_obs = None  # final pre-reset obs (intrinsic tail, non-pastSR)
 
     def _close_device_segment(post_images, post_directions) -> None:
@@ -290,13 +288,11 @@ def collect_rollout(
                 # CPU/async environments still require this synchronizing D2H.
                 det_np = None if device_pool is not None else action.cpu().numpy()
 
-        if cfg.prnn_seqdur > 0 and t % cfg.prnn_seqdur == 0:  # First loc of traj
-            if device_pool is not None:
-                device_segment_initial = device_pool.positions.clone()
-            elif pool is not None:
-                state.init_loc_b = [torch.tensor(loc) for loc in state.loc_b]
-            else:
-                state.init_loc_b = [torch.tensor(_agent_pos(env)) for env in envs]
+        # The device path still needs the episode's first positions; the serial
+        # and async paths recorded theirs only for `dist_travelled`, which is no
+        # longer logged.
+        if cfg.prnn_seqdur > 0 and t % cfg.prnn_seqdur == 0 and device_pool is not None:
+            device_segment_initial = device_pool.positions.clone()
 
         # record buffers indexed by pre-step state
         with timer("collect/policy/record"):
@@ -444,10 +440,6 @@ def collect_rollout(
                 state.sr[b] = new_row[0]
             last_obs_b[b].append(state.obs_b[b])
 
-            dist_travelled = get_dist_travelled(
-                state.init_loc_b[b].unsqueeze(0),
-                torch.tensor(state.loc_b[b]).unsqueeze(0),
-            ).item()
             if pool is None:
                 state.obs_b[b] = envs[b].reset()  # completely new position
                 state.loc_b[b] = _agent_pos(envs[b])
@@ -486,10 +478,6 @@ def collect_rollout(
             for b in range(B)
             for batch in device_last_batches
         ]
-        last_batch = device_last_batches[-1]
-        dist_travelled = int(
-            (last_batch[2][-1] - last_batch[3][-1]).abs().sum().item()
-        )
     else:
         meta_tb = np.asarray(
             [
@@ -690,7 +678,6 @@ def collect_rollout(
             "joint_dist": joint,
             "locs": flat_locs,
             "subroom_ids": subroom_ids,
-            "dist_travelled": dist_travelled,
             **{f"avg_adv_{k}": v for k, v in adv_by_action.items()},
         })
 

@@ -15,9 +15,13 @@ from curious_george.utils.common import synthesize
 
 @dataclass
 class UpdateStats:
-    """Everything log_update needs beyond the algo's logs dict."""
+    """Everything log_update needs beyond the algo's logs dict.
 
-    update: int
+    No `update` field: a rollout count was logged as "update", which read as one
+    gradient step while actually being hundreds. It is retired vocabulary (see
+    the README) and nothing else consumed it.
+    """
+
     num_frames: int
     fps: float
     duration: int
@@ -50,32 +54,33 @@ def _prefixed(prefix: str, stats: dict) -> dict:
 
 
 def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) -> dict:
-    """Flat scalar dict with the historical key names."""
+    """Flat scalar dict of the series a run is actually read on.
+
+    Pruned 2026-08-27 to the metrics that get looked at. Gone: `update` and the
+    `steps_per_trial`, `return_*` and `int_reward_*` groups, plus `dist_travelled`
+    and `SI_units_total*` below. `return_per_episode` is still COLLECTED - the
+    collector produces it and `run.early_stop` reads it - it just stops being
+    logged.
+
+    `frames` became `env_steps`. It is the cumulative environment-step count and
+    the axis every cross-run comparison is matched on; "frames" is retired
+    vocabulary (see the README's terminology section) and the old name is read
+    as a fallback by `check/wandb_compare.py` so pre-2026-08-27 runs stay
+    comparable.
+    """
     out = {
-        "update": stats.update,
-        **_prefixed("steps_per_trial", synthesize(logs["num_frames_per_episode"])),
         "num_episodes": logs["num_episodes"],
         "policy_entropy": logs["entropy"],
         "loc_entropy": logs["loc_entropy"],
         "loc_entropy_5": logs["loc_entropy_5"],
-        "frames": stats.num_frames,
-        # Logged beside `frames` so any panel can be read on either axis.
+        "env_steps": stats.num_frames,
+        # Logged beside `env_steps` so any panel can be read on either axis.
         "prnn_grad_steps": stats.prnn_grad_steps,
         "policy_grad_steps": stats.policy_grad_steps,
         "FPS": stats.fps,
         "duration": stats.duration,
     }
     if not stats.random_agent:
-        # Absent under exp.device_env, which cannot measure extrinsic reward.
-        # No series at all beats a series of zeros nothing can distinguish from
-        # a real one (collector.py::_close_device_segment).
-        if "return_per_episode" in logs:
-            out.update(
-                _prefixed("return", synthesize(logs["return_per_episode"], signs=True))
-            )
-        out.update(
-            _prefixed("int_reward", synthesize(logs["intrinsic_rewards"], abs=True))
-        )
         out.update(
             _prefixed("cur_reward", synthesize(logs["curious_rewards"], abs=True))
         )
@@ -100,7 +105,6 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
 def log_update(logs: dict, stats: UpdateStats, mi_policy: float | None) -> None:
     wandb.log(build_update_log(logs, stats, mi_policy))
     wandb.log({"subroom_ids": wandb.Histogram(logs["subroom_ids"])})
-    wandb.log({"dist_travelled": logs["dist_travelled"]})
 
 
 def log_spatial(metrics: dict, nameext: str) -> None:
@@ -115,7 +119,7 @@ def log_spatial(metrics: dict, nameext: str) -> None:
     # See evaluation/spatial.py::si_coverage.
     coverage = {
         f"{key}{nameext}": metrics[key]
-        for key in ("SI_units_total", "SI_units_zeroed", "SI_mean_active_only")
+        for key in ("SI_units_zeroed", "SI_mean_active_only")
         if key in metrics
     }
     wandb.log({f"SWdist_direct{nameext}": metrics["SWdist"], **coverage})

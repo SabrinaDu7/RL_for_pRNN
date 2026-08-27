@@ -225,7 +225,6 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             if log_due:
                 if run_ctx.wandb_log:
                     stats = train_log.UpdateStats(
-                        update=update,
                         num_frames=num_frames,
                         fps=logs["num_frames"] / update_duration,
                         duration=int(time.time() - start_time),

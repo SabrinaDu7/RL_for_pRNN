@@ -1,14 +1,18 @@
 """A logged metric is a measurement or it is not there.
 
-`exp.device_env` uses a backend that rejects environment rewards and
-terminations, so extrinsic return is not measurable under it. It used to be
-recorded as `0.0` anyway and reach wandb as `return_mean`, where nothing
-distinguishes "the agent earned nothing" from "this configuration does not
-measure it". Harmless in a goal-less L-room, where the true return is 0 anyway
-- and wrong the first time this backend runs `MiniGrid-LRoom_Goal-v0`, which
-exists and is exercised by tests/test_table_env.py.
+The DEVICE backend rejects environment rewards and terminations, so extrinsic
+return is not measurable under it. It used to be recorded as `0.0` anyway, where
+nothing distinguishes "the agent earned nothing" from "this configuration does
+not measure it". Harmless in a goal-less L-room, where the true return is 0
+anyway - and wrong the first time this backend runs `MiniGrid-LRoom_Goal-v0`,
+which exists and is exercised by tests/test_table_env.py.
 
 The rule these gate: absent, not zero.
+
+These are about the COLLECTOR's logs dict, which still carries
+`return_per_episode` because `run.early_stop` reads it. The `return_*` wandb
+series were pruned on 2026-08-27; that is a separate question from whether the
+quantity is measured.
 """
 
 
