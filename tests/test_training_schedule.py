@@ -151,3 +151,26 @@ def test_as_dict_carries_what_provenance_needs():
     assert d["prnn_grad_steps"] == 80_000
     assert d["policy_grad_steps"] == 320_000
     assert d["ppo_batch_size"] == 256
+
+
+def test_update_stats_accepts_exactly_what_gradient_steps_at_returns():
+    """`UpdateStats(**schedule.gradient_steps_at(n))` - applied with `**`, so a
+    rename on either side is a TypeError at the FIRST LOG of a real run and
+    nowhere earlier.
+
+    That is not hypothetical: the whole suite passed green while a 30-minute
+    training run died on `unexpected keyword argument 'prnn_grad_steps'`,
+    because the schedule was renamed to the pRNN vocabulary and the log fields
+    were not. Nothing else in the suite calls this pair together.
+    """
+    import dataclasses
+
+    from curious_george.training.logging import UpdateStats
+
+    keys = set(PRESETS["reference"][1].schedule.gradient_steps_at(1))
+    fields = {f.name for f in dataclasses.fields(UpdateStats)}
+    assert keys <= fields, f"UpdateStats is missing {sorted(keys - fields)}"
+
+    # and it really constructs
+    UpdateStats(update=1, num_frames=1, fps=1.0, duration=1, random_agent=False,
+                **PRESETS["reference"][1].schedule.gradient_steps_at(1))
