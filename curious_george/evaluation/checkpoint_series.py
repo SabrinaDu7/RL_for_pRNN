@@ -79,24 +79,28 @@ def run_config(*, env_cfg: str, layouts: str | None, hiddensize: int):
     from dataclasses import replace
 
     from curious_george.configs import (
+        Committed,
         Config,
         EnvBackend,
+        EnvCfg,
+        EnvShape,
         EvalCfg,
         EvalKind,
-        FrozenLayouts,
-        LayoutPool,
-        LRoomMultiCfg,
-        SingleLayout,
-        SquareRoomMultiCfg,
+        Uniform,
     )
+    from curious_george.envs.layouts import ROOMS_RUN1, ROOMS_SQUARE, SQUARE_ROOM_ID
 
-    spec = {
-        None: FrozenLayouts(), "rooms": FrozenLayouts(),
-        "one": SingleLayout(), "pool": LayoutPool(),
+    square = env_cfg == "squareroom_multi"
+    room = SQUARE_ROOM_ID if square else "MiniGrid-LRoom-v0"
+    frozen = ROOMS_SQUARE if square else ROOMS_RUN1
+    source = {
+        None: Committed(rooms=frozen),
+        "rooms": Committed(rooms=frozen),
+        "one": Committed(rooms=frozen[:1]),
+        "pool": Uniform(),
     }[layouts]
-    env_cls = {"lroom_multi": LRoomMultiCfg, "squareroom_multi": SquareRoomMultiCfg}[env_cfg]
     base = Config(
-        env=env_cls(layouts=spec),
+        env=EnvCfg(shape=EnvShape(room), source=source),
         collect=replace(Config().collect, backend=EnvBackend.DEVICE),
         eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM})),
     )

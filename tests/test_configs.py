@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+from curious_george.envs.layouts import ROOMS_RUN1
 from curious_george.configs import (
     PRESETS,
     AgentType,
@@ -19,8 +20,8 @@ from curious_george.configs import (
     EnvBackend,
     EvalCfg,
     EvalKind,
-    LRoomCfg,
-    LRoomMultiCfg,
+    Committed,
+    EnvCfg,
     RunCfg,
     TrainPolicyCfg,
     TrainPrnnCfg,
@@ -97,11 +98,11 @@ def test_rollout_size_does_not_change_the_training_budget():
          lambda: Config(collect=CollectCfg(backend=EnvBackend.DEVICE), run=RunCfg(early_stop=True))),
         ("grad-step group must divide the rollout",
          lambda: Config(train_prnn=TrainPrnnCfg(episodes_per_grad_step=3))),
-        ("multi-room needs the device backend",
-         lambda: Config(env=LRoomMultiCfg(),
+        ("a room set needs the device backend",
+         lambda: Config(env=EnvCfg(source=Committed(rooms=ROOMS_RUN1)),
                         eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM})))),
-        ("multi-room eval needs a multi-room env",
-         lambda: Config(env=LRoomCfg(),
+        ("the multi-room eval needs a room set",
+         lambda: Config(env=EnvCfg(),
                         eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM})))),
         ("device batches, so it needs more than one instance",
          lambda: CollectCfg(backend=EnvBackend.DEVICE, num_envs=1)),
@@ -119,11 +120,11 @@ def test_to_dict_is_json_serialisable_and_keeps_subclass_identity():
     """provenance.json and the wandb config record both go through this.
     `dataclasses.asdict` alone emits enums, Paths and frozensets that json
     refuses or orders nondeterministically - and would erase which environment
-    subclass was used, since LRoomCfg and SquareRoomCfg have identical fields."""
+    source and shape were used - which the env id alone does not say."""
     for name, (_, cfg) in PRESETS.items():
         blob = json.dumps(cfg.to_dict())
         assert "${" not in blob, f"{name}: unresolved interpolation"
-        assert json.loads(blob)["env"]["_type"] == type(cfg.env).__name__
+        assert json.loads(blob)["env"]["source"]["_type"] == type(cfg.env.source).__name__
 
 
 def test_cli_selects_presets_and_applies_overrides():

@@ -24,7 +24,7 @@ from curious_george.configs import (
     EnvBackend,
     EvalCfg,
     EvalKind,
-    LRoomCfg,
+    EnvCfg,
     RewardAlignment,
     RunCfg,
     TrainPolicyCfg,
@@ -60,7 +60,7 @@ def small_config(
     reward_alignment: RewardAlignment = RewardAlignment.NEXT_OBS,
     policy_cuda_graph: bool = False,
     # -- the rest -----------------------------------------------------------
-    env: LRoomCfg | None = None,
+    env: EnvCfg | None = None,
     seed: int = 2,
     early_stop: bool = False,
     evals: frozenset[EvalKind] = frozenset(),
@@ -83,7 +83,7 @@ def small_config(
     batch = ppo_batch_size if ppo_batch_size is not None else env_steps // rollouts // ppo_epochs
 
     return Config(
-        env=env if env is not None else LRoomCfg(),
+        env=env if env is not None else EnvCfg(),
         collect=CollectCfg(
             num_envs=num_envs,
             episodes_per_env=episodes_per_env,

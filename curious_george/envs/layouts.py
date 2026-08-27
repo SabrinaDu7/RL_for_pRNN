@@ -395,6 +395,14 @@ ROOMS_SQUARE: tuple = tuple(
     )
 )
 
+#: The `-Multi-v0` variants accept a `landmarks=` argument; the plain ids ship
+#: their own landmarks and do not. Which one a run builds follows from whether
+#: it specifies a room set at all.
+MULTI_ROOM_ID = {
+    "MiniGrid-LRoom-v0": "MiniGrid-LRoom-Multi-v0",
+    "MiniGrid-SquareRoom-v0": "MiniGrid-SquareRoom-Multi-v0",
+}
+
 BASE_ROOM_ID = "MiniGrid-LRoom-v0"       # owns the wall geometry; landmarks never change it
 SQUARE_ROOM_ID = "MiniGrid-SquareRoom-v0"
 
@@ -462,49 +470,20 @@ def d4_canonical(anchors: tuple[tuple[int, int], ...], *, span: int) -> tuple:
 
 
 def resolve_layouts(cfg) -> list[Layout] | None:
-    """The rooms a run trains on, from `cfg.env`.
+    """The rooms a run trains on, from its `EnvCfg`.
 
-    A single-room environment has no layout set at all, which is why this
-    returns None for one: that is the type, not a mode string that could be
-    spelled wrong. The frozen set and the seeded pool feed the same machinery -
-    set size is the only difference between the two runs.
+    A thin adapter over `resolve_rooms`, kept because the training loop and the
+    offline scorer both hold a whole config and this is the one place that
+    knows which of its fields describe a room set.
     """
-    from curious_george.configs import (
-        FrozenLayouts,
-        LayoutPool,
-        MultiRoomEnvCfg,
-        SingleLayout,
+    return resolve_rooms(
+        shape=cfg.env.shape,
+        content=cfg.env.content,
+        source=cfg.env.source,
+        room_rules=cfg.env.room_rules,
+        set_rules=cfg.env.set_rules,
+        indices=cfg.env.indices,
     )
-
-    if not isinstance(cfg.env, MultiRoomEnvCfg):
-        return None
-    spec = cfg.env.layouts
-    square = cfg.env.base_room.value == SQUARE_ROOM_ID
-    frozen = ROOMS_SQUARE if square else ROOMS_RUN1
-
-    if isinstance(spec, SingleLayout):
-        # The control for every multi-room number: identical env class, identical
-        # landmark shapes and sizes, identical optimizer - one room instead of
-        # several. Without it a change in sRSA cannot be attributed to the room
-        # COUNT rather than to the scale or the schedule.
-        if spec.index >= len(frozen):
-            raise ValueError(
-                f"SingleLayout(index={spec.index}) but the frozen set has "
-                f"{len(frozen)} rooms"
-            )
-        return [frozen[spec.index]]
-    if isinstance(spec, FrozenLayouts):
-        return list(frozen)
-    if isinstance(spec, LayoutPool):
-        return generate_layouts(
-            walkable=base_walkable(cfg.env.base_room.value),
-            n=spec.size,
-            seed=spec.seed,
-            # Only the square room has the symmetries; the L-shaped wall breaks
-            # all eight, so deduping there would discard nothing and cost time.
-            dedupe_d4=square,
-        )
-    raise TypeError(f"unknown layout spec {spec!r}")
 
 
 # ===========================================================================
@@ -676,7 +655,22 @@ class Committed:
     it does not propose a design.
     """
 
-    rooms: tuple[Layout, ...]
+    rooms: tuple[Layout, ...] = ()
+    """Defaulted so the union can build a CLI parser at all - tyro refuses a
+    tuple of struct types without one. Empty is not a usable set and raises;
+    from a command line you want `Frozen`, which resolves the committed set for
+    whatever shape is configured."""
+
+
+@dataclass(frozen=True)
+class Frozen:
+    """The committed set FOR THIS SHAPE, resolved by the room.
+
+    `Committed` names literal rooms and cannot come from a command line, and it
+    is room-specific: handing the L-room's set to a square room would be silently
+    wrong. This picks the right one from `shape`, which is what makes "train on
+    the frozen three" expressible as a flag.
+    """
 
 
 @dataclass(frozen=True)
@@ -696,7 +690,7 @@ class Uniform:
     seed: int = 20260813
 
 
-RoomSource = Union[EnvDefault, Committed, Curated, Uniform]
+RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform]
 
 #: A placement: one anchor per landmark, in `EnvContent.kinds` order.
 AnchorSet = tuple[tuple[int, int], ...]
@@ -848,7 +842,16 @@ def resolve_rooms(
     if isinstance(source, EnvDefault):
         return None
     if isinstance(source, Committed):
+        if not source.rooms:
+            raise ValueError(
+                "Committed() with no rooms is not a set. Pass rooms explicitly, "
+                "or use Frozen() for the committed set of this shape."
+            )
         rooms = list(source.rooms)
+    elif isinstance(source, Frozen):
+        rooms = list(
+            ROOMS_SQUARE if shape.room == SQUARE_ROOM_ID else ROOMS_RUN1
+        )
     else:
         placements = admissible_placements(shape, content, room_rules)
         seed = source.seed

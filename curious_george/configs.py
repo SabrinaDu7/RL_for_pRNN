@@ -25,6 +25,22 @@ from typing import Any, Union
 
 from prnn.utils import ActionEncodingsEnum, pRNNtypes
 
+from curious_george.envs.layouts import (
+    MULTI_ROOM_ID,
+    Committed,
+    Curated,
+    EnvContent,
+    Frozen,
+    EnvDefault,
+    EnvShape,
+    LandmarkKind,
+    RoomRules,
+    RoomSetRules,
+    RoomSource,
+    Symmetry,
+    Uniform,
+    Vary,
+)
 from curious_george.utils.enums import AgentInputType, AgentType
 
 # ---------------------------------------------------------------------------
@@ -159,119 +175,50 @@ EnvLayoutSpec = Union[SingleLayout, FrozenLayouts, LayoutPool]
 
 
 @dataclass(frozen=True)
-class EnvCfg(abc.ABC):
-    """
-    Abstract parent class.
+class EnvCfg:
+    """The world: its SHAPE, its CONTENT, and which rooms a run trains over.
 
-    Does this describe the env, NOT how we gather experience from it?
-    Params for how we collect experiences in envs is in `CollectCfg`.
+    One class, not a subclass per room. Shape is a FIELD, so a new room is a
+    value rather than a type - which is what makes shape x content mixable. The
+    hierarchy existed to hang multi-room-only fields off a subclass, and those
+    fields now live on the source that owns them.
     """
+
+    shape: EnvShape = field(default_factory=EnvShape)
+    content: EnvContent = field(default_factory=EnvContent)
+    room_rules: RoomRules = field(default_factory=RoomRules)
+    """WITHIN one room: when is a placement legal?"""
+    set_rules: RoomSetRules = field(default_factory=RoomSetRules)
+    """BETWEEN rooms: what differs, and what is held constant?"""
+    source: RoomSource = field(default_factory=EnvDefault)
+    """Where the room set comes from. EnvDefault means the environment class
+    supplies its own landmarks - what nearly every checkpoint here trained on."""
+    indices: tuple[int, ...] | None = None
+    """Subset of the resolved set. `(0,)` is the single-room control, and it
+    works against ANY source rather than being its own."""
 
     see_through_walls: bool | None = None
-    # None = environment's default, which is often True
-    # False = occlusion
+    """None keeps the environment's own default (True). False is occlusion,
+    which changes what the agent can perceive and needs its own baseline."""
 
     @property
-    @abc.abstractmethod
-    def env_name(self) -> MinigridEnv:
-        """Which registered environment this is."""
-
-
-@dataclass(frozen=True)
-class LRoomCfg(EnvCfg):
-    """Static L-room."""
-
-    new_obj_pos: tuple[int, int] | None = None
-    """Cell of a FloorBright object, or None for none."""
+    def has_room_set(self) -> bool:
+        """False only for EnvDefault: there is no set, the env class owns the
+        content."""
+        return not isinstance(self.source, EnvDefault)
 
     @property
-    def env_name(self) -> MinigridEnv:
-        return MinigridEnv.LROOM
+    def env_name(self) -> str:
+        """The registered id to build.
+
+        Follows from the SOURCE. The plain id ships its own landmarks and takes
+        no `landmarks=` argument; the `-Multi-v0` variant accepts one, so a
+        specified room set needs it. That used to be a separate env config the
+        caller had to keep in agreement with `layouts`.
+        """
+        return MULTI_ROOM_ID[self.shape.room] if self.has_room_set else self.shape.room
 
 
-@dataclass(frozen=True)
-class SquareRoomCfg(EnvCfg):
-    """Single square room, so env geometry carries no position information."""
-
-    new_obj_pos: tuple[int, int] | None = None
-
-    @property
-    def env_name(self) -> MinigridEnv:
-        return MinigridEnv.SQUAREROOM
-
-
-@dataclass(frozen=True)
-class FourRoomsCfg(EnvCfg):
-
-    """
-    A square room separated into four subrooms
-    """
-
-    subroom_size: int = 8
-    door_poss: tuple[int, int, int, int] = (1, 5, 3, 4)
-    start_room: int | None = 1
-    """None randomises the start position. Folds the old `start_rand` and
-    `start_room`, which stated one fact twice."""
-
-    @property
-    def env_name(self) -> MinigridEnv:
-        return MinigridEnv.FOURROOMS_OBJECTS
-
-
-@dataclass(frozen=True)
-class MultiRoomEnvCfg(EnvCfg, abc.ABC):
-    """Rooms are reassigned at every synchronised episode boundary, so the same
-    integrated trajectory lands at a different absolute position depending on
-    which room an instance is in. That is the manipulation: it makes dead
-    reckoning insufficient and a visible landmark necessary.
-
-    `layouts` is the number of distinct environment CONFIGURATIONS, and it is
-    orthogonal to `CollectCfg.num_envs`: N parallel instances each redraw a room
-    from this pool at every episode boundary.
-    """
-
-    layouts: EnvLayoutSpec = field(default_factory=FrozenLayouts)
-    eval_rooms_max: int = 4
-    """Spatial evaluation scores this many rooms, as a fixed prefix so the
-    series stays comparable across checkpoints. Measured 4.5-8.9 s per room, and
-    the pooled estimate saturates at 2-3 rooms because prnn caps the pairwise
-    sample. The old code default of 8 contradicted the config's 4 and would have
-    doubled the cost; 4 is what every multi-room run actually set."""
-
-    @property
-    @abc.abstractmethod
-    def base_room(self) -> MinigridEnv:
-        """Owns the wall geometry and selects the symmetry handling. Was a free
-        string that had to agree with the environment id; the subclass now fixes
-        both together."""
-
-
-@dataclass(frozen=True)
-class LRoomMultiCfg(MultiRoomEnvCfg):
-    @property
-    def env_name(self) -> MinigridEnv:
-        return MinigridEnv.LROOM_MULTI
-
-    @property
-    def base_room(self) -> MinigridEnv:
-        return MinigridEnv.LROOM
-
-
-@dataclass(frozen=True)
-class SquareRoomMultiCfg(MultiRoomEnvCfg):
-    """Closes both routes to localising without an object: geometry (square
-    walls) and dead reckoning (the room changes every episode)."""
-
-    @property
-    def env_name(self) -> MinigridEnv:
-        return MinigridEnv.SQUAREROOM_MULTI
-
-    @property
-    def base_room(self) -> MinigridEnv:
-        return MinigridEnv.SQUAREROOM
-
-
-AnyEnvCfg = Union[LRoomCfg, SquareRoomCfg, FourRoomsCfg, LRoomMultiCfg, SquareRoomMultiCfg]
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +508,13 @@ class EvalCfg:
         {EvalKind.SPATIAL_ONPOLICY, EvalKind.BEHAVIOUR, EvalKind.TRAJECTORY_PLOT}
     )
 
+    rooms_max: int = 4
+    """How many rooms the multi-room spatial eval scores, as a fixed PREFIX so
+    the series stays comparable across checkpoints. Measured 4.5-8.9 s per room,
+    and the pooled estimate saturates at 2-3 because prnn caps the pairwise
+    sample. Lived on the env before, which is where it was read with a code
+    default of 8 that contradicted the config's 4."""
+
     n_trajs: int = 8
     """Pooled trajectories of `CollectCfg.episode_steps` each, so evaluation
     statistics match training trajectory statistics."""
@@ -618,7 +572,6 @@ class RunCfg:
 # ---------------------------------------------------------------------------
 # The run.
 
-
 @dataclass(frozen=True)
 class Config:
     """One run.
@@ -641,7 +594,7 @@ class Config:
     length dividing the rollout.
     """
 
-    env: AnyEnvCfg = field(default_factory=LRoomCfg)
+    env: EnvCfg = field(default_factory=EnvCfg)
     collect: CollectCfg = field(default_factory=CollectCfg)
     arch_prnn: ArchPrnnCfg = field(default_factory=ArchPrnnCfg)
     arch_policy: ArchPolicyCfg = field(default_factory=ArchPolicyCfg)
@@ -671,8 +624,7 @@ class Config:
     @property
     def schedule(self):
         """Every derived count, as the shared dataclass. A property, not a
-        field: a field can drift out of sync with what it was derived from,
-        and `to_dict()` must stay a record of what was ASKED for."""
+        field"""
         from curious_george.training.schedule import TrainingSchedule
 
         return TrainingSchedule.from_config(self)
@@ -689,7 +641,7 @@ class Config:
     # -- validation --------------------------------------------------------
 
     def __post_init__(self) -> None:
-        multiroom = isinstance(self.env, MultiRoomEnvCfg)
+        has_rooms = self.env.has_room_set
 
         if self.arch_policy.agent is AgentType.RANDOM and self.collect.num_envs != 1:
             raise ValueError(
@@ -711,14 +663,15 @@ class Config:
                 f"episodes_per_grad_step ({self.train_prnn.episodes_per_grad_step}) must "
                 f"divide episodes_per_rollout ({self.collect.episodes_per_rollout})"
             )
-        if (EvalKind.SPATIAL_MULTIROOM in self.eval.evals) != multiroom:
+        if (EvalKind.SPATIAL_MULTIROOM in self.eval.evals) != has_rooms:
             raise ValueError(
-                "SPATIAL_MULTIROOM and a multi-room environment imply each other; got "
-                f"eval={EvalKind.SPATIAL_MULTIROOM in self.eval.evals}, env={multiroom}"
+                "SPATIAL_MULTIROOM and a specified room set imply each other; got "
+                f"eval={EvalKind.SPATIAL_MULTIROOM in self.eval.evals}, "
+                f"room_set={has_rooms}"
             )
-        if multiroom and self.collect.backend is not EnvBackend.DEVICE:
+        if has_rooms and self.collect.backend is not EnvBackend.DEVICE:
             raise ValueError(
-                "a multi-room environment reassigns rooms per episode across the batch; "
+                "a room set is reassigned per episode across the batch; "
                 f"it needs the DEVICE backend, got {self.collect.backend.value}"
             )
 
@@ -767,16 +720,11 @@ def _reference() -> Config:
 
 def _multienv() -> Config:
     """Multi-room training, pooled world-model steps.
-
-    Pooling DESPITE the single-room sweep that found it loses on loss per
-    gradient step: with one room that result holds, but with several rooms per
-    rollout a pooled step averages the gradient ACROSS rooms, which is the
-    design.
     """
     base = Config()
     return replace(
         base,
-        env=LRoomMultiCfg(),
+        env=EnvCfg(source=Frozen()),
         collect=replace(base.collect, backend=EnvBackend.DEVICE),
         train_prnn=replace(
             base.train_prnn, batched=True, episodes_per_grad_step=8,
@@ -798,8 +746,7 @@ def _ultra() -> Config:
 
     The device path is trajectory-equivalent to the table path, but the pooled
     world-model step, the rollout size and the optimizer settings intentionally
-    change training semantics. A fast local starting point, not a claim of
-    scientific equivalence.
+    change training semantics.
     """
     base = Config()
     return replace(

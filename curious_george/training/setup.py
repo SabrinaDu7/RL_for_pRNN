@@ -18,7 +18,7 @@ from prnn.utils import PredictiveNet, load_pN
 from curious_george.log_and_store import provenance
 from curious_george.utils.common import get_device, seed as seed_everything
 from curious_george.envs.factory import make_env
-from curious_george.configs import EnvBackend, FourRoomsCfg
+from curious_george.configs import EnvBackend
 from curious_george.models.policy import ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.format import get_obss_preprocessor
@@ -110,23 +110,13 @@ def setup_env(cfg, seed_offset: int = 0, landmarks: list | None = None):
     # passing it unconditionally would break the ones that don't.
     obj = getattr(cfg.env, "new_obj_pos", None)
     extra = {"new_obj_pos": tuple(obj)} if obj else {}
-    if isinstance(cfg.env, FourRoomsCfg):
-        # The ONLY environment whose constructor reads these. MiniGridEnv takes
-        # **kwargs and DISCARDS them, so passing them to an L-room was dead
-        # config that read as live.
-        extra |= {
-            "subroom_size": cfg.env.subroom_size,
-            "door_poss": list(cfg.env.door_poss),
-            "agent_start_room": cfg.env.start_room,
-            "open_all_paths": False,
-        }
     if landmarks is not None:
         # LEnv_multi has no default room; the pool overwrites this per episode,
         # so it only has to be a valid member of the run's layout set.
         extra["landmarks"] = list(landmarks)
     return make_env(
         **extra,
-        env_key=cfg.env.env_name.value,
+        env_key=cfg.env.env_name,
         input_type=cfg.arch_policy.input_type.value,
         seed=cfg.run.seed + 10000 + seed_offset,
         act_enc=cfg.arch_prnn.action_encoding.value,

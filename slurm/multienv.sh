@@ -78,18 +78,21 @@ SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null || true; rsync -a "$RL_STORAGE/" "$DEST_DIR/" || true' EXIT
 
 case "$ENVCFG" in
-  squareroom_multi) ENV_SUBCOMMAND="env:square-room-multi-cfg" ;;
-  *)                ENV_SUBCOMMAND="env:l-room-multi-cfg" ;;
+  squareroom_multi) SHAPE="--env.shape.room MiniGrid-SquareRoom-v0" ;;
+  *)                SHAPE="" ;;
 esac
 case "$LAYOUTS" in
-  one)   LAYOUT_SUB="env.layouts:single-layout" ;;
-  rooms) LAYOUT_SUB="env.layouts:frozen-layouts" ;;
-  pool)  LAYOUT_SUB="env.layouts:layout-pool" ;;
+  one)   SOURCE="env.source:frozen";  EXTRA="--env.indices 0" ;;
+  rooms) SOURCE="env.source:frozen";  EXTRA="" ;;
+  pool)  SOURCE="env.source:uniform"; EXTRA="" ;;
   *)     echo "layouts must be one|rooms|pool, got $LAYOUTS" >&2; exit 1 ;;
 esac
 
-uv run main_train.py multienv $ENV_SUBCOMMAND $LAYOUT_SUB \
-    --run.exp-name "multienv-${ENVCFG%%_*}-$LAYOUTS"
+# The source subcommand goes LAST: tyro binds an option to the directly
+# preceding subcommand, so anything after it is unrecognized.
+uv run main_train.py multienv $SHAPE $EXTRA \
+    --run.exp-name "multienv-${ENVCFG%%_*}-$LAYOUTS" \
+    $SOURCE
 
 kill $SYNC_PID 2>/dev/null || true
 rsync -a "$RL_STORAGE/" "$DEST_DIR/"

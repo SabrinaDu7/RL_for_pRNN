@@ -199,3 +199,23 @@ def test_a_seed_names_the_set():
     c = _rooms({Vary.POSITION, Vary.COLOR}, seed=100)
     assert [r.anchors for r in a] == [r.anchors for r in b]
     assert [r.anchors for r in a] != [r.anchors for r in c]
+
+
+def test_frozen_resolves_the_committed_set_for_ITS_shape():
+    """`Committed` names literal rooms and is room-specific; handing the
+    L-room's set to a square room would be silently wrong, and it cannot come
+    from a command line at all. `Frozen` picks the right one from the shape."""
+    from curious_george.envs.layouts import Frozen
+
+    l_rooms = resolve_rooms(shape=L_SHAPE, content=CONTENT, source=Frozen())
+    sq_rooms = resolve_rooms(shape=SQ_SHAPE, content=CONTENT, source=Frozen())
+    assert tuple(l_rooms) == ROOMS_RUN1
+    assert tuple(sq_rooms) == ROOMS_SQUARE
+    assert l_rooms[2].anchors != sq_rooms[2].anchors
+
+
+def test_committed_with_no_rooms_refuses_rather_than_returning_nothing():
+    """It is defaulted only so the union can build a CLI parser - tyro refuses a
+    tuple of struct types without a default. An empty set is not a set."""
+    with pytest.raises(ValueError, match="Frozen"):
+        resolve_rooms(shape=L_SHAPE, content=CONTENT, source=Committed())

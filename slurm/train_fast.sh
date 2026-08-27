@@ -65,22 +65,25 @@ LAYOUTS="${1:-rooms}"; ENVCFG="${2:-lroom_multi}"; BRANCH="${3:-sdu/speed}"
 case "$LAYOUTS" in
   single)
     PRESET=reference
-    ENV_SUBCOMMAND="env:l-room-cfg"
+    ENV_SUBCOMMAND=""
     LAYOUT_OVERRIDES="--collect.backend DEVICE"
-    EVALS="spatial_onpolicy spatial_offpolicy behaviour trajectory_plot"
+    EVALS="SPATIAL_ONPOLICY SPATIAL_OFFPOLICY BEHAVIOUR TRAJECTORY_PLOT"
     ;;
   one|rooms|pool)
     PRESET=multienv
+    # The SHAPE is a field and the room SET is a source; `frozen` resolves to
+    # the committed set for whichever shape is set, so the two cannot fall out
+    # of agreement the way env=... and exp.layouts=... could.
     case "$ENVCFG" in
-      squareroom_multi) ENV_SUBCOMMAND="env:square-room-multi-cfg" ;;
-      *)                ENV_SUBCOMMAND="env:l-room-multi-cfg" ;;
+      squareroom_multi) SHAPE="--env.shape.room MiniGrid-SquareRoom-v0" ;;
+      *)                SHAPE="" ;;
     esac
     case "$LAYOUTS" in
-      one)   LAYOUT_OVERRIDES="env.layouts:single-layout" ;;
-      rooms) LAYOUT_OVERRIDES="env.layouts:frozen-layouts" ;;
-      pool)  LAYOUT_OVERRIDES="env.layouts:layout-pool" ;;
+      one)   ENV_SUBCOMMAND="env.source:frozen";  LAYOUT_OVERRIDES="$SHAPE --env.indices 0" ;;
+      rooms) ENV_SUBCOMMAND="env.source:frozen";  LAYOUT_OVERRIDES="$SHAPE" ;;
+      pool)  ENV_SUBCOMMAND="env.source:uniform"; LAYOUT_OVERRIDES="$SHAPE" ;;
     esac
-    EVALS="spatial_multiroom behaviour trajectory_plot"
+    EVALS="SPATIAL_MULTIROOM BEHAVIOUR TRAJECTORY_PLOT"
     ;;
   *)
     echo "layouts must be single|one|rooms|pool, got $LAYOUTS" >&2; exit 1 ;;
@@ -324,11 +327,24 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # tyro spells booleans as --flag / --no-flag, so a "True"/"False" argument has
 # to become one or the other. Passing `--flag False` is an unrecognised-argument
 # error, not a false.
-flag() { case "$2" in True|true|1) printf -- "--%s" "$1" ;; *) printf -- "--no-%s" "$1" ;; esac; }
+# The negation goes on the LAST dotted segment - `--train-prnn.no-cuda-graph`,
+# NOT `--no-train-prnn.cuda-graph`, which parses as an unknown option.
+flag() {
+  case "$2" in
+    True|true|1) printf -- "--%s" "$1" ;;
+    *)           printf -- "--%s.no-%s" "${1%.*}" "${1##*.}" ;;
+  esac
+}
+# Enum arguments take the MEMBER NAME (LAYER, DEVICE, SPATIAL_MULTIROOM), not
+# the value ("layer", "device", ...). The value is what lands in wandb and
+# provenance, so the two spellings sit side by side and only one parses.
 
-uv run python main_train.py $PRESET $ENV_SUBCOMMAND $LAYOUT_OVERRIDES \
+# ORDER MATTERS: tyro applies an option to the directly preceding subcommand,
+# so every --flag belongs between the preset and the source subcommand, and the
+# source goes LAST. Putting it first makes every later flag "unrecognized".
+uv run python main_train.py $PRESET $LAYOUT_OVERRIDES \
     --train-prnn.batched --train-prnn.episodes-per-grad-step $POOL_GROUP \
-    --train-prnn.compile layer \
+    --train-prnn.compile LAYER \
     $(flag train-prnn.cuda-graph "$GRAPH") \
     $(flag train-policy.cuda-graph "$PGRAPH") \
     $(flag collect.rollout-cuda-graph "$RGRAPH") \
@@ -344,6 +360,7 @@ uv run python main_train.py $PRESET $ENV_SUBCOMMAND $LAYOUT_OVERRIDES \
     --eval.analysis-every-steps $ANALYSIS_EVERY --eval.plot-every-steps $PLOT_EVERY \
     --run.seed $SEED \
     --run.exp-name fast-$LAYOUTS-e$ENT${ENT_FINAL:+to$ENT_FINAL}-g$POOL_GROUP-p$PPO_BATCH-s$SEED${GRAPH_TAG} \
+    $ENV_SUBCOMMAND \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the

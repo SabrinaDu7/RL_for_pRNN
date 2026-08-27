@@ -21,17 +21,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from curious_george.envs.layouts import BASE_ROOM_ID, Layout, base_walkable
+from curious_george.envs.layouts import (
+    BASE_ROOM_ID,
+    MULTI_ROOM_ID,
+    Layout,
+    base_walkable,
+)
 
 #: Chebyshev radius the "testable offsets" count is quoted at, matching
 #: `Layout.n_testable_offsets`'s own default.
 OFFSET_RADIUS = 4
 
-#: Multi-room ids take a `landmarks` argument; the single-room ids do not.
-MULTI_ROOM_ID = {
-    "MiniGrid-LRoom-v0": "MiniGrid-LRoom-Multi-v0",
-    "MiniGrid-SquareRoom-v0": "MiniGrid-SquareRoom-Multi-v0",
-}
 
 
 def render_layout(layout: Layout, *, room: str = BASE_ROOM_ID):
@@ -119,12 +119,13 @@ def plot_config_layouts(cfg, *, path: str | Path | None = None):
     layouts = resolve_layouts(cfg)
     if not layouts:
         raise ValueError(
-            f"{type(cfg.env).__name__} is a single-room environment and resolves "
-            "to no layout set"
+            f"{type(cfg.env.source).__name__} specifies no room set - the "
+            "environment class supplies its own landmarks"
         )
     return plot_layouts(
         layouts,
-        room=cfg.env.base_room.value,
-        title=f"{type(cfg.env).__name__} · {cfg.env.layouts!r} · {len(layouts)} rooms",
+        room=cfg.env.shape.room,
+        title=f"{cfg.env.shape.room} · {type(cfg.env.source).__name__} · "
+              f"{len(layouts)} rooms",
         path=path,
     )

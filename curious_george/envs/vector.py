@@ -63,9 +63,7 @@ class PosInfo(Wrapper):
 def _make_worker_thunk(cfg, seed_offset: int):
     """One worker env: factory.make_env minus the FaramaMinigridShell wrap,
     identical seeding (env.reset(seed=...) at construction)."""
-    from curious_george.configs import FourRoomsCfg
-
-    env_key = cfg.env.env_name.value
+    env_key = cfg.env.env_name
     input_type = cfg.arch_policy.input_type.value
     seed = cfg.run.seed + 10000 + seed_offset
     kwargs = dict(
@@ -73,16 +71,6 @@ def _make_worker_thunk(cfg, seed_offset: int):
         agent_start_dir=None,
         render_mode="rgb_array",
     )
-    if isinstance(cfg.env, FourRoomsCfg):
-        # Kept in step with factory.setup_env: only FourRooms reads these, and
-        # MiniGridEnv silently discards them for every other environment.
-        kwargs |= dict(
-            open_all_paths=False,
-            subroom_size=cfg.env.subroom_size,
-            door_poss=list(cfg.env.door_poss),
-            agent_start_room=cfg.env.start_room,
-        )
-
     see_through = cfg.env.see_through_walls
     tabled = cfg.collect.backend.tabled
 

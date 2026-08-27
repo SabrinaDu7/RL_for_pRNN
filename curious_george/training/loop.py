@@ -53,7 +53,7 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
         # 7,167 gradient steps against the 3-room run's 22,542 in the same 5h40m.
         # The prefix is fixed rather than sampled so the series stays comparable
         # across checkpoints, which is the whole point of tracking it over time.
-        scored = layouts[: cfg.env.eval_rooms_max]
+        scored = layouts[: cfg.eval.rooms_max]
         result = evaluate_multi_room_representation(
             comps.predictiveNet, comps.env, agent,
             layouts=scored,
