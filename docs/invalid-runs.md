@@ -196,3 +196,21 @@ excludes shared offsets and the window shrank. Do not compare it across the chan
 minutes.
 
 **Gate.** `tests/test_env_layouts.py`, `tests/test_location_entropy_support.py`.
+
+### Same day, follow-up: `min_testable_offsets` was measured in the wrong room
+
+Caught while pre-building banks for Q3's 10 training rooms. `enumerate_anchor_triples`
+checked the offset count against the shape's walkable set — the room BEFORE its objects
+are placed — and built its candidate `Layout`s without the `impassable` flag, so the
+count never noticed that an object takes its own cells out of the walkable set.
+
+With `min_testable_offsets=20` the generated rooms had as few as **11** offsets the
+agent could actually be measured over. The constraint did not constrain what it named.
+
+Now measured against `layout.walkable(base)`, and the enumerator is told which stencils
+block. The honest admissible set for impassable objects is **9,074 placements / 25
+distinct separation signatures**, against 19,820 / 43 for walkable ones — objects
+genuinely rule out half the configurations, and that was previously hidden.
+
+**What it invalidates.** Nothing that ran: no impassable-object run existed before this.
+Any pool drawn between the two 2026-08-27 commits would be wrong, and there is none.

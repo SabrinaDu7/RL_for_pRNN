@@ -311,6 +311,7 @@ def enumerate_anchor_triples(
     dedupe_d4: bool = False,
     span: int = 14,
     stencils: tuple[str, ...] = SHAPES,
+    impassable: tuple[bool, ...] = (),
 ) -> list[tuple[tuple[int, int], ...]]:
     """EVERY anchor assignment the room admits, one per stencil in order.
 
@@ -326,6 +327,11 @@ def enumerate_anchor_triples(
     actually admits tens of thousands. And a pool drawn uniformly from the
     enumerated set has no sampler bias to argue about later.
     """
+    # Which stencils block movement, defaulting to none. It has to reach here
+    # because `min_testable_offsets` is measured against the layout's own
+    # walkable set, and that depends on whether the landmarks take cells away.
+    impassable = impassable or (False,) * len(stencils)
+
     anchors = {
         s: np.array(
             valid_anchors(walkable=walkable, shape=s, min_wall_distance=min_wall_distance),
@@ -353,8 +359,10 @@ def enumerate_anchor_triples(
         triple = tuple(tuple(int(v) for v in p[k]) for p in picks)
         layout = Layout(
             tuple(
-                Landmark(s, c, a)
-                for s, c, a in zip(stencils, LANDMARK_COLORS[: len(stencils)], triple)
+                Landmark(s, c, a, impassable=blocks)
+                for s, c, a, blocks in zip(
+                    stencils, LANDMARK_COLORS[: len(stencils)], triple, impassable
+                )
             )
         )
         painted = [c for lm in layout.landmarks for c in lm.cells]
@@ -362,7 +370,13 @@ def enumerate_anchor_triples(
             continue
         if layout.min_cell_gap() < min_cell_gap:
             continue
-        if layout.n_testable_offsets(walkable=walkable) < min_testable_offsets:
+        # Against the layout's OWN walkable set, not the empty room's. With
+        # impassable landmarks the agent cannot stand on an object, so an offset
+        # landing there is not testable - and checking the pre-object room
+        # promised 20 offsets while delivering as few as 11. The rule has to be
+        # measured where the agent actually lives.
+        if (layout.n_testable_offsets(walkable=layout.walkable(walkable))
+                < min_testable_offsets):
             continue
         if dedupe_d4:
             orbit = d4_canonical(triple, span=span)
@@ -886,6 +900,7 @@ def _enumerate_admissible(
         dedupe_d4=shape.symmetry is Symmetry.D4,
         span=shape.span,
         stencils=content.stencils,
+        impassable=tuple(k.impassable for k in content.kinds),
     )
     if rules.max_coverage < 1.0:
         budget = rules.max_coverage * len(shape.walkable)
