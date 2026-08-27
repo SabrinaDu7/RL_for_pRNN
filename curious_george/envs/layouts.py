@@ -729,7 +729,56 @@ def admissible_placements(
             p for p in placements
             if len(_layout_of(p, content).cells) <= budget
         ]
-    return placements
+    return _drop_relabellings(placements, content)
+
+
+def _interchangeable_slots(content: EnvContent) -> tuple[tuple[int, ...], ...]:
+    """Landmark slots that paint identically: same stencil AND same colour.
+
+    The enumerator assigns stencil `i` to anchor `i`, so with DISTINCT landmarks
+    every ordering is a different room and there is nothing to collapse. Give it
+    interchangeable ones - which is what an object-vector design wants, three
+    objects a vector code must treat alike - and each room comes back once per
+    permutation of those slots.
+
+    Conservative by construction: slots differing in either stencil or colour
+    are never grouped, so a design that varies colour between rooms is untouched.
+    """
+    slots: dict[tuple[str, str], list[int]] = {}
+    colors = content.palette[: content.n_landmarks]
+    for i, key in enumerate(zip(content.stencils, colors)):
+        slots.setdefault(key, []).append(i)
+    return tuple(tuple(v) for v in slots.values() if len(v) > 1)
+
+
+def _drop_relabellings(placements: list[AnchorSet], content: EnvContent) -> list[AnchorSet]:
+    """One placement per genuinely distinct room.
+
+    Measured on the L-room with three identical objects: 6,894 placements for
+    1,149 distinct rooms, exactly 3! per room. Without this, `Uniform(n=500)`
+    returned 418 distinct rooms while reporting 500 - so a methods section
+    saying "500 rooms" was wrong by 16%, and the run built and held banks for
+    duplicates.
+    """
+    groups = _interchangeable_slots(content)
+    if not groups:
+        return placements
+
+    def canonical(anchors: AnchorSet) -> AnchorSet:
+        out = list(anchors)
+        for group in groups:
+            for slot, anchor in zip(group, sorted(out[i] for i in group)):
+                out[slot] = anchor
+        return tuple(out)
+
+    seen: set = set()
+    unique = []
+    for placement in placements:
+        key = canonical(placement)
+        if key not in seen:
+            seen.add(key)
+            unique.append(placement)
+    return unique
 
 
 def _layout_of(anchors: AnchorSet, content: EnvContent,

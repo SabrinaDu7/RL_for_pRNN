@@ -219,3 +219,51 @@ def test_committed_with_no_rooms_refuses_rather_than_returning_nothing():
     tuple of struct types without a default. An empty set is not a set."""
     with pytest.raises(ValueError, match="Frozen"):
         resolve_rooms(shape=L_SHAPE, content=CONTENT, source=Committed())
+
+
+# --- interchangeable landmarks: one placement per distinct room -------------
+
+
+def _identical(n=3, stencil="x", color="blue"):
+    """Q3's content: objects a vector code must treat alike."""
+    return EnvContent(kinds=tuple(LandmarkKind(stencil) for _ in range(n)),
+                      palette=(color,) * n)
+
+
+def test_identical_objects_do_not_multiply_the_pool_by_their_permutations():
+    """The enumerator assigns stencil i to anchor i, so three interchangeable
+    objects used to return every room 3! times. Measured before the fix: 6,894
+    placements for 1,149 distinct rooms."""
+    placements = admissible_placements(L_SHAPE, _identical(), RoomRules())
+    unordered = {frozenset(p) for p in placements}
+    assert len(placements) == len(unordered), "each room must appear exactly once"
+
+
+def test_a_pool_of_identical_object_rooms_is_the_size_it_says():
+    """`Uniform(n=500)` returned 418 distinct rooms while reporting 500, so a
+    methods section quoting the pool size was wrong by 16%."""
+    n = 300
+    rooms = resolve_rooms(
+        shape=L_SHAPE, content=_identical(), source=Uniform(n=n, seed=1),
+        set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})),
+    )
+    assert len({frozenset(lm.anchor for lm in r.landmarks) for r in rooms}) == n
+
+
+def test_distinct_landmarks_are_untouched():
+    """The dedup must be INERT for the default content: with distinct stencils
+    every ordering is a genuinely different room. Asserted on the grouping
+    rather than on a placement count, so it stays true if the room changes."""
+    from curious_george.envs.layouts import _interchangeable_slots
+
+    assert _interchangeable_slots(CONTENT) == ()
+    assert _interchangeable_slots(_identical()) == ((0, 1, 2),)
+
+
+def test_same_stencil_different_colour_stays_distinguishable():
+    """Conservative by construction: colour alone makes two slots orderable, so
+    swapping their anchors is a real second room and must survive."""
+    two_tone = EnvContent(kinds=tuple(LandmarkKind("x") for _ in range(3)),
+                          palette=("blue", "red", "yellow"))
+    placements = admissible_placements(L_SHAPE, two_tone, RoomRules())
+    assert len(placements) > len(admissible_placements(L_SHAPE, _identical(), RoomRules()))

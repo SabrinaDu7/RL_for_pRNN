@@ -201,6 +201,29 @@ class EnvCfg:
     """None keeps the environment's own default (True). False is occlusion,
     which changes what the agent can perceive and needs its own baseline."""
 
+    novel_object: tuple[int, int] | None = None
+    """One extra object at this cell - the Object Memory Task's manipulation.
+
+    NOT a landmark: the room's landmarks come from shape/content/source, and
+    this is placed on top of them at a cell the experiment picks. The
+    environment renders it as `FloorBright` and derives its colour itself
+    (green), so colour is not a parameter here - see minigrid `envs/Lroom.py`.
+
+    Restored 2026-08-27. It had been dropped from the config while
+    `training/setup.py` kept reading it through `getattr(cfg.env,
+    "new_obj_pos", None)` - a default that turned a missing field into "no
+    object" instead of an error, so no run could place one and nothing said so.
+    """
+
+    def __post_init__(self) -> None:
+        if self.novel_object is not None and self.novel_object not in self.shape.walkable:
+            # A novel object outside the room is invisible, and an OMT run with
+            # an invisible object looks exactly like a null result.
+            raise ValueError(
+                f"novel_object {self.novel_object} is not a walkable cell of "
+                f"{self.shape.room}"
+            )
+
     @property
     def has_room_set(self) -> bool:
         """False only for EnvDefault: there is no set, the env class owns the

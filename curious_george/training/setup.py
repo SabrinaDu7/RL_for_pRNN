@@ -107,9 +107,10 @@ def setup_run(cfg) -> RunContext:
 
 def setup_env(cfg, seed_offset: int = 0, landmarks: list | None = None):
     # Only forwarded when set: not every registered env takes new_obj_pos, and
-    # passing it unconditionally would break the ones that don't.
-    obj = getattr(cfg.env, "new_obj_pos", None)
-    extra = {"new_obj_pos": tuple(obj)} if obj else {}
+    # passing it unconditionally would break the ones that don't. A direct read,
+    # NOT getattr with a default - that spelling survived the field being
+    # removed and silently reported "no novel object" for every run.
+    extra = {"new_obj_pos": cfg.env.novel_object} if cfg.env.novel_object else {}
     if landmarks is not None:
         # LEnv_multi has no default room; the pool overwrites this per episode,
         # so it only has to be a valid member of the run's layout set.

@@ -165,7 +165,23 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     print(schedule.summary())
     print(entropy.summary())
     if num_frames:
-        print(f"  resuming at {num_frames} steps -> {schedule.total_env_steps - num_frames} to go")
+        remaining = schedule.total_env_steps - num_frames
+        if remaining <= 0:
+            # A resumed run's budget is the GRAND TOTAL across both phases, not
+            # the size of this phase - `num_frames` comes out of the checkpoint.
+            # Setting a phase-2-sized budget used to fall straight through the
+            # loop and exit 0, so a two-phase experiment produced a run
+            # directory, a provenance file and a wandb run for a phase that
+            # never trained. Refuse instead: the only thing worse than a failed
+            # run is one that looks finished.
+            raise ValueError(
+                f"nothing to train: resuming from a checkpoint at {num_frames:,} "
+                f"environment steps, but the budget is {schedule.total_env_steps:,}. "
+                "A resumed run's total_grad_steps is the TOTAL across all phases; "
+                f"to add {abs(remaining):,} more steps, raise it past "
+                f"{num_frames:,}."
+            )
+        print(f"  resuming at {num_frames:,} steps -> {remaining:,} to go")
 
     with tqdm(total=schedule.total_env_steps, desc="Processing") as pbar:
         while num_frames < schedule.total_env_steps:

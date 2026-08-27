@@ -274,15 +274,24 @@ repo's HEAD. **All but one resolve.** The break is narrower than expected:
 - **`curious_george.provenance` is gone** — it moved to
   `curious_george.log_and_store.provenance` in `fa99973`. `src/omt/main_task.py`
   imports it from the top level. One-line fix on their side.
-- **`evaluation/task.py::setup_task(cfg, ...)` now reads the new config shape** —
-  `cfg.run.seed` and `cfg.run.wandb`, and *nothing else*. The experiment repo passes a
-  Hydra `DictConfig` with `exp.seed` / `logging.wandb_log`, so this raises on the next
-  `make pin`.
+- **`evaluation/task.py::setup_task(cfg, ...)` needs the new config shape.** The
+  experiment repo passes a Hydra `DictConfig` with `exp.seed` / `logging.wandb_log`, so
+  this raises on the next `make pin`.
 
-That second one is the whole incompatibility, and it is two scalar reads. Every other
-argument to `setup_task` is already an explicit keyword. Making those two explicit too
-(`seed: int`, `wandb_log: bool`) decouples the experiment repo from this repo's config
-shape permanently, and is a smaller change than migrating their Hydra tree.
+**⚠️ I first wrote that this was two scalar reads and could be papered over with two
+explicit keyword arguments. That was wrong, and it is worth saying why.** I read
+`setup_task`'s own body — which does only touch `cfg.run.seed` and `cfg.run.wandb` —
+and did not follow `cfg` into the three functions it hands it to. `get_pN`,
+`get_SR_acmodel` and `setup_algo` read **39 distinct fields** between them, across
+`arch_prnn`, `arch_policy`, `train_prnn`, `train_policy`, `collect` and `run`, all in
+the new spelling.
+
+So there is **no small seam**, and adding those two keywords would have been worse than
+useless: it would have looked like the incompatibility was handled. The honest answer is
+simpler and bigger — **the experiment repo has to build a
+`curious_george.configs.Config`**, and its own `Configs/` Hydra tree should go the way
+this repo's did. That is a real piece of work, but it is the one the user already said
+they would do, and it is the only thing that actually holds.
 
 **The good news for Q2 and Q3:** `main_train.py::train(cfg)` takes an already-built
 `Config`, so the experiment repo can build a config in Python and call it directly —
@@ -354,9 +363,13 @@ Ordered by what blocks what. Each is self-contained enough to hand to an agent.
 
 12. **Fix `LEnv_small_obj`'s docstring in the minigrid fork** — it says "solid", they
     are walkable.
-13. **Give the experiment repo a stable seam:** make `setup_task` take `seed` and
-    `wandb_log` as explicit keywords instead of reaching into `cfg`. Then their next
-    `make pin` does not break, and this repo's config can keep moving.
+13. **The experiment repo must build a typed `Config`; there is no shortcut.** Its
+    `src/omt/` passes a Hydra `DictConfig` into `setup_task`, which reaches 39 fields of
+    the new shape through `get_pN` / `get_SR_acmodel` / `setup_algo`. Delete
+    `experiment-curiousgeorge/Configs/` and construct a `Config` in Python — the same
+    move this repo made. Do NOT try to bridge it with a shim; see the correction in §4.
+    Also fix the one stale import there: `curious_george.provenance` is now
+    `curious_george.log_and_store.provenance`.
 14. **The fast config has two homes.** Every speed knob defaults off in `configs.py`
     (`compile=OFF`, all `cuda_graph=False`, `num_envs=8`) and lives only as CLI
     overrides in `slurm/train_fast.sh`. Anyone running `main_train.py multienv` gets

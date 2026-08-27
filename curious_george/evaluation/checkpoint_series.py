@@ -19,17 +19,17 @@ Two jobs:
   - babysitting a cluster run: are sRSA still high, SWdist still low, and is the
     prediction still correct - without waiting for the job to finish.
 
-    uv run python -m curious_george.evaluation.checkpoint_series --run <run> --env lroom_multi
-    uv run python -m curious_george.evaluation.checkpoint_series --run <run> --env squareroom_multi
+    uv run python -m curious_george.evaluation.checkpoint_series --run <run> --room lroom
+    uv run python -m curious_george.evaluation.checkpoint_series --run <run> --room squareroom --source uniform
 
-THE ROOM COMES FROM THE RUN'S OWN CONFIG, NOT FROM THIS FILE. `--env` names the
-config the job was launched with (`slurm/multienv.sh`'s second argument), and
-every room-dependent quantity - the multi-room env id, the base room's walls,
-the layout set, the pool size and seed, D4 dedup - is then read from it through
-the SAME `resolve_layouts` the training loop uses. Re-specifying any of them
-here is how a square run gets scored in an L-room: the two differ in walls, in
-layout set and in whether layouts are deduplicated under the symmetries of the
-square, and a mismatched score looks entirely plausible.
+THE ROOM COMES FROM THE RUN'S OWN CONFIG, NOT FROM THIS FILE. `--room` and
+`--source` name what the job was launched with, and every room-dependent
+quantity - the multi-room env id, the base room's walls, the room set, the pool
+size and seed, D4 dedup - is then read from the `Config` they build, through the
+SAME `resolve_layouts` the training loop uses. Re-specifying any of them here is
+how a square run gets scored in an L-room: the two differ in walls, in room set
+and in whether rooms are deduplicated under the symmetries of the square, and a
+mismatched score looks entirely plausible.
 
 Reports one row per checkpoint. A RUNNING job's newest checkpoint is a
 checkpoint, not a result: the row is printed with `(latest)` so it is never
@@ -40,10 +40,13 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
+
+from curious_george.envs.layouts import BASE_ROOM_ID, SQUARE_ROOM_ID
 
 PROBE_SEED = 20260813
 ONSET = 20
@@ -70,41 +73,106 @@ def checkpoint_hiddensize(ckpt: Path) -> int:
     return int(torch.load(ckpt, map_location="cpu", weights_only=False)[CkptKeys.HIDDEN_SIZE])
 
 
-def run_config(*, env_cfg: str, layouts: str | None, hiddensize: int):
-    """The launched run's config - the single source of room and layout set.
+#: `--room` values -> the base room they name. The room ids themselves live in
+#: layouts.py; this only maps the short name a launcher types.
+ROOMS: dict[str, str] = {"lroom": BASE_ROOM_ID, "squareroom": SQUARE_ROOM_ID}
 
-    Built once, so the layout set is a function of the config rather than of
-    when it was asked for.
+#: `--source` values -> how the room set is drawn, in the vocabulary
+#: `curious_george.configs` actually uses. These used to be `one/rooms/pool`,
+#: which named Hydra config groups that no longer exist.
+SOURCES: tuple[str, ...] = ("frozen", "one", "uniform")
+
+
+def run_config(*, room: str, source: str, hiddensize: int):
+    """The launched run's config - the single source of room and room set.
+
+    Built once, so the room set is a function of the config rather than of when
+    it was asked for.
     """
     from dataclasses import replace
 
     from curious_george.configs import (
-        Committed,
         Config,
         EnvBackend,
         EnvCfg,
         EnvShape,
         EvalCfg,
         EvalKind,
+        Frozen,
         Uniform,
     )
-    from curious_george.envs.layouts import ROOMS_RUN1, ROOMS_SQUARE, SQUARE_ROOM_ID
 
-    square = env_cfg == "squareroom_multi"
-    room = SQUARE_ROOM_ID if square else "MiniGrid-LRoom-v0"
-    frozen = ROOMS_SQUARE if square else ROOMS_RUN1
-    source = {
-        None: Committed(rooms=frozen),
-        "rooms": Committed(rooms=frozen),
-        "one": Committed(rooms=frozen[:1]),
-        "pool": Uniform(),
-    }[layouts]
+    # `Frozen` picks the committed set that belongs to THIS shape, so the room
+    # and its set cannot disagree - handing the L-room's set to a square room
+    # was silently wrong when this branched on the room id itself.
+    env = EnvCfg(
+        shape=EnvShape(ROOMS[room]),
+        source=Uniform() if source == "uniform" else Frozen(),
+        indices=(0,) if source == "one" else None,
+    )
     base = Config(
-        env=EnvCfg(shape=EnvShape(room), source=source),
+        env=env,
         collect=replace(Config().collect, backend=EnvBackend.DEVICE),
         eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM})),
     )
     return replace(base, arch_prnn=replace(base.arch_prnn, hidden_size=hiddensize))
+
+
+@dataclass(frozen=True)
+class SeriesContext:
+    """Every config read the series needs, resolved once.
+
+    These reads used to sit inline in `main`, which is why four of them kept
+    their pre-2026-08-26 spelling (`env.base_room`, `env.layouts`,
+    `env.eval_rooms_max`, and `env_name.value` on what is now a plain `str`)
+    and nothing caught it: reaching them required a run directory full of
+    checkpoints, so no test ever did. Resolving them here makes them reachable
+    from a `Config` alone - see tests/test_checkpoint_series.py.
+    """
+
+    env_name: str
+    room: str
+    source: object
+    rooms: list
+    n_layouts: int
+
+    @classmethod
+    def resolve(cls, cfg, *, rooms_scored: int | None) -> "SeriesContext":
+        from curious_george.envs.layouts import resolve_layouts
+
+        layouts = resolve_layouts(cfg)
+        if not layouts:
+            raise ValueError(f"{cfg.env.source!r} resolves to no rooms")
+        # A fixed PREFIX, matching what the training loop scores, so this series
+        # and the wandb one are the same measurement.
+        n = rooms_scored or cfg.eval.rooms_max
+        return cls(
+            env_name=cfg.env.env_name,
+            room=cfg.env.shape.room,
+            source=cfg.env.source,
+            rooms=list(layouts[:n]),
+            n_layouts=len(layouts),
+        )
+
+    def describe(self, *, n_points: int, n_trajs: int, steps: int) -> str:
+        return (
+            f"{n_points} checkpoints in {self.env_name} (base room {self.room}), "
+            f"source={self.source!r}: {len(self.rooms)}/{self.n_layouts} rooms "
+            f"scored, {n_trajs} probe trajectories x {steps} steps"
+        )
+
+    def meta(self) -> dict:
+        """Metadata so a curve can say WHICH run it is. Without it a plot of
+        sRSA against step is indistinguishable between the L-room and square
+        runs, and between 3 rooms and a 500-room pool."""
+        return {
+            "env_name": self.env_name,
+            "room_id": self.room,
+            "source": repr(self.source),
+            "n_layouts": self.n_layouts,
+            "n_rooms_scored": len(self.rooms),
+            "room_keys": [r.key for r in self.rooms],
+        }
 
 
 def build(*, cfg, landmarks, ckpt: str):
@@ -113,7 +181,7 @@ def build(*, cfg, landmarks, ckpt: str):
     from curious_george import get_pN, make_env
 
     env = make_env(
-        env_key=cfg.env.env_name.value, input_type=AgentInputType.H_PO.value,
+        env_key=cfg.env.env_name, input_type=AgentInputType.H_PO.value,
         act_enc=ActionEncodingsEnum.SpeedHD.value, seed=0, landmarks=list(landmarks),
     )
     pN = get_pN(args=cfg, env=env, device="cpu", pRNN_ckpt=ckpt)
@@ -159,39 +227,32 @@ def score(*, pN, rolls, env) -> tuple[float, np.ndarray, np.ndarray]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True, help="training run directory")
-    ap.add_argument("--env", default="lroom_multi",
-                    choices=("lroom_multi", "squareroom_multi"),
-                    help="the env config the run was LAUNCHED with; everything "
-                         "room-dependent is read from it")
-    ap.add_argument("--layouts", default=None, choices=("one", "rooms", "pool"),
-                    help="override exp.layouts; default is whatever the env config sets")
+    ap.add_argument("--room", default="lroom", choices=tuple(ROOMS),
+                    help="the base room the run was LAUNCHED in; everything "
+                         "room-dependent is read from the config this builds")
+    ap.add_argument("--source", default="frozen", choices=SOURCES,
+                    help="how the run drew its rooms: the committed set, its "
+                         "first room alone, or a uniform pool")
     ap.add_argument("--rooms-scored", type=int, default=None,
-                    help="rooms to score; default is the config's exp.eval_rooms_max")
+                    help="rooms to score; default is the config's eval.rooms_max")
     ap.add_argument("--n-trajs", type=int, default=6)
     ap.add_argument("--steps", type=int, default=256)
     ap.add_argument("--spatial", action="store_true", help="also compute sRSA/SWdist (slower)")
     a = ap.parse_args()
-
-    from curious_george.envs.layouts import resolve_layouts
 
     run_dir = Path(a.run)
     points = archived(run_dir)
     if not points:
         raise SystemExit(f"no archived checkpoints under {run_dir / 'checkpoints'}")
 
-    cfg = run_config(env_cfg=a.env, layouts=a.layouts,
+    cfg = run_config(room=a.room, source=a.source,
                      hiddensize=checkpoint_hiddensize(points[0][1]))
-    layouts = resolve_layouts(cfg)
-    if not layouts:
-        raise SystemExit(f"env={a.env} resolves to no layouts (layouts={cfg.env.layouts!r})")
-    # A fixed PREFIX, matching what the training loop scores, so this series and
-    # the wandb one are the same measurement.
-    n_scored = a.rooms_scored or cfg.env.eval_rooms_max
-    rooms = layouts[:n_scored]
-    print(f"{len(points)} checkpoints in {cfg.env.env_name.value} "
-          f"(base room {cfg.env.base_room.value}), "
-          f"layouts={cfg.env.layouts!r}: {len(rooms)}/{len(layouts)} rooms scored, "
-          f"{a.n_trajs} probe trajectories x {a.steps} steps")
+    try:
+        ctx = SeriesContext.resolve(cfg, rooms_scored=a.rooms_scored)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    rooms = ctx.rooms
+    print(ctx.describe(n_points=len(points), n_trajs=a.n_trajs, steps=a.steps))
     for r in rooms:
         print(f"    {r.key}  {r.describe()}")
 
@@ -236,16 +297,8 @@ def main() -> None:
     print(f"\nprediction loss {first:.6f} -> {last:.6f}  "
           f"({'DECREASING' if last < first else 'NOT decreasing'})")
     out = run_dir / "checkpoint_curve.json"
-    # Metadata, so the series can say WHICH run it is. Without it a curve of
-    # sRSA against step is indistinguishable between the L-room and square runs,
-    # and between 3 rooms and a 500-room pool - which is exactly the confusion a
-    # figure built from this file would inherit.
     out.write_text(json.dumps({
-        "meta": {"run": run_dir.name, "env_config": a.env,
-                 "env_name": cfg.env.env_name.value,
-                 "room_id": cfg.env.base_room.value,
-                 "layouts": repr(cfg.env.layouts), "n_layouts": len(layouts),
-                 "n_rooms_scored": len(rooms), "room_keys": [r.key for r in rooms],
+        "meta": {"run": run_dir.name, **ctx.meta(),
                  "n_trajs": a.n_trajs, "steps": a.steps},
         "rows": rows}, indent=2, default=float))
     print(f"wrote {out}")
