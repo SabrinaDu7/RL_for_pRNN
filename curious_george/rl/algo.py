@@ -284,14 +284,28 @@ class PredictivePPOAlgo:
         right for them: it counts cells that were blocked where the agent
         actually was, and drops cells that were open there.
 
-        The union is the one support that is correct for a pooled measure. A
-        cell blocked in every room is excluded, because the agent can never be
-        there; a cell open in any room is included, because sometimes it can.
+        The union is the one support that is correct for a pooled measure, and
+        what makes it matter is NOT the half you would expect. Measured:
+
+          including cells the agent can never reach   changes entropy by 9e-16
+          dropping cells the agent DID visit          changes it by 0.19 bits
+
+        Zero-count cells are inert - 0*log0 = 0 - so keeping a blocked cell in
+        the support costs nothing. The bug is the other direction: the old mask
+        was ONE room's, so in any other room the agent walks on cells that mask
+        excludes, and those visits were deleted from the histogram before the
+        entropy was taken. The union exists to stop dropping real visits.
+
         Identical to the old mask whenever the rooms share a walkable set, which
         is every run before 2026-08-27 - so the existing series is unbroken.
 
-        ⚠️ It is still a MIXTURE across rooms. Per-room coverage is a different
-        question and belongs in analysis, not in a per-rollout scalar.
+        ⚠️ TWO things this still does not fix, both for the reader rather than
+        the code. It is a MIXTURE across rooms: `algo.locs` has no room channel,
+        so a low count cannot be told apart from "blocked in most rooms". And
+        the CEILING moves with the geometry - a perfect explorer scores
+        log2(153)=7.26 with objects against log2(172)=7.43 without - so raw
+        `loc_entropy` is not comparable between an objects arm and a control.
+        That comparison needs normalising by log2(reachable), per room.
         """
         env = self.env
         layouts = getattr(self.envs, "layouts", None)
