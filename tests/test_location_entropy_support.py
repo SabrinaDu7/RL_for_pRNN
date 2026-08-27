@@ -81,19 +81,24 @@ def test_impassable_rooms_keep_every_cell_open_in_ANY_room():
     genuinely goes. Dropping it understates the support and inflates the
     entropy - the half of the bug a single room's mask causes by omission.
 
-    With objects at DIFFERENT positions, no cell is blocked in every room, so
-    the correct support is the whole room. That is the healthy case and worth
-    stating outright: each room individually hides 19 cells, and only the union
-    puts back the ones the agent demonstrably reaches in some other room.
+    Asserted as a RELATIONSHIP, not a cell count. An earlier version of this
+    test asserted `union == base`, which was true only while
+    `min_anchor_separation` was 6 and kept objects far apart; once they were
+    allowed within 3, two cells came to be blocked in all three rooms and the
+    union legitimately shrank. The rule is the relationship, not the number.
     """
     algo = _algo(impassable=True)
     base = base_walkable(BASE_ROOM_ID)
     rooms = algo.envs.layouts
     union = set().union(*(r.walkable(base) for r in rooms))
-    assert _mask_cells(algo) == union == base
-    assert all(r.walkable(base) < base for r in rooms), (
-        "each room individually blocks cells; only the union restores them"
-    )
+
+    assert _mask_cells(algo) == union
+    assert union <= base
+    for room in rooms:
+        assert room.walkable(base) < union, (
+            "every room hides cells that some other room leaves open, so the "
+            "union must be strictly larger than any single room's set"
+        )
 
 
 def test_no_room_alone_would_have_given_the_right_answer():
@@ -142,9 +147,11 @@ def test_the_ceiling_is_quotable_from_a_config_alone():
 def test_objects_lower_the_ceiling_only_where_they_block_every_room():
     """The number that makes an objects arm comparable to its control.
 
-    Objects at VARYING positions leave the ceiling untouched - every cell is
-    open in some room - which is the counterintuitive part and exactly why it
-    should be read rather than assumed.
+    Varying the positions puts the ceiling near the empty room's, because a
+    cell blocked in one room is usually open in another; holding them fixed
+    drops it by the full 19 cells. Stated as an ordering plus the exact fixed
+    case, because the varying number depends on how much the sampled rooms
+    happen to overlap - which is a property of the pool, not a constant.
     """
     varying = EnvCfg(
         content=EnvContent(kinds=tuple(LandmarkKind(s, impassable=True) for s in SHAPES)),
@@ -156,9 +163,12 @@ def test_objects_lower_the_ceiling_only_where_they_block_every_room():
         source=Uniform(n=3, seed=7),
         set_rules=RoomSetRules(varies=frozenset()),
     )
-    assert varying.loc_entropy_ceiling == pytest.approx(np.log2(172))
     assert fixed.loc_entropy_ceiling == pytest.approx(np.log2(172 - 19))
     assert fixed.loc_entropy_ceiling < varying.loc_entropy_ceiling
+    assert varying.loc_entropy_ceiling <= np.log2(172) + 1e-9
+    assert varying.loc_entropy_ceiling == pytest.approx(
+        np.log2(len(varying.reachable_cells))
+    ), "the ceiling must be log2 of the support it is quoted for"
 
 
 def test_the_run_and_the_config_agree_on_the_support():

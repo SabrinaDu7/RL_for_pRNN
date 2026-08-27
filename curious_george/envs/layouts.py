@@ -38,6 +38,7 @@ THE CONSTRAINTS, AND WHY EACH ONE
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 from dataclasses import dataclass
 from enum import Enum
 from typing import Union
@@ -65,7 +66,16 @@ SHAPES: tuple[str, ...] = ("x", "plus", "block3")
 # FloorBright, the OMT novel object.
 LANDMARK_COLORS: tuple[str, ...] = ("blue", "green", "red", "yellow")
 
-OFFSET_RADIUS = 4  # the object-vector window; see throwaway/ported/docs_exp_instructions/instructions-OVC.md
+# The object-vector window: a landmark-centred (2r+1)x(2r+1) patch.
+#
+# Lowered 4 -> 3 on 2026-08-27, together with min_anchor_separation 6 -> 3. The
+# two go together: a smaller window is SHARED between nearby anchors much less,
+# so `common_offsets`' exclusion of shared offsets throws away far less. At
+# separation 6, radius 3 leaves 86% of the window usable against 67% at radius
+# 4; at separation 7 or more it leaves all of it. That is what makes close
+# configurations affordable, and close configurations are the whole variety:
+# 63 distinct separation signatures against 13.
+OFFSET_RADIUS = 3
 
 
 def walkable_cells(*, env) -> frozenset[tuple[int, int]]:
@@ -84,19 +94,53 @@ def common_offsets(
     walkable: frozenset[tuple[int, int]],
     anchors: tuple[tuple[int, int], ...],
     radius: int = OFFSET_RADIUS,
+    exclude_shared: bool = True,
 ) -> tuple[tuple[int, int], ...]:
-    """Offsets landing on a walkable cell for EVERY anchor, sorted.
+    """Offsets an object-vector code can actually be TESTED over, sorted.
 
-    The offsets over which an object-vector code can be tested at all: a
-    correlation between anchor-centred maps is only defined where every anchor
-    has a cell. This is a property of the room and the layout, not a parameter.
+    Two conditions, and the second is what makes this "testable" rather than
+    merely "defined":
+
+    WALKABLE FOR EVERY ANCHOR. A correlation between anchor-centred maps only
+    exists where every anchor has a cell.
+
+    NOT SHARED BETWEEN ANCHORS (`exclude_shared`). Anchor-centred maps are
+    crops of ONE rate map, so when two windows overlap the two crops read some
+    of the SAME cells - and correlate for that reason alone, whatever the unit
+    is coding. Measured at radius 3: two anchors 3 apart share 28 of 49 offsets,
+    6 apart share 7, and 7 or more share none. Keeping those offsets in is the
+    geometric confound `min_anchor_separation` was raised to 6 to avoid; taking
+    them out is what lets it come back down to 3, which is worth 63 distinct
+    room configurations against 13.
+
+    A property of the room and the layout, not a parameter.
     """
+    shared: set = set()
+    if exclude_shared:
+        # Offset d puts anchor a's window on a cell inside b's window exactly
+        # when cheb(d - (b - a)) <= radius, so the contaminated offsets for an
+        # ordered pair are a RECTANGLE around (b - a), clipped to the window.
+        # Walking only that rectangle makes distant anchors free instead of a
+        # full sweep - and `enumerate_anchor_triples` calls this once per
+        # candidate placement, ~97k of them, so it is the difference between
+        # seconds and minutes at startup.
+        for a in anchors:
+            for b in anchors:
+                if a is b:
+                    continue
+                ddx, ddy = b[0] - a[0], b[1] - a[1]
+                for dx in range(max(-radius, ddx - radius),
+                                min(radius, ddx + radius) + 1):
+                    for dy in range(max(-radius, ddy - radius),
+                                    min(radius, ddy + radius) + 1):
+                        shared.add((dx, dy))
     return tuple(
         sorted(
             (dx, dy)
             for dy in range(-radius, radius + 1)
             for dx in range(-radius, radius + 1)
-            if all((ax + dx, ay + dy) in walkable for ax, ay in anchors)
+            if (dx, dy) not in shared
+            and all((ax + dx, ay + dy) in walkable for ax, ay in anchors)
         )
     )
 
@@ -664,12 +708,29 @@ class RoomRules:
     """WITHIN one room: when is a placement legal?"""
 
     min_cell_gap: int = 2
-    min_anchor_separation: int = 6
+    min_anchor_separation: int = 3
     """Between landmarks INSIDE one room. Not to be confused with
     `RoomSetRules.min_configuration_distance`, which is between rooms -
-    conflating them is how a set came to be three translations of one room."""
+    conflating them is how a set came to be three translations of one room.
+
+    Lowered from 6 on 2026-08-27, and now nearly INERT: `min_cell_gap=2`
+    already forces 3x3 stencils 3 apart, so 3 is the floor and anything below
+    it does nothing. It was 6 to stop anchor windows overlapping, which
+    `common_offsets` now handles directly by excluding the shared offsets - a
+    better fix, because it removes the confound instead of the configurations.
+    Worth 43 distinct separation signatures against 13."""
     min_wall_distance: int = 2
-    min_testable_offsets: int = 40
+    min_testable_offsets: int = 20
+    """How many offsets a vector code must be testable over, AFTER the shared
+    ones are excluded (see `common_offsets`).
+
+    This is now the rule that really bounds how close anchors may sit: too-close
+    anchors lose most of their window to the exclusion and fail here on their
+    own. With `min_anchor_separation=3` the realised minimum is 4, not 3, and
+    nobody had to pick 4.
+
+    Lowered from 40 with the window: radius 3 has 49 offsets, not 81, so 40
+    would have demanded 82% of it survive."""
     max_coverage: float = 1.0
     """Landmark cells as a fraction of walkable cells - the "% of environment"
     axis.
@@ -781,10 +842,36 @@ AnchorSet = tuple[tuple[int, int], ...]
 # objects, different places" was inexpressible.
 
 
+@lru_cache(maxsize=16)
+def _admissible_placements(
+    shape: EnvShape, content: EnvContent, rules: RoomRules
+) -> tuple[AnchorSet, ...]:
+    """Memoised body of `admissible_placements`; see it for what this computes.
+
+    Cached because excluding shared offsets made the enumeration ~17 s, and the
+    offline scorer, the layout figures and the test suite all ask for the same
+    answer repeatedly. All three arguments are frozen dataclasses over hashable
+    fields, so they key a cache directly.
+    """
+    return tuple(_enumerate_admissible(shape, content, rules))
+
+
 def admissible_placements(
     shape: EnvShape, content: EnvContent, rules: RoomRules
 ) -> list[AnchorSet]:
     """WITHIN-room stage: every placement of `content` that `shape` admits.
+
+    A fresh list per call over a cached tuple, so one caller cannot mutate the
+    cache entry under another.
+    """
+    return list(_admissible_placements(shape, content, rules))
+
+
+def _enumerate_admissible(
+    shape: EnvShape, content: EnvContent, rules: RoomRules
+) -> list[AnchorSet]:
+    """The real work. Kept separate so the cache wraps a pure tuple-returning
+    function and the public name keeps its list contract.
 
     Exhaustive, so the size of the design space is a measured fact rather than
     a property of a sampler. Symmetry dedup is taken from the SHAPE, not passed:

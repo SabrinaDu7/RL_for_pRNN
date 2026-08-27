@@ -148,3 +148,51 @@ any device; all 9 of its tests go red on the old placement.
 **Already contaminated by it:** `speed-30min` §9's eager-vs-graphed entropy comparison
 ("g8 EAGER 0.5927 at 60M against g8 graphed 1.3357") mixes an estimator difference with
 a real one, in an unmeasured proportion.
+
+---
+
+## 2026-08-27 — the placement rules changed, so generated pools did too
+
+**What changed.** Three defaults, together, to widen the range of relative object
+positions a room set spans:
+
+```
+OFFSET_RADIUS              4  ->  3     (envs/layouts.py)
+RoomRules.min_anchor_separation  6 -> 3
+RoomRules.min_testable_offsets  40 -> 20
+common_offsets             now excludes offsets SHARED between anchor windows
+```
+
+**Why.** Measured: under the old rules the L-room admitted 6,908 placements with only
+**13 distinct separation signatures** — 83% of them had their closest pair at exactly 6.
+The set was essentially one configuration sampled many ways. `min_anchor_separation=6`
+was what forced that, and it was there to stop anchor-centred offset windows overlapping
+and correlating for purely geometric reasons.
+
+Excluding the shared offsets removes that confound *directly*, which lets the separation
+rule come back down. The smaller window is what makes the exclusion affordable: at
+separation 6, radius 3 leaves 86% of the window usable against 67% at radius 4, and at
+separation 7 or more it leaves all of it.
+
+**Result:** 19,820 placements, separations 4–9, **43 distinct signatures**. Note the
+realised minimum is 4, not 3: too-close anchors lose most of their window to the
+exclusion and fail `min_testable_offsets` on their own, so the offset count now enforces
+the separation and nobody had to pick 4.
+
+**What it invalidates.** Any run whose rooms came from `Curated` or `Uniform` — the same
+`(n, seed)` now returns DIFFERENT rooms. A pool is only reproducible against the rule
+defaults in force when it was drawn.
+
+**What it does NOT invalidate.** `Frozen` / `Committed` sets are literal tuples in
+`layouts.py` (`ROOMS_RUN1`, `ROOMS_SQUARE`) and are unchanged, so every run built on the
+committed three-room sets is untouched. Single-room runs (`EnvDefault`) never consult
+these rules at all — including the 2026-08-27 Mila parity runs.
+
+**Also note.** `n_testable_offsets` is now a smaller number for the SAME room, because it
+excludes shared offsets and the window shrank. Do not compare it across the change.
+
+**Cost.** `admissible_placements` went 1.6 s -> 17 s: ~97k candidate triples instead of
+12k, each doing an exclusion pass. Runs once at startup, against a bank build measured in
+minutes.
+
+**Gate.** `tests/test_env_layouts.py`, `tests/test_location_entropy_support.py`.

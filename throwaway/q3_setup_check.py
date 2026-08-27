@@ -36,6 +36,7 @@ from PIL import Image  # noqa: E402
 
 from curious_george.envs.layouts import (  # noqa: E402
     BASE_ROOM_ID,
+    separation_signature,
     MULTI_ROOM_ID,
     EnvContent,
     EnvShape,
@@ -50,41 +51,59 @@ from curious_george.envs.obs_bank import TableDrivenRGBPartialObsWrapper  # noqa
 
 OUT = Path(__file__).resolve().parent / "outputs" / "q3_setup_check.html"
 
-N_ROOMS = 6
+#: How many rooms the page can reach. The pool is the admissible set under the
+#: run's own RoomRules, drawn with `Uniform`, so index i here IS the room a
+#: training run would get for layout index i at the same seed.
+N_ROOMS = 200
 SEED = 7
 ROOM_TILE = 18  # top-down render scale; the network never sees this
+VERIFY_SAMPLE = 60  # poses checked per room past the first; see verify_bank
 SHAPES = ("x", "plus", "block3")
 
 
-def build_rooms(*, impassable: bool):
+def build_rooms(*, impassable: bool, n: int = N_ROOMS):
     content = EnvContent(
         kinds=tuple(LandmarkKind(s, impassable=impassable) for s in SHAPES)
     )
     return resolve_rooms(
         shape=EnvShape(BASE_ROOM_ID),
         content=content,
-        source=Uniform(n=N_ROOMS, seed=SEED),
+        source=Uniform(n=n, seed=SEED),
         set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})),
     )
 
 
-def verify_bank_everywhere(wrapper, walkable) -> int:
-    """Compare the banked view against a live render at EVERY reachable pose.
+def pool_size(*, impassable: bool) -> int:
+    """How many rooms the rules admit in total - the number an index picks from."""
+    from curious_george.envs.layouts import RoomRules, admissible_placements
 
-    Stronger than checking the poses one rollout happened to hit: the page
-    below can put the agent anywhere, so anywhere has to be right.
+    content = EnvContent(
+        kinds=tuple(LandmarkKind(s, impassable=impassable) for s in SHAPES)
+    )
+    return len(admissible_placements(EnvShape(BASE_ROOM_ID), content, RoomRules()))
+
+
+def verify_bank(wrapper, walkable, *, sample: int | None, rng) -> tuple[int, int]:
+    """Compare the banked view against a live render, returning (bad, checked).
+
+    `sample=None` checks EVERY reachable pose. A live render is ~15 ms, so at
+    612 poses a room that is only affordable for a few rooms; past that the page
+    checks a random sample per room and every pose for room 0. The page states
+    which, because "verified" and "spot-checked" are not the same claim.
     """
     u = wrapper.env.unwrapped
     saved = (u.agent_pos, u.agent_dir)
+    poses = [(x, y, d) for x, y in sorted(walkable) for d in range(4)]
+    if sample is not None and sample < len(poses):
+        poses = [poses[i] for i in rng.choice(len(poses), sample, replace=False)]
     bad = 0
-    for x, y in sorted(walkable):
-        for d in range(4):
-            u.agent_pos, u.agent_dir = (x, y), d
-            live = u.get_frame(highlight=False, tile_size=1, agent_pov=True)
-            if not np.array_equal(np.asarray(wrapper._bank[x, y, d]), live):
-                bad += 1
+    for x, y, d in poses:
+        u.agent_pos, u.agent_dir = (x, y), d
+        live = u.get_frame(highlight=False, tile_size=1, agent_pov=True)
+        if not np.array_equal(np.asarray(wrapper._bank[x, y, d]), live):
+            bad += 1
     u.agent_pos, u.agent_dir = saved
-    return bad
+    return bad, len(poses)
 
 
 def room_png(env, tile: int) -> str:
@@ -99,6 +118,34 @@ def b64(a: np.ndarray) -> str:
     return base64.b64encode(np.ascontiguousarray(a, dtype=np.uint8).tobytes()).decode()
 
 
+def bank_png(bank: np.ndarray) -> str:
+    """The observation bank as a PNG, so many rooms fit in one page.
+
+    (W, H, 4, v, v, 3) reshaped to an RGB image (W*H*4, v*v). Raw it is 150 kB
+    per room; most of it is repeated grey floor, so PNG takes it to a few kB and
+    a hundred rooms become affordable. The page decodes it through a canvas and
+    indexes it exactly as `obs_banks` is indexed.
+    """
+    w, h, d, vy, vx, c = bank.shape
+    img = np.ascontiguousarray(bank, dtype=np.uint8).reshape(w * h * d, vy * vx, c)
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def table_png(table: np.ndarray) -> str:
+    """The transition table as a PNG, same reason as the bank.
+
+    (W, H, 4, A, 3) -> an RGB image (W*H*4, A). Values are coordinates and a
+    direction, all < 16, so uint8 is lossless.
+    """
+    w, h, d, a, c = table.shape
+    img = np.ascontiguousarray(table, dtype=np.uint8).reshape(w * h * d, a, c)
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def collect() -> dict:
     rooms = build_rooms(impassable=True)
     base = base_walkable(BASE_ROOM_ID)
@@ -107,15 +154,19 @@ def collect() -> dict:
     wrapper = TableDrivenRGBPartialObsWrapper(env, tile_size=1)
     u = env.unwrapped
 
-    out, total_bad = [], 0
+    vrng = np.random.default_rng(SEED)
+    out, total_bad, total_checked = [], 0, 0
     for i, layout in enumerate(rooms):
         wrapper.unwrapped.landmarks = list(layout.landmarks)
         env.reset(seed=SEED + i)
         wrapper._ensure_bank()
 
         walk = layout.walkable(base)
-        bad = verify_bank_everywhere(wrapper, walk)
+        bad, checked = verify_bank(
+            wrapper, walk, sample=None if i == 0 else VERIFY_SAMPLE, rng=vrng
+        )
         total_bad += bad
+        total_checked += checked
 
         # The transition table's own account of where movement is refused - not
         # a separate reimplementation - split by what did the blocking. The
@@ -139,8 +190,8 @@ def collect() -> dict:
                 "key": layout.key,
                 "describe": layout.describe(),
                 "png": room_png(env, ROOM_TILE),
-                "bank": b64(wrapper._bank),
-                "next": b64(nxt),
+                "bank": bank_png(np.asarray(wrapper._bank)),
+                "next": table_png(nxt),
                 "blockedCells": sorted(map(list, layout.cells)),
                 "walkable": sorted(map(list, walk)),
                 "start": [int(u.agent_pos[0]), int(u.agent_pos[1]), int(u.agent_dir)],
@@ -149,7 +200,10 @@ def collect() -> dict:
                 "refusedPoses": refused,
                 "refusedByObject": by_object,
                 "refusedByWall": refused - by_object,
+                "signature": list(separation_signature(layout.anchors)),
+                "nTestable": layout.n_testable_offsets(walkable=walk),
                 "bankMismatches": bad,
+                "bankChecked": checked,
             }
         )
         print(
@@ -166,6 +220,8 @@ def collect() -> dict:
         "tile": ROOM_TILE,
         "view": wrapper._bank.shape[3],
         "totalBad": total_bad,
+        "totalChecked": total_checked,
+        "poolSize": pool_size(impassable=True),
     }
 
 
@@ -201,13 +257,21 @@ PAGE = """<title>Q3 setup check</title>
 </style>
 <div class=wrap>
 <h1>Q3 setup check &mdash; drive the agent through impassable objects</h1>
-<p class=sub>You pick every action. Nothing here is a replay: the whole observation
-bank and the whole transition table are embedded, and this page looks up the next
-state and the next view <b>exactly the way the GPU training path does</b>. If the
-agent moves correctly here, those tables are correct.</p>
+<p class=sub>You pick every action. Nothing here is a replay: each room's whole
+observation bank and transition table are embedded, and this page looks up the
+next state and the next view <b>exactly the way the GPU training path does</b>.
+If the agent moves correctly here, those tables are correct. Room 0 is checked
+against a live render at every one of its poses; the rest are spot-checked at 60
+each, which the readout states per room.</p>
 
 <div class=bar>
-  <select id=room></select>
+  <label class=tog>room index
+    <input type=number id=idx min=0 value=0 style="width:5.5em">
+  </label>
+  <span id=poolinfo class=sub></span>
+  <button id=prev>&#8592; prev</button>
+  <button id=next>next &#8594;</button>
+  <button id=rndroom>random room</button>
   <button id=reset>reset room</button>
   <button id=rand>random step</button>
   <label class=tog><input type=checkbox id=show> show impassable cells</label>
@@ -237,10 +301,18 @@ const ARROW=['\\u2192','\\u2193','\\u2190','\\u2191'];
 const NAMES=['turn left','turn right','forward','stay put'];
 const W=D.width, H=D.height, V=D.view, VS=V*V*3;
 
-function bytes(s){const b=atob(s),a=new Uint8Array(b.length);
-  for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;}
-D.rooms.forEach(r=>{r.bankA=bytes(r.bank);r.nextA=bytes(r.next);
-  r.blocked=new Set(r.blockedCells.map(c=>c[0]+','+c[1]));});
+// Banks and tables travel as PNGs (19x smaller than raw), so decoding means
+// drawing each to an offscreen canvas and reading the pixels back. The RGB
+// values ARE the data - the alpha channel is dropped.
+const cv=document.createElement('canvas'), cx=cv.getContext('2d',{willReadFrequently:true});
+function fromPNG(b64){return new Promise(res=>{const im=new Image();
+  im.onload=()=>{cv.width=im.width;cv.height=im.height;cx.drawImage(im,0,0);
+    const p=cx.getImageData(0,0,im.width,im.height).data;
+    const out=new Uint8Array(im.width*im.height*3);
+    for(let i=0,j=0;i<p.length;i+=4){out[j++]=p[i];out[j++]=p[i+1];out[j++]=p[i+2];}
+    res(out);};
+  im.src='data:image/png;base64,'+b64;});}
+D.rooms.forEach(r=>{r.blocked=new Set(r.blockedCells.map(c=>c[0]+','+c[1]));});
 
 const top_=document.getElementById('top'),tctx=top_.getContext('2d');
 const view=document.getElementById('view'),vctx=view.getContext('2d');
@@ -248,15 +320,19 @@ const sel=document.getElementById('room'),info=document.getElementById('info');
 const show=document.getElementById('show');
 let r=0,x=0,y=0,d=0,trail=[],last=null,refused=false,bg=null,steps=0,blocks=0;
 
-D.rooms.forEach((rm,i)=>sel.add(new Option(`room ${i+1}/${D.rooms.length} \\u00b7 ${rm.key}`,i)));
+idx.max = D.rooms.length-1;
+document.getElementById('poolinfo').textContent =
+  `of ${D.rooms.length} loaded \\u00b7 ${D.poolSize.toLocaleString()} admissible under the rules`;
 top_.width=W*D.tile; top_.height=H*D.tile;
 
 // Index exactly as the training tables are indexed.
 const viewAt=(rm,x,y,d)=>((x*H+y)*4+d)*VS;
 const nextAt=(rm,x,y,d,a)=>(((x*H+y)*4+d)*4+a)*3;
 
-function load(i){
+async function load(i){
   r=i; const rm=D.rooms[i];
+  if(!rm.bankA){ [rm.bankA, rm.nextA] = await Promise.all(
+      [fromPNG(rm.bank), fromPNG(rm.next)]); }
   [x,y,d]=rm.start; trail=[[x,y]]; last=null; refused=false; steps=0; blocks=0;
   bg=new Image(); bg.onload=draw; bg.src='data:image/png;base64,'+rm.png;
 }
@@ -300,16 +376,24 @@ function draw(){
    <tr><td>step refused</td><td class="${refused?'bad':''}">${refused?'YES \\u2014 blocked by an object':'no'}</td></tr>
    <tr><td>on an object?</td><td class="${rm.blocked.has(x+','+y)?'bad':'ok'}">${rm.blocked.has(x+','+y)?'INSIDE ONE \\u2014 bug':'no'}</td></tr>
    <tr><td>steps / blocked</td><td>${steps} / ${blocks}</td></tr>
+   <tr><td>room</td><td>index ${r} \\u00b7 ${rm.key}</td></tr>
    <tr><td>objects</td><td>${rm.describe}</td></tr>
+   <tr><td>separations</td><td>${rm.signature.join(' \\u00b7 ')} (pairwise Chebyshev)</td></tr>
+   <tr><td>testable offsets</td><td>${rm.nTestable} after excluding shared</td></tr>
    <tr><td>walkable cells</td><td>${rm.nWalkable} of ${rm.nBase}</td></tr>
    <tr><td>forward refused at</td><td>${rm.refusedPoses} of ${4*rm.nWalkable} poses<br>
        <span style="color:var(--dim)">walls ${rm.refusedByWall} \u00b7 objects ${rm.refusedByObject}</span></td></tr>
-   <tr><td>bank vs live render<br>at EVERY pose</td><td class="${mm?'bad':'ok'}">${mm?mm+' MISMATCHES':'identical'}</td></tr>`;
+   <tr><td>bank vs live render</td><td class="${mm?'bad':'ok'}">${mm?mm+' MISMATCHES':'identical'} <span style="color:var(--dim)">at ${rm.bankChecked} pose${rm.bankChecked==1?'':'s'}${r===0?' (all of them)':' (sampled)'}</span></td></tr>`;
 }
 document.querySelectorAll('.keys button').forEach(b=>b.onclick=()=>act(+b.dataset.a));
 document.getElementById('rand').onclick=()=>act(Math.floor(Math.random()*4));
+document.getElementById('rndroom').onclick=randomRoom;
 document.getElementById('reset').onclick=()=>load(r);
-sel.onchange=e=>load(+e.target.value);
+function go(i){ i=Math.max(0,Math.min(D.rooms.length-1,i)); idx.value=i; load(i); }
+function randomRoom(){ go(Math.floor(Math.random()*D.rooms.length)); }
+idx.onchange=e=>go(+e.target.value);
+document.getElementById('prev').onclick=()=>go(r-1);
+document.getElementById('next').onclick=()=>go(r+1);
 show.onchange=draw;
 addEventListener('keydown',e=>{
   const m={ArrowLeft:0,ArrowRight:1,ArrowUp:2,' ':3};
@@ -324,8 +408,10 @@ def main() -> None:
     data = collect()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(PAGE.replace("__DATA__", json.dumps(data)))
-    print(f"\n  bank vs live render, over every reachable pose in every room: "
-          f"{data['totalBad']} mismatches")
+    print(f"\n  bank vs live render: {data['totalBad']} mismatches over "
+          f"{data['totalChecked']:,} poses checked "
+          f"(all {4 * data['rooms'][0]['nWalkable']} in room 0, "
+          f"{VERIFY_SAMPLE} sampled in each of the rest)")
     print(f"  wrote {OUT}  ({OUT.stat().st_size/1e6:.2f} MB)")
 
 
