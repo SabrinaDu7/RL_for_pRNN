@@ -17,6 +17,12 @@ Throwaway look-see, not a result. Two questions in one figure.
    and IDENTICAL with and without solid objects, because there the occluder is
    the room's own wall rather than any landmark.
 
+WHAT A SOLID LANDMARK COSTS AN EPISODE: NOTHING. `forward` into a `Wall` leaves
+`agent_pos` unchanged and returns `terminated=False, reward=0`
+(minigrid_env.py:549-555 terminates on `goal`/`fake_lava`/`lava` only). Episode
+length is fixed anyway - the collector forces `done` every `prnn_seqdur` steps
+(collector.py:376-378), so a blocked step costs a step and nothing more.
+
 WHY `Wall` AND NOT `Ball`/`Box`. Both are `can_pickup=True`, and this project's
 fourth action is MiniGrid's `pickup` wearing the name `stay_put`. A ball
 landmark would vanish into `carrying` the first time it fired.
@@ -138,7 +144,7 @@ def plot(solid_occ, solid_see, walkable, painted, *, path: Path):
     rows = [
         (0, [f[3] for f in solid_occ], "top-down\n(solid)", "black"),
         (1, [f[4] for f in solid_occ], "SOLID view\nsee_through=False", "darkred"),
-        (2, [f[4] for f in solid_see], "SOLID view\nsee_through=True\n(reference setting)", "darkorange"),
+        (2, [f[4] for f in solid_see], "SOLID view\nsee_through=True\n(reference AND chosen setting)", "darkorange"),
         (3, [f[4] for f in walkable], "WALKABLE view\nsee_through=True\n(what we train on)", "darkgreen"),
     ]
     for col in range(n):
