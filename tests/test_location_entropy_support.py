@@ -126,3 +126,48 @@ def test_the_entropy_actually_uses_that_support():
     cells = sorted(_mask_cells(algo))
     entropy, _ = algo.loc_stats.update(cells)
     assert entropy == pytest.approx(np.log2(len(cells)), rel=1e-9)
+
+
+# --- the ceiling is a property of the world, quotable without a run ---------
+
+
+def test_the_ceiling_is_quotable_from_a_config_alone():
+    """It has to be readable without training, or a cross-arm comparison means
+    re-deriving the reachable count by hand from the config."""
+    walkable = EnvCfg()
+    assert walkable.reachable_cells == base_walkable(BASE_ROOM_ID)
+    assert walkable.loc_entropy_ceiling == pytest.approx(np.log2(172))
+
+
+def test_objects_lower_the_ceiling_only_where_they_block_every_room():
+    """The number that makes an objects arm comparable to its control.
+
+    Objects at VARYING positions leave the ceiling untouched - every cell is
+    open in some room - which is the counterintuitive part and exactly why it
+    should be read rather than assumed.
+    """
+    varying = EnvCfg(
+        content=EnvContent(kinds=tuple(LandmarkKind(s, impassable=True) for s in SHAPES)),
+        source=Uniform(n=3, seed=7),
+        set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})),
+    )
+    fixed = EnvCfg(
+        content=EnvContent(kinds=tuple(LandmarkKind(s, impassable=True) for s in SHAPES)),
+        source=Uniform(n=3, seed=7),
+        set_rules=RoomSetRules(varies=frozenset()),
+    )
+    assert varying.loc_entropy_ceiling == pytest.approx(np.log2(172))
+    assert fixed.loc_entropy_ceiling == pytest.approx(np.log2(172 - 19))
+    assert fixed.loc_entropy_ceiling < varying.loc_entropy_ceiling
+
+
+def test_the_run_and_the_config_agree_on_the_support():
+    """`algo._location_mask` and `EnvCfg.reachable_cells` must not drift into
+    two answers; they now share `layouts.pooled_walkable`."""
+    cfg_env = EnvCfg(
+        content=EnvContent(kinds=tuple(LandmarkKind(s, impassable=True) for s in SHAPES)),
+        source=Uniform(n=3, seed=7),
+        set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})),
+    )
+    algo = _algo(impassable=True)
+    assert _mask_cells(algo) == cfg_env.reachable_cells

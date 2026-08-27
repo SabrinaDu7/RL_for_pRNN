@@ -231,6 +231,35 @@ class EnvCfg:
         return not isinstance(self.source, EnvDefault)
 
     @property
+    def reachable_cells(self) -> frozenset[tuple[int, int]]:
+        """Every cell the agent can occupy in AT LEAST ONE room this run holds.
+
+        A property of the world, so it can be quoted without a training run. It
+        is the support `loc_entropy` is taken over - see
+        `envs.layouts.pooled_walkable` for why the union and not one room's set.
+        """
+        from curious_george.envs.layouts import pooled_walkable, resolve_rooms
+
+        rooms = resolve_rooms(
+            shape=self.shape, content=self.content, source=self.source,
+            room_rules=self.room_rules, set_rules=self.set_rules, indices=self.indices,
+        )
+        return pooled_walkable(self.shape.walkable, rooms)
+
+    @property
+    def loc_entropy_ceiling(self) -> float:
+        """`loc_entropy` a perfectly uniform explorer would score here, in bits.
+
+        On the record so a cross-arm comparison is possible at all: impassable
+        objects lower it, so an objects arm and a walkable control are NOT
+        comparable on the raw number. Divide by this to compare them; within one
+        design it is constant and can be ignored.
+        """
+        from curious_george.envs.layouts import entropy_ceiling
+
+        return entropy_ceiling(self.reachable_cells)
+
+    @property
     def env_name(self) -> str:
         """The registered id to build.
 

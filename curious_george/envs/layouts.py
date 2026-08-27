@@ -101,6 +101,39 @@ def common_offsets(
     )
 
 
+def pooled_walkable(
+    base: frozenset[tuple[int, int]], rooms: "list[Layout] | None"
+) -> frozenset[tuple[int, int]]:
+    """Every cell reachable in AT LEAST ONE room of the set.
+
+    The support of "where is the agent" when the room is itself random, which is
+    what a pool makes it: parallel streams sit in different rooms and pour their
+    visits into one histogram, so the position is drawn from a MIXTURE over
+    rooms, and the support of a mixture is the union of the supports.
+
+    Any narrower choice discards observations. One room's set - which is what
+    `loc_mask` used to be - deletes every visit a stream made to a cell that
+    THAT room blocks; measured on a three-room pool, 839 of them.
+    """
+    if not rooms:
+        return base
+    return frozenset().union(*(r.walkable(base) for r in rooms))
+
+
+def entropy_ceiling(cells: frozenset[tuple[int, int]]) -> float:
+    """The `loc_entropy` a perfectly uniform explorer would score, in bits.
+
+    Quoted so a comparison ACROSS arms is possible: the ceiling moves with the
+    geometry - log2(153) = 7.26 for a room with three objects against
+    log2(172) = 7.43 without - so a raw entropy from an impassable-object run is
+    not comparable to one from a walkable control until it is divided by this.
+    Within one design it is constant and can be ignored.
+    """
+    import math
+
+    return math.log2(len(cells))
+
+
 def _chebyshev(a: tuple[int, int], b: tuple[int, int]) -> int:
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 

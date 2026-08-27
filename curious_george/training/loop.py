@@ -164,6 +164,15 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     entropy = EntropySchedule.from_config(cfg)
     print(schedule.summary())
     print(entropy.summary())
+    # The ceiling `loc_entropy` is measured against. Printed once because it is
+    # a property of the world, not a series - and stated at all because an
+    # impassable-object arm and a walkable control have DIFFERENT ceilings, so
+    # their raw entropies are not comparable without it.
+    reachable = cfg.env.reachable_cells
+    print(
+        f"  reachable cells: {len(reachable)} "
+        f"-> loc_entropy ceiling {cfg.env.loc_entropy_ceiling:.4f} bits"
+    )
     if num_frames:
         remaining = schedule.total_env_steps - num_frames
         if remaining <= 0:

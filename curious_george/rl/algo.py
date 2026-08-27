@@ -327,14 +327,19 @@ class PredictivePPOAlgo:
             for x in range(env.width)
             if getattr(grid.get(x, y), "type", None) == "wall"
         }
-        blocked_everywhere = (
-            set.intersection(*(set(lo.cells) for lo in layouts))
-            if all(lo.blocks_movement for lo in layouts)
-            else set()
+        base = frozenset(
+            (x, y)
+            for y in range(env.height)
+            for x in range(env.width)
+            if (x, y) not in walls
         )
-        unreachable = walls | blocked_everywhere
+        # The union rule lives in layouts.py, so this and EnvCfg.reachable_cells
+        # cannot drift into two different answers.
+        from curious_george.envs.layouts import pooled_walkable
+
+        reachable = pooled_walkable(base, layouts)
         return [
-            (x, y) not in unreachable
+            (x, y) in reachable
             for y in range(env.height)
             for x in range(env.width)
         ]
