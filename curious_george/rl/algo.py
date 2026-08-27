@@ -204,12 +204,7 @@ class PredictivePPOAlgo:
         )
         self._subroom_size = subroom_size(self.env)
 
-        if hasattr(self.env, "loc_mask"):
-            self.loc_mask = self.env.loc_mask
-        else:
-            self.loc_mask = [
-                x is None or x.can_overlap() for x in self.env.grid.grid
-            ]
+        self.loc_mask = self._location_mask()
 
         self.acmodel.to(self.device)
         self.acmodel.train()
@@ -276,6 +271,59 @@ class PredictivePPOAlgo:
         self.locs: list = []
         self.subroom_ids: list = []
         self.last_joint_dist = None
+
+    def _location_mask(self) -> list:
+        """The cells `loc_entropy` is normalised over: everywhere the agent
+        could be in ANY room this run trains on.
+
+        Entropy over visited cells only means something against the set of cells
+        that exist. That used to be one set, read off the eval shell, because
+        landmarks were walkable and every room shared it. Impassable landmarks
+        break that per room, and the visits reaching `LocationStats` are pooled
+        across streams that are in DIFFERENT rooms - so no single room's mask is
+        right for them: it counts cells that were blocked where the agent
+        actually was, and drops cells that were open there.
+
+        The union is the one support that is correct for a pooled measure. A
+        cell blocked in every room is excluded, because the agent can never be
+        there; a cell open in any room is included, because sometimes it can.
+        Identical to the old mask whenever the rooms share a walkable set, which
+        is every run before 2026-08-27 - so the existing series is unbroken.
+
+        ⚠️ It is still a MIXTURE across rooms. Per-room coverage is a different
+        question and belongs in analysis, not in a per-rollout scalar.
+        """
+        env = self.env
+        layouts = getattr(self.envs, "layouts", None)
+        if not layouts:
+            if hasattr(env, "loc_mask"):
+                return env.loc_mask
+            from curious_george.envs.access import base_env
+
+            return [x is None or x.can_overlap() for x in base_env(env).grid.grid]
+
+        # The mask is flat with cell (x, y) at index y*width + x, which is the
+        # order `LocationStats` masks its Fortran-flattened visit grid in.
+        from curious_george.envs.access import base_env
+
+        grid = base_env(env).grid
+        walls = {
+            (x, y)
+            for y in range(env.height)
+            for x in range(env.width)
+            if getattr(grid.get(x, y), "type", None) == "wall"
+        }
+        blocked_everywhere = (
+            set.intersection(*(set(lo.cells) for lo in layouts))
+            if all(lo.blocks_movement for lo in layouts)
+            else set()
+        )
+        unreachable = walls | blocked_everywhere
+        return [
+            (x, y) not in unreachable
+            for y in range(env.height)
+            for x in range(env.width)
+        ]
 
     @staticmethod
     def _pos(env):
