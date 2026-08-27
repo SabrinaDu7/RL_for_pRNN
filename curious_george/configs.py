@@ -17,6 +17,7 @@ curve to justify them, not a benchmark.
 
 from __future__ import annotations
 
+import abc
 import enum
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -123,15 +124,9 @@ class SingleLayout:
     """One room. The control for every multi-room number: same environment
     class, same landmarks, one room instead of several - so a change in sRSA is
     attributable to room COUNT rather than to scale or schedule.
-
-    WHICH room is a real choice, not a detail. The control is only a control if
-    it is representative of the set it stands against; index 0 was hardcoded
-    before this field existed, so a room that happened to be atypical would have
-    biased every multi-room comparison with nothing in the config to show it.
     """
 
-    index: int = 0
-    """Position in the frozen set (`envs/layouts.py`)."""
+    index: int = 0 # selects the room in `envs/layouts.py`
 
     def __post_init__(self) -> None:
         if self.index < 0:
@@ -164,26 +159,27 @@ EnvLayoutSpec = Union[SingleLayout, FrozenLayouts, LayoutPool]
 
 
 @dataclass(frozen=True)
-class EnvCfg:
-    """What the world IS.
+class EnvCfg(abc.ABC):
+    """
+    Abstract parent class.
 
-    Does this describe the world, or how we gather experience from it? Only the
-    first kind belongs here. Nothing in this class affects speed; the rollout
-    shape and the stepping backend are `CollectCfg`.
+    Does this describe the env, NOT how we gather experience from it?
+    Params for how we collect experiences in envs is in `CollectCfg`.
     """
 
     see_through_walls: bool | None = None
-    """None keeps the environment's own default (True). False is occlusion,
-    which changes what the agent can perceive and needs its own baseline."""
+    # None = environment's default, which is often True
+    # False = occlusion
 
     @property
+    @abc.abstractmethod
     def env_name(self) -> MinigridEnv:
-        raise NotImplementedError("each environment subclass names itself")
+        """Which registered environment this is."""
 
 
 @dataclass(frozen=True)
 class LRoomCfg(EnvCfg):
-    """Static L-room. Every checkpoint before the multi-room work is this."""
+    """Static L-room."""
 
     new_obj_pos: tuple[int, int] | None = None
     """Cell of a FloorBright object, or None for none."""
@@ -195,7 +191,7 @@ class LRoomCfg(EnvCfg):
 
 @dataclass(frozen=True)
 class SquareRoomCfg(EnvCfg):
-    """Four-fold symmetric walls, so geometry carries no position information."""
+    """Single square room, so env geometry carries no position information."""
 
     new_obj_pos: tuple[int, int] | None = None
 
@@ -206,11 +202,9 @@ class SquareRoomCfg(EnvCfg):
 
 @dataclass(frozen=True)
 class FourRoomsCfg(EnvCfg):
-    """The ONLY environment whose constructor reads these.
 
-    `LEnv` and `SquareRoomEnv` inherit MiniGridEnv's `**kwargs` and discard them
-    silently, so setting `door_poss` or `subroom_size` on an L-room was dead
-    config that read as live. They live here alone for that reason.
+    """
+    A square room separated into four subrooms
     """
 
     subroom_size: int = 8
@@ -225,7 +219,7 @@ class FourRoomsCfg(EnvCfg):
 
 
 @dataclass(frozen=True)
-class MultiRoomEnvCfg(EnvCfg):
+class MultiRoomEnvCfg(EnvCfg, abc.ABC):
     """Rooms are reassigned at every synchronised episode boundary, so the same
     integrated trajectory lands at a different absolute position depending on
     which room an instance is in. That is the manipulation: it makes dead
@@ -245,11 +239,11 @@ class MultiRoomEnvCfg(EnvCfg):
     doubled the cost; 4 is what every multi-room run actually set."""
 
     @property
+    @abc.abstractmethod
     def base_room(self) -> MinigridEnv:
         """Owns the wall geometry and selects the symmetry handling. Was a free
         string that had to agree with the environment id; the subclass now fixes
         both together."""
-        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -281,32 +275,17 @@ AnyEnvCfg = Union[LRoomCfg, SquareRoomCfg, FourRoomsCfg, LRoomMultiCfg, SquareRo
 
 
 # ---------------------------------------------------------------------------
-# How experience is gathered.
+# How experience is collected.
 
 
 @dataclass(frozen=True)
 class CollectCfg:
-    """How experience is GATHERED. Every field here is speed-bearing.
+    """How experience is collected. Every field here affects training speed.
 
-    WHAT A ROLLOUT IS. One rollout is every parallel environment instance
-    running `episodes_per_env` episodes of `episode_steps` steps each, all
-    stepped together. The loop collects one rollout, hands it to both learners,
-    discards it, and collects the next. This is what the code used to call an
-    "update", and `env_steps_per_rollout` is what `rl.frames` used to set by
-    hand in five places.
-
-    WHY A ROLLOUT EXISTS AT ALL - it is required by both algorithms, not a
-    choice. PPO is on-policy: it needs a collected batch to compute GAE
-    advantages and then runs several epochs of minibatches over it, so there is
-    no such thing as one policy gradient step per environment step. And the pRNN
-    backpropagates through a whole episode, so a complete episode must exist
-    before any world-model gradient step.
-
-    WHAT ITS SIZE BUYS: nothing. Holding everything else fixed and varying
-    `num_envs` 32x moves both gradient-step totals by 0.02% - integer rounding
-    on the final partial rollout. Rollout size sets how often cadenced events
-    fire and how much memory a step needs, and that is all. The training budget
-    is stated directly on each learner instead.
+    ROLLOUTS: One rollout is every parallel environment instance
+    running `episodes_per_env` episodes of `episode_steps` steps each.
+    The loop collects one rollout, hands it to both learners (prnn and policy)
+    for them to take gradient STEPS (notice the plural).
     """
 
     num_envs: int = 8

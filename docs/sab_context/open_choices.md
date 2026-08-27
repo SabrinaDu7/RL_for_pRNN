@@ -187,7 +187,7 @@ averaged over ~1024 trajectories instead of 8, and one pooled world-model step i
 noisy serial ones. But it means any before/after comparison spans a semantics change.
 
 Planned gate: loss **per gradient step** (not per second) across pooled vs serial arms, via
-`tests/perf/sweep_batch_learning.py`, before committing to a production batch size.
+`throwaway/hydra_era/perf/sweep_batch_learning.py`, before committing to a production batch size.
 
 Open: do we treat the new regime as a fresh baseline (and re-derive every reference number),
 or do we require the learning curve to match the old one?
@@ -214,7 +214,7 @@ a 1000x cut at identical experience. `performance=ultra` is now set to 128 (625 
 
 ### ANSWERED 2026-08-11: pooling loses. FPS is the wrong objective.
 
-`tests/perf/sweep_batch_learning.py`, 400 updates/arm, RTX 4060, compared on loss per
+`throwaway/hydra_era/perf/sweep_batch_learning.py`, 400 updates/arm, RTX 4060, compared on loss per
 gradient step against the finished reference run `pRNN_curious_26-07-23-10-06-25` (pulled
 from wandb on its true `trial` axis; the local serial arm reproduces it closely, which is
 what makes the harness trustworthy):
@@ -265,7 +265,7 @@ Run that before fixing `ultra`.
 
 ### ANSWERED 2026-08-19: yes, and the trainStep ceiling itself moves
 
-Measured (`tests/perf/benchmark.py`, RTX 4060, idle GPU, serial world model,
+Measured (`throwaway/hydra_era/perf/benchmark.py`, RTX 4060, idle GPU, serial world model,
 `exp.layouts=one`, `frames = num_envs x 256`, `ppo_batch_size = frames/4`; full
 method and caveats in `docs/claude_logs/exp_speed_cuda_graph_2026-08-19.md` §9b):
 

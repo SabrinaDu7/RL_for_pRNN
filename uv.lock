@@ -1534,7 +1534,6 @@ source = { editable = "." }
 dependencies = [
     { name = "gym" },
     { name = "gymnasium" },
-    { name = "hydra-core" },
     { name = "importlib-metadata" },
     { name = "ipykernel" },
     { name = "jaxtyping" },
@@ -1576,7 +1575,6 @@ dev = [
 requires-dist = [
     { name = "gym", specifier = ">=0.26.2" },
     { name = "gymnasium", specifier = "==0.29.1" },
-    { name = "hydra-core", specifier = ">=1.3.2" },
     { name = "importlib-metadata", specifier = ">=7.0.1" },
     { name = "ipykernel", specifier = ">=6.31.0" },
     { name = "jaxtyping", specifier = ">=0.2.36" },

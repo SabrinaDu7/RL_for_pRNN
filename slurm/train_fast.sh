@@ -53,22 +53,43 @@
 
 set -eo pipefail
 LAYOUTS="${1:-rooms}"; ENVCFG="${2:-lroom_multi}"; BRANCH="${3:-sdu/speed}"
-# layouts=single means the ORIGINAL single-room env (env=lroom,
-# MiniGrid-LRoom-v0), not a one-element multi-room set. That is the shape older
-# runs used, so it is what a human can eyeball against them on wandb. It has no
-# exp.layouts key at all, and needs device_env turned on explicitly because
-# Configs/env/lroom.yaml defaults it False.
-if [ "$LAYOUTS" = "single" ]; then
-  ENVCFG=lroom
-  LAYOUT_OVERRIDES="exp.device_env=True"
-else
-  LAYOUT_OVERRIDES="exp.layouts=$LAYOUTS"
-fi
+# layouts=single means the ORIGINAL single-room env (MiniGrid-LRoom-v0), not a
+# one-element multi-room set. That is the shape older runs used, so it is what a
+# human can eyeball against them on wandb.
+#
+# It takes a DIFFERENT PRESET, not just a different env: `multienv` requests the
+# multi-room spatial eval, and Config refuses a multi-room eval on a single-room
+# environment. That contradiction used to be expressible and would surface as a
+# confusing mid-run failure; it is now a parse error, so the launcher has to
+# pick the right preset here.
+case "$LAYOUTS" in
+  single)
+    PRESET=reference
+    ENV_SUBCOMMAND="env:l-room-cfg"
+    LAYOUT_OVERRIDES="--collect.backend DEVICE"
+    EVALS="spatial_onpolicy spatial_offpolicy behaviour trajectory_plot"
+    ;;
+  one|rooms|pool)
+    PRESET=multienv
+    case "$ENVCFG" in
+      squareroom_multi) ENV_SUBCOMMAND="env:square-room-multi-cfg" ;;
+      *)                ENV_SUBCOMMAND="env:l-room-multi-cfg" ;;
+    esac
+    case "$LAYOUTS" in
+      one)   LAYOUT_OVERRIDES="env.layouts:single-layout" ;;
+      rooms) LAYOUT_OVERRIDES="env.layouts:frozen-layouts" ;;
+      pool)  LAYOUT_OVERRIDES="env.layouts:layout-pool" ;;
+    esac
+    EVALS="spatial_multiroom behaviour trajectory_plot"
+    ;;
+  *)
+    echo "layouts must be single|one|rooms|pool, got $LAYOUTS" >&2; exit 1 ;;
+esac
 # $4 = seed. Replication is the point: every result document in this repo
 # says "n = 1 seed per arm. No replication." A preset that cannot express a
 # second seed guarantees that stays true.
 SEED="${4:-2}"
-# $5 = rl.entropy_coef. Configs/run/multienv.yaml sets 0.01 ("nothing
+# $5 = rl.entropy_coef. throwaway/hydra_era/Configs/run/multienv.yaml sets 0.01 ("nothing
 # resisted policy collapse at 0.0"), but the single-room reference run
 # pRNN_curious_26-07-23-10-06-25 used 0, and at 0.01 the bonus is 0.0198
 # against an advantage scale of 0.0369 - over half the learning signal - so
@@ -206,21 +227,11 @@ FRAMES=$((NUM_ENVS*256))
 # sacrifice the learning dynamics.
 PPO_BATCH=${PB_ARG:-1024}
 POOL_GROUP=${POOL_ARG:-8}
-EPISODES=${EPISODES_ARG:-400000}
-if [ -n "$WM_STEPS_ARG" ]; then
-  EPISODES=$(uv run --no-sync python -c "
-from hydra import compose, initialize_config_dir
-from pathlib import Path
-from curious_george.training.schedule import TrainingSchedule
-with initialize_config_dir(config_dir=str(Path('Configs').resolve()), version_base=None):
-    cfg = compose(config_name='main', overrides=[
-        'env=$ENVCFG', 'run=multienv',
-        'predNet.batched_wm=True', 'predNet.wm_pool_group=$POOL_GROUP',
-        'exp.num_envs=$NUM_ENVS', 'rl.frames=$FRAMES'])
-print(TrainingSchedule.episodes_for_wm_steps(cfg, $WM_STEPS_ARG))
-")
-  echo "budget: $WM_STEPS_ARG world-model gradient steps -> $EPISODES episodes"
-fi
+# The budget IS pRNN gradient steps now - no conversion, no second config
+# entry point. $6 used to be episodes and $13 a gradient-step count that had to
+# be inverted through the regime by composing a whole config in a heredoc; the
+# config states the thing directly, so both collapse into one argument.
+PRNN_STEPS=${WM_STEPS_ARG:-${EPISODES_ARG:-50000}}
 # Once the training loop is graphed this is the DOMINANT cost, not a logging
 # detail: measured with both graphs on, the full 20.48M-step training compute is
 # ~9 min while 100 spatial evals are ~90 min on a dev box. 50 over 20,480,000
@@ -228,8 +239,11 @@ fi
 # 200 updates at frames=2048 = one per 409,600 env steps), so matching it is
 # faithful rather than a corner cut.
 N_ANALYSIS=${N_ANALYSIS_ARG:-100}
-SEQDUR=256                      # predNet.seqdur; episodes are this many env steps
-TOTAL_STEPS=$((EPISODES*SEQDUR))
+SEQDUR=256                      # episode_steps; episodes are this many env steps
+# Derived exactly as curious_george/training/schedule.py derives it, so the
+# cadences below and the run's own summary cannot disagree.
+TOTAL_STEPS=$((PRNN_STEPS*POOL_GROUP*SEQDUR))
+POLICY_STEPS=$((4*TOTAL_STEPS/PPO_BATCH))   # ppo_epochs=4
 case "$GRAPH$PGRAPH" in
   TrueTrue) GRAPH_TAG="-graphall" ;;
   True*)    GRAPH_TAG="-graphwm"  ;;
@@ -237,7 +251,7 @@ case "$GRAPH$PGRAPH" in
   *)        GRAPH_TAG=""          ;;
 esac
 case "$RGRAPH" in True|true|1) GRAPH_TAG="${GRAPH_TAG}-roll" ;; esac
-echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH episodes=$EPISODES total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH cuda_graph(rollout)=$RGRAPH cuda_graph(curiosity)=$CGRAPH n_analysis=$N_ANALYSIS num_envs=$NUM_ENVS"
+echo "regime: pool_group=$POOL_GROUP ppo_batch=$PPO_BATCH prnn_steps=$PRNN_STEPS policy_steps=$POLICY_STEPS total_steps=$TOTAL_STEPS cuda_graph(wm)=$GRAPH cuda_graph(policy)=$PGRAPH cuda_graph(rollout)=$RGRAPH cuda_graph(curiosity)=$CGRAPH n_analysis=$N_ANALYSIS num_envs=$NUM_ENVS"
 
 # Cadences are DERIVED from a count of events, not written as raw step numbers.
 # The quantity anyone actually reasons about is "how many points do I want on
@@ -307,18 +321,30 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # the policy generates the behaviour the world model learns from. 512 is 64x
 # diluted against the num_envs=8 baseline. 1.29x more steps is not worth 4x
 # more dilution; 128 already fits inside 2 h.
-uv run python main_train.py env=$ENVCFG run=multienv $LAYOUT_OVERRIDES \
-    predNet.batched_wm=True predNet.wm_pool_group=$POOL_GROUP predNet.compile_cell=layer \
-    predNet.cuda_graph=$GRAPH rl.cuda_graph=$PGRAPH exp.rollout_cuda_graph=$RGRAPH \
-    predNet.curiosity_cuda_graph=$CGRAPH \
-    exp.num_envs=$NUM_ENVS rl.frames=$FRAMES rl.ppo_batch_size=$PPO_BATCH \
-    rl.episodes_total=$EPISODES rl.entropy_coef=$ENT \
-    ${ENT_FINAL:+rl.entropy_coef_final=$ENT_FINAL} \
-    logging.wandb_log=true \
-    logging.archive_every_steps=8388608 logging.save_every_steps=8388608 \
-    exp.offpolicy_prnn_eval=True \
-    logging.analysis_every_steps=$ANALYSIS_EVERY logging.plot_every_steps=$PLOT_EVERY \
-    exp.seed=$SEED exp.exp_name=fast-$LAYOUTS-e$ENT${ENT_FINAL:+to$ENT_FINAL}-g$POOL_GROUP-p$PPO_BATCH-s$SEED${GRAPH_TAG} > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+# tyro spells booleans as --flag / --no-flag, so a "True"/"False" argument has
+# to become one or the other. Passing `--flag False` is an unrecognised-argument
+# error, not a false.
+flag() { case "$2" in True|true|1) printf -- "--%s" "$1" ;; *) printf -- "--no-%s" "$1" ;; esac; }
+
+uv run python main_train.py $PRESET $ENV_SUBCOMMAND $LAYOUT_OVERRIDES \
+    --train-prnn.batched --train-prnn.episodes-per-grad-step $POOL_GROUP \
+    --train-prnn.compile layer \
+    $(flag train-prnn.cuda-graph "$GRAPH") \
+    $(flag train-policy.cuda-graph "$PGRAPH") \
+    $(flag collect.rollout-cuda-graph "$RGRAPH") \
+    $(flag train-prnn.curiosity-cuda-graph "$CGRAPH") \
+    --collect.num-envs $NUM_ENVS \
+    --train-prnn.total-grad-steps $PRNN_STEPS \
+    --train-policy.total-grad-steps $POLICY_STEPS \
+    --train-policy.entropy-coef $ENT \
+    ${ENT_FINAL:+--train-policy.entropy-coef-final $ENT_FINAL} \
+    --run.wandb \
+    --run.archive-every-steps 8388608 --run.save-every-steps 8388608 \
+    --eval.evals $EVALS \
+    --eval.analysis-every-steps $ANALYSIS_EVERY --eval.plot-every-steps $PLOT_EVERY \
+    --run.seed $SEED \
+    --run.exp-name fast-$LAYOUTS-e$ENT${ENT_FINAL:+to$ENT_FINAL}-g$POOL_GROUP-p$PPO_BATCH-s$SEED${GRAPH_TAG} \
+    > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`. Job 10444214 died with exit 1 and
 # NO visible traceback because `| tail -40` showed the last 40 lines of the
 # hydra config dump instead of the error - the same way job 10416788's gate

@@ -77,10 +77,19 @@ mkdir -p "$DEST_DIR"
 SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null || true; rsync -a "$RL_STORAGE/" "$DEST_DIR/" || true' EXIT
 
-uv run main_train.py \
-    env="$ENVCFG" run=multienv \
-    exp.layouts="$LAYOUTS" \
-    exp.exp_name="multienv-${ENVCFG%%_*}-$LAYOUTS"
+case "$ENVCFG" in
+  squareroom_multi) ENV_SUBCOMMAND="env:square-room-multi-cfg" ;;
+  *)                ENV_SUBCOMMAND="env:l-room-multi-cfg" ;;
+esac
+case "$LAYOUTS" in
+  one)   LAYOUT_SUB="env.layouts:single-layout" ;;
+  rooms) LAYOUT_SUB="env.layouts:frozen-layouts" ;;
+  pool)  LAYOUT_SUB="env.layouts:layout-pool" ;;
+  *)     echo "layouts must be one|rooms|pool, got $LAYOUTS" >&2; exit 1 ;;
+esac
+
+uv run main_train.py multienv $ENV_SUBCOMMAND $LAYOUT_SUB \
+    --run.exp-name "multienv-${ENVCFG%%_*}-$LAYOUTS"
 
 kill $SYNC_PID 2>/dev/null || true
 rsync -a "$RL_STORAGE/" "$DEST_DIR/"

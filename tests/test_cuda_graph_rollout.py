@@ -22,7 +22,7 @@ rollout tensors against the eager path, never a summary statistic:
 `predNet.compile_cell` is deliberately absent: it is orthogonal to capture
 (the compiled cell is simply what gets recorded) and a fresh inductor compile
 costs more than the rest of this file put together. The combination is
-exercised by tests/perf/benchmark.py, which runs with compile_cell=layer.
+exercised by throwaway/hydra_era/perf/benchmark.py, which runs with compile_cell=layer.
 
 CUDA-only; skipped on CPU boxes.
 """

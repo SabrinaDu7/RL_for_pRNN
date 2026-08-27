@@ -58,11 +58,16 @@ done ) &
 SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null' EXIT
 
-uv run main_train.py \
-    exp.exp_name="bsweep-B${B}-s${SEED}" \
-    exp.with_obs=False exp.input_type=pRNN \
-    exp.num_envs=$B exp.seed=$SEED \
-    rl.episodes_total=12000 # 3,072,000 steps / predNet.seqdur=256
+# The sweep's whole question is whether rollout WIDTH changes learning. That
+# is now structural rather than hoped for: both gradient-step budgets are
+# STATED, so varying num_envs cannot move them - it only changes how the same
+# training is chunked. Under the old config `rl.frames` stayed at 2048 while
+# num_envs varied, which silently capped B at 8.
+uv run main_train.py reference \
+    --run.exp-name "bsweep-B${B}-s${SEED}" \
+    --collect.num-envs $B --run.seed $SEED \
+    --train-prnn.total-grad-steps 12000 \
+    --train-policy.total-grad-steps 48000   # 3,072,000 env steps, batch 256
 
 kill $SYNC_PID 2>/dev/null
 rsync -a $RL_STORAGE/ $DEST_DIR/

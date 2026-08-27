@@ -5,7 +5,7 @@ into fewer, bigger kernels; the graph removes the dispatch and launch of
 whatever kernels remain - so neither one's speedup predicts the pair's. This
 times `trainStep(batched=True)` in all four combinations.
 
-Steady state is the point. `tests/perf/benchmark.py --updates 4` puts
+Steady state is the point. `throwaway/hydra_era/perf/benchmark.py --updates 4` puts
 torch.compile's ONE-TIME compilation inside `update/wm_train` and capture
 warmup inside the graphed arm, which made the graph look worth 1.16x when the
 steady-state stage figure is 4.19x. This script warms up before timing.

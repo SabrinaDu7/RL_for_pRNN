@@ -14,6 +14,58 @@ the only way to use them.
 
 ---
 
+## Terminology — the ground truth
+
+Four words, and nothing else. Where a number is quoted anywhere in this repo, it is
+in one of these units. `curious_george/configs.py` and `curious_george/training/schedule.py`
+implement these definitions; this section is what they implement.
+
+**environment step** — one agent action in one environment instance. The axis every
+cadence fires on and every cross-run comparison is made on, because it is the only unit
+that means the same thing at every collection shape.
+
+**episode** — a trajectory of `episode_steps` environment steps (256 by default). It is
+the unit the pRNN backpropagates through, and the unit a room is redrawn at in multi-room
+training.
+
+**rollout** — one round of collection: every parallel instance runs `episodes_per_env`
+episodes, all stepped together. The loop collects a rollout, hands it to both learners,
+discards it, and collects the next.
+
+```
+env_steps_per_rollout = num_envs × episodes_per_env × episode_steps
+```
+
+A rollout exists because both algorithms require it, not as a tuning choice: PPO is
+on-policy and needs a collected batch to compute advantages before it can take a step, and
+the pRNN backpropagates through a whole episode. Its *size* buys no training — varying it
+32x moves both gradient-step totals by 0.02%, which is integer rounding. It sets how often
+cadenced events fire and how much memory a step needs, and that is all.
+
+**gradient step** — one optimizer step. There are **two counters, never one**, because the
+two learners consume a rollout at different rates and on different knobs:
+
+| learner | one gradient step per | reuse |
+|---|---|---|
+| pRNN | `episode_steps × episodes_per_grad_step` env steps | none — each episode feeds exactly one step |
+| policy | `ppo_batch_size ÷ ppo_epochs` env steps of *fresh* experience | each transition is used `ppo_epochs` times |
+
+In the 2026-08 reference those are 2048 and 512 — a factor of 4 — and the policy's does not
+involve `episode_steps` at all. Collapsing them into one "gradient steps" axis is what hid
+that difference. The policy therefore reports both *fresh* experience and *processed*
+transitions; they differ by exactly `ppo_epochs`.
+
+**What is stated and what is derived.** The two gradient-step totals are the ground truth
+you set. Environment steps, episode counts, rollout counts and `ppo_batch_size` are all
+derived from them. Budgeting by experience instead made two arms silently incomparable —
+the same episode count trains the world model 8x less when 8 episodes are pooled per step.
+
+Two words are deliberately **retired**: an *update* was one rollout, which read as one
+gradient step while actually being hundreds; and *frames* was `env_steps_per_rollout`,
+written by hand in five places.
+
+---
+
 ## Setup
 
 Managed with [`uv`](https://docs.astral.sh/uv/). Two dependencies are custom forks pinned
@@ -32,15 +84,17 @@ uv sync
 
 ### Launching a training run
 ```bash
-uv run python main_train.py                              # defaults from Configs/main.yaml
-uv run python main_train.py exp.seed=3 rl.frames=2048    # override single keys
-uv run python main_train.py env=lroom_multi run=multienv # swap whole config groups
+uv run python main_train.py reference                    # the serial static L-room baseline
+uv run python main_train.py multienv --run.seed 3        # a preset, with one field overridden
+uv run python main_train.py ultra --train-prnn.total-grad-steps 1000
+uv run python main_train.py reference --help             # every field, typed
 ```
 
-Hydra composes `Configs/main.yaml` from the groups beside it (`env/`, `model/`, `algo/`,
-`rewards/`, `world_model/`, `run/`, `performance/`). Run length is set in episodes;
-environment steps and both optimizer-step budgets are **derived** — read the schedule
-printed at startup rather than a comment (`curious_george/training/schedule.py`).
+`curious_george/configs.py` owns the schema. A run is one typed `Config`; presets
+(`reference`, `multienv`, `ultra`) are named `Config` instances, so a mistake in one
+fails at import rather than at compose time. The two gradient-step budgets are what you
+set — environment steps, episode counts and `ppo_batch_size` are derived from them, and
+the resolved schedule is printed at startup.
 
 `uv run pypatree` prints the module tree with every public signature.
 

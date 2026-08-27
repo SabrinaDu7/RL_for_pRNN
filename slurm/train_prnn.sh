@@ -58,7 +58,9 @@ done ) &
 SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null' EXIT
 
-uv run main_train.py exp.exp_name=pRNN exp.with_obs=False exp.input_type=pRNN
+# with_obs=False and the pRNN input type are the `reference` preset's own
+# defaults now, so they stop being spelled out here.
+uv run main_train.py reference --run.exp-name pRNN
 
 # Final sync + copy logs to scratch
 kill $SYNC_PID 2>/dev/null
