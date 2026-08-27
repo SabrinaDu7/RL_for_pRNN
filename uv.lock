@@ -742,7 +742,7 @@ wheels = [
 [[package]]
 name = "minigrid"
 version = "1.2.6"
-source = { git = "https://github.com/SabrinaDu7/minigrid.git#ce375b055e07b2bd350e50dae1dbcad8b65ac307" }
+source = { git = "https://github.com/SabrinaDu7/minigrid.git#956ae0746db03ce7978194847cbc59f6a2dd771b" }
 dependencies = [
     { name = "gymnasium" },
     { name = "matplotlib" },

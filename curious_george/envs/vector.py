@@ -216,12 +216,17 @@ class DeviceTableShellPool:
         the same integrated trajectory lands at a different absolute position
         depending on which room a stream is in.
 
-        The observation bank gains a leading layout axis; the TRANSITION table
-        does not, and that is asserted rather than assumed. It holds only because
-        landmarks are walkable, non-occluding `Floor`, so they change what the
-        agent sees and never where it can go. A landmark that blocked movement
-        would make the tables diverge, and this must fail loudly if that ever
-        happens.
+        BOTH the observation bank and the transition table carry a leading
+        layout axis, and both are gathered with `stream_layout`. The table did
+        not, until impassable landmarks existed: while every landmark was
+        walkable `Floor` it changed what the agent SAW and never where it could
+        GO, so one table served every room. An `Obstacle` breaks that, and it
+        breaks it per room, so the table is now per room too. A layout axis of
+        length 1 covers the single-room case, which keeps `step_device` free of
+        a branch.
+
+        Cheap: a table is (W, H, 4, A, 3) int64, ~24 kB, against ~150 kB for the
+        same room's observation bank.
         """
         from curious_george.envs.obs_bank import TableDrivenRGBPartialObsWrapper
 
@@ -266,18 +271,17 @@ class DeviceTableShellPool:
         self.layouts = list(layouts) if layouts else None
         self._layout_rng = np.random.default_rng(layout_seed)
 
-        banks = (
-            [np.array(reference._bank)]
+        banks, tables = (
+            ([np.array(reference._bank)], [np.array(reference._next_state)])
             if self.layouts is None
             else self._collect_layout_banks(reference=reference)
         )
 
-        # Copy read-only NumPy banks before torch takes ownership. State table
-        # is tiny; the uint8 observation bank is only ~0.2 MB per layout at 16x16.
+        # Copy read-only NumPy arrays before torch takes ownership. Both carry a
+        # leading layout axis, of length 1 in the single-room case, so
+        # `step_device` and `observation_device` index them the same way.
         self.next_state = torch.tensor(
-            np.array(reference._next_state),
-            dtype=torch.long,
-            device=self.device,
+            np.stack(tables), dtype=torch.long, device=self.device
         )
         self.obs_banks = torch.tensor(
             np.stack(banks), dtype=torch.uint8, device=self.device
@@ -303,26 +307,32 @@ class DeviceTableShellPool:
         self._prepared_layouts: torch.Tensor | None = None
         self._prepared_layouts_host: np.ndarray | None = None
 
-    def _collect_layout_banks(self, *, reference) -> list:
-        """One wrapper visits every layout once, stacking the banks it builds.
+    def _collect_layout_banks(self, *, reference) -> tuple[list, list]:
+        """One wrapper visits every layout once, stacking what it builds.
 
-        Also the place the transition-table invariant is checked: a layout whose
-        landmarks changed where the agent can go would need its own table, and
-        the device path holds exactly one.
+        Returns (observation banks, transition tables), one of each per layout
+        and in layout order. The wrapper re-keys both off the grid fingerprint
+        on reset, so a layout with impassable landmarks yields its own table
+        with no special-casing here.
+
+        What is still NOT supported is checked per layout: a table with
+        environment-triggered rewards or terminations. `step_device` returns a
+        reusable all-zero reward vector and never inspects one, so a room that
+        could pay out would be silently ignored rather than mishandled.
         """
-        banks = []
-        base_state = np.array(reference._next_state)
+        banks, tables = [], []
         for layout in self.layouts:
             reference.unwrapped.landmarks = list(layout.landmarks)
             reference.reset(seed=0)
-            if not np.array_equal(reference._next_state, base_state):
+            if np.any(reference._rewarding) or np.any(reference._terminated):
                 raise ValueError(
-                    f"layout {layout.key} changes the transition table; the device "
-                    "path holds one table for all layouts, which is only valid "
-                    "while landmarks are walkable and non-occluding"
+                    f"layout {layout.key} has environment-triggered rewards or "
+                    "terminations; the device path returns a constant zero reward "
+                    "and would silently drop them"
                 )
             banks.append(np.array(reference._bank))
-        return banks
+            tables.append(np.array(reference._next_state))
+        return banks, tables
 
     @property
     def n_layouts(self) -> int:
@@ -445,7 +455,12 @@ class DeviceTableShellPool:
         timestep, not by data-dependent device control flow.
         """
         actions = actions.to(dtype=torch.long)
+        # `stream_layout` leads, exactly as in `observation_device`: where a
+        # stream can move depends on which room it is in as soon as any landmark
+        # is impassable. Still a B-row advanced index producing (B, 3), so the
+        # shape the rollout graph captured is unchanged.
         next_rows = self.next_state[
+            self.stream_layout,
             self.positions[:, 0],
             self.positions[:, 1],
             self.directions,

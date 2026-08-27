@@ -168,10 +168,34 @@ class Layout:
         return len(common_offsets(walkable=walkable, anchors=self.anchors))
 
     @property
+    def blocks_movement(self) -> bool:
+        return any(lm.impassable for lm in self.landmarks)
+
+    def walkable(self, base: frozenset[tuple[int, int]]) -> frozenset[tuple[int, int]]:
+        """Cells the agent can occupy IN THIS ROOM, given the room's shape.
+
+        `base` is what the walls leave open (`base_walkable`). Walkable
+        landmarks take nothing away; impassable ones remove their own cells, so
+        the walkable set stops being a property of the room and becomes a
+        property of the room AND its layout. Everything that normalises by a
+        walkable-cell count, enumerates start positions, or measures offsets
+        against "cells that exist" has to ask a Layout rather than a shape.
+        """
+        return base - self.cells if self.blocks_movement else base
+
+    @property
     def key(self) -> str:
-        """Short stable id - names bank files, wandb series and cached results."""
+        """Short stable id - names wandb series and cached results.
+
+        Impassability is part of it: two layouts with identical landmarks that
+        differ only in whether the agent can enter them are DIFFERENT rooms with
+        different dynamics, and a shared key would let one's cached results be
+        served for the other.
+        """
         spec = "|".join(
-            f"{lm.shape}:{lm.color}:{lm.anchor[0]},{lm.anchor[1]}" for lm in self.landmarks
+            f"{lm.shape}:{lm.color}:{lm.anchor[0]},{lm.anchor[1]}"
+            + (":blocked" if lm.impassable else "")
+            for lm in self.landmarks
         )
         return hashlib.sha1(spec.encode()).hexdigest()[:8]
 
@@ -416,16 +440,30 @@ MULTI_ENV_ID = {
 
 
 def base_walkable(room_id: str = BASE_ROOM_ID) -> frozenset[tuple[int, int]]:
-    """Walkable cells of a room, read from a throwaway instance.
+    """What the room's WALLS leave open - its shape, independent of content.
 
-    Landmarks are walkable `Floor`, so this is the same set for every layout in
-    a room - which is exactly why one transition table serves them all.
+    Keyed on walls rather than on `can_overlap`, and that distinction is the
+    whole point. A plain `gym.make(room_id)` paints the room's DEFAULT
+    landmarks, so reading walkability off the grid used to return the same set
+    for every layout only because those landmarks happened to be walkable
+    `Floor`. With impassable ones it would silently start returning "the room
+    minus whichever cells the default landmarks cover" - a wrong, layout-
+    specific answer feeding the entire layout generator.
+
+    So this answers "which cells does the geometry admit", and a specific room's
+    walkable set is `Layout.walkable(base_walkable(room))`.
     """
     import gymnasium as gym
 
     env = gym.make(room_id)
     env.reset(seed=0)
-    return walkable_cells(env=env)
+    u = env.unwrapped
+    return frozenset(
+        (x, y)
+        for y in range(u.height)
+        for x in range(u.width)
+        if getattr(u.grid.get(x, y), "type", None) != "wall"
+    )
 
 
 # --- the dihedral group of the square ---------------------------------------
@@ -544,17 +582,23 @@ class EnvShape:
 class LandmarkKind:
     """One landmark's identity, independent of where it goes.
 
-    `size` and `solid` are DECLARED BUT INERT: the stencil table and the object
-    class both live in the minigrid fork, so a 2-cell landmark or a movement-
-    blocking one needs a change there first. They are here because the axis is
-    what makes a shape or solid-object experiment a config change rather than a
-    refactor - and because a field that does nothing is better than a field
-    that silently does something else.
+    `size` is DECLARED BUT INERT: the stencil table lives in the minigrid fork,
+    so a 2-cell landmark needs a change there first. It is here because the axis
+    is what makes a shape experiment a config change rather than a refactor, and
+    because a field that does nothing is better than one that silently does
+    something else.
+
+    `impassable` is LIVE as of 2026-08-27: it paints the landmark as the fork's
+    `Obstacle` instead of `Floor`. The two render identically at every tile size,
+    so this changes the affordance and nothing about the image - which is what
+    makes walkable-vs-impassable a single-variable contrast. It was called
+    `solid` while inert; renamed because the fork already uses "solid" for a
+    FILLED STENCIL (`block3`), and the two are unrelated.
     """
 
     stencil: str
     size: int = 3
-    solid: bool = False
+    impassable: bool = False
 
 
 @dataclass(frozen=True)
@@ -786,7 +830,13 @@ def _layout_of(anchors: AnchorSet, content: EnvContent,
                stencils: tuple[str, ...] | None = None) -> Layout:
     cols = colors if colors is not None else content.palette[: content.n_landmarks]
     kinds = stencils if stencils is not None else content.stencils
-    return Layout(tuple(Landmark(k, c, a) for k, c, a in zip(kinds, cols, anchors)))
+    # Impassability travels with the KIND, not the slot: `dress` permutes which
+    # stencil lands on which anchor when Vary.KIND is on, so reading it
+    # positionally would hand one kind's affordance to another's shape.
+    blocks = {k.stencil: k.impassable for k in content.kinds}
+    return Layout(tuple(
+        Landmark(k, c, a, impassable=blocks[k]) for k, c, a in zip(kinds, cols, anchors)
+    ))
 
 
 def separation_signature(anchors: AnchorSet) -> tuple[int, ...]:
