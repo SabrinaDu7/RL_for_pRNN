@@ -26,7 +26,7 @@ def get_env_var(var_name: str) -> str:
 # (storage.save_pN_and_acmodel / prnn.utils.checkpoints.save_pN), so pointing
 # at the run DIRECTORY is enough to locate both.
 PRNN_CKPT_FILENAME = "predictiveNet_state.pt"
-ACMODEL_CKPT_FILENAME = "status.pt"
+ACMODEL_CKPT_FILENAME = "policy.pt"  # see storage.POLICY_CKPT_FILENAME
 
 # Task checkpoints written before 2026-07-30 named the pRNN file after the
 # trajectory count instead of using the canonical name above.
@@ -94,12 +94,16 @@ def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC, env_type: MinigridEn
             prnn_ckpt = resolve_prnn_ckpt(ckpt_dir)
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"{dir_var}={ckpt_dir}: {exc}") from exc
-        acmodel_status_ckpt = os.path.join(ckpt_dir, ACMODEL_CKPT_FILENAME)
-        if not os.path.isfile(acmodel_status_ckpt):
+        # Runs that finished before the 2026-08-28 rename still hold status.pt.
+        from curious_george.log_and_store.storage import find_policy
+
+        try:
+            acmodel_status_ckpt = find_policy(ckpt_dir)
+        except FileNotFoundError as exc:
             raise FileNotFoundError(
-                f"{dir_var}={ckpt_dir} does not contain '{ACMODEL_CKPT_FILENAME}'. "
+                f"{dir_var}={ckpt_dir}: {exc}. "
                 "Point it at a finished training-run directory."
-            )
+            ) from exc
         return prnn_ckpt, acmodel_status_ckpt
 
     # Legacy names, preserved verbatim including a pre-existing inconsistency:

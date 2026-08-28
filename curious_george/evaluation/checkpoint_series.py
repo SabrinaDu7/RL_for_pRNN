@@ -60,6 +60,25 @@ def archived(run_dir: Path) -> list[tuple[int, Path]]:
     return out
 
 
+def archived_policies(run_dir: Path) -> dict[int, Path]:
+    """environment step -> the archived POLICY checkpoint at that step.
+
+    EMPTY FOR RUNS FINISHED BEFORE 2026-08-28, when `save_checkpoint` archived
+    only the pRNN and kept the policy in one rolling file. That is why this is a
+    lookup rather than a second column on `archived`: for an older run the pRNN
+    series exists and the policy series does not, and a caller has to be able to
+    see the difference instead of silently pairing a step-N world model with the
+    last policy the run happened to write.
+
+    An on-policy readout of an archived step is available exactly when this maps
+    that step.
+    """
+    out: dict[int, Path] = {}
+    for p in sorted((run_dir / "checkpoints").glob("policy_state_step*.pt")):
+        out[int(p.stem.split("step")[-1])] = p
+    return out
+
+
 def checkpoint_hiddensize(ckpt: Path) -> int:
     """The width the checkpoint was trained at, read from the checkpoint.
 

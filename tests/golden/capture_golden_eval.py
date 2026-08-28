@@ -114,7 +114,11 @@ def build_fixture() -> dict:
 
     # with_obs=False matches the checkpoint's actor (no conv tower).
     acmodel = ACModelSR(obs_space, env.action_space, pN.hidden_size, False, True, True)
-    status = torch.load(CKPT_DIR / "status.pt", map_location=DEVICE, weights_only=False)
+    # find_policy, not a literal: the pinned fixture predates the 2026-08-28
+    # rename and holds status.pt, while any newly captured one holds policy.pt.
+    from curious_george.log_and_store.storage import find_policy
+
+    status = torch.load(find_policy(CKPT_DIR), map_location=DEVICE, weights_only=False)
     acmodel.load_state_dict(status[StatusCkptKeys.MODEL_STATE.value])
     acmodel.to(DEVICE)
 

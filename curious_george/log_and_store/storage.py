@@ -71,13 +71,41 @@ def get_tmp_model_dir(model_name: str | Path):
     return os.path.join(get_tmp_dir(), model_name)
 
 
-def get_status_path(model_dir: str | Path):
-    return os.path.join(model_dir, "status.pt")
+#: What the policy checkpoint is called. Renamed from `status.pt` on 2026-08-28:
+#: the file holds the actor-critic's weights and its optimizer, and "status"
+#: named none of that. The KEYS inside it are unchanged - `StatusCkptKeys` is
+#: the on-disk schema of the dict, and renaming its VALUES would make every
+#: existing checkpoint unreadable.
+POLICY_CKPT_FILENAME = "policy.pt"
+LEGACY_POLICY_CKPT_FILENAME = "status.pt"
 
 
-def get_status(model_dir: str | Path):
-    path = get_status_path(model_dir)
-    return torch.load(path, map_location=get_device(), weights_only=False)
+def policy_path(model_dir: str | Path) -> str:
+    """Where a policy checkpoint is WRITTEN. Always the current name."""
+    return os.path.join(model_dir, POLICY_CKPT_FILENAME)
+
+
+def find_policy(model_dir: str | Path) -> str:
+    """Where to READ a policy checkpoint from, preferring the current name.
+
+    Separate from `policy_path` on purpose: a single function that resolves to
+    an old name would eventually write one. Runs finished before the rename
+    have `status.pt` and are still readable; new ones never produce it.
+    """
+    current = policy_path(model_dir)
+    if os.path.isfile(current):
+        return current
+    legacy = os.path.join(model_dir, LEGACY_POLICY_CKPT_FILENAME)
+    if os.path.isfile(legacy):
+        return legacy
+    raise FileNotFoundError(
+        f"{model_dir} holds neither {POLICY_CKPT_FILENAME} nor "
+        f"{LEGACY_POLICY_CKPT_FILENAME}"
+    )
+
+
+def load_policy(model_dir: str | Path):
+    return torch.load(find_policy(model_dir), map_location=get_device(), weights_only=False)
 
 
 def get_pN(
@@ -175,10 +203,10 @@ def get_agent(
     return agent
 
 
-def save_status(status, model_dir):
-    path = get_status_path(model_dir)
+def save_policy(policy, model_dir):
+    path = policy_path(model_dir)
     create_folders_if_necessary(path)
-    torch.save(status, path)
+    torch.save(policy, path)
 
 
 def save_analysis_of_agent_behav(onpolicyAnalysis, model_dir, update_step):
@@ -236,8 +264,8 @@ def save_pN_and_acmodel(
     }
     if ac_optimizer is not None:
         status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = ac_optimizer.state_dict()
-    save_status(status_save, step_dir)
+    save_policy(status_save, step_dir)
 
 
 # def get_vocab(model_dir):
-#     return get_status(model_dir)["vocab"]
+#     return load_policy(model_dir)["vocab"]

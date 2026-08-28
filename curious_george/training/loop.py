@@ -3,6 +3,8 @@
 import time
 from pathlib import Path
 
+import torch
+
 from tqdm import tqdm
 
 from prnn.utils import save_pN
@@ -13,7 +15,7 @@ from curious_george.evaluation.spatial import (
     evaluate_multi_room_representation,
     evaluate_spatial_representation,
 )
-from curious_george.log_and_store.storage import save_analysis_of_agent_behav, save_status
+from curious_george.log_and_store.storage import save_analysis_of_agent_behav, save_policy
 from curious_george.training import logging as train_log
 from curious_george.configs import EvalKind, SpatialEvalPath
 from curious_george.utils.enums import AgentType
@@ -121,34 +123,47 @@ def save_checkpoint(
     update: int,
     archive: bool = False,
 ) -> None:
-    """Write the rolling checkpoint, and on `archive` a step-tagged copy too.
+    """Write the rolling checkpoints, and on `archive` step-tagged copies too.
 
-    The rolling file is overwritten every time, so on its own a run leaves
-    exactly ONE checkpoint and the question "when did this representation
-    appear" cannot be asked afterwards. The archive is a developmental series:
-    3.2 MB each, so a few hundred over a run is free.
+    The rolling files are overwritten every time, so on their own a run leaves
+    exactly ONE of each and the question "when did this representation appear"
+    cannot be asked afterwards. The archive is a developmental series: 3.2 MB
+    per pRNN, so a few hundred over a run is free.
+
+    BOTH MODELS ARE ARCHIVED, and that is the point of this shape. Until
+    2026-08-28 only the pRNN was, while the policy lived in a single rolling
+    file - so an archived world model at step N could only ever be paired with
+    the policy from the LAST write. Any evaluation that needs the agent that
+    produced a checkpoint (an on-policy readout, a behavioural replay) was
+    therefore impossible for every step but the last, silently: the files
+    existed and loaded, they just were not contemporaries.
     """
-    status_save = {
+    policy_save = {
         StatusCkptKeys.NUM_FRAMES.value: num_frames,
         StatusCkptKeys.UPDATE.value: update,
     }
     if cfg.arch_policy.agent is not AgentType.RANDOM:
-        status_save[StatusCkptKeys.MODEL_STATE.value] = comps.acmodel.state_dict()
-        status_save[StatusCkptKeys.OPTIMIZER_STATE.value] = comps.algo.optimizer.state_dict()
+        policy_save[StatusCkptKeys.MODEL_STATE.value] = comps.acmodel.state_dict()
+        policy_save[StatusCkptKeys.OPTIMIZER_STATE.value] = comps.algo.optimizer.state_dict()
 
-    save_status(status_save, run_ctx.model_dir)
+    save_policy(policy_save, run_ctx.model_dir)
 
-    if comps.predictiveNet is not None and cfg.train_prnn.train:
+    trains_prnn = comps.predictiveNet is not None and cfg.train_prnn.train
+    if trains_prnn:
         save_pN(comps.predictiveNet, run_ctx.model_dir + "predictiveNet_state.pt")
-        if archive:
-            archive_dir = Path(run_ctx.model_dir) / "checkpoints"
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            # Named by ENVIRONMENT STEP, the one counter that means the same
-            # thing across rollout shapes (see training/schedule.py).
-            save_pN(comps.predictiveNet, str(archive_dir / f"predictiveNet_state_step{num_frames:010d}.pt"))
-            print(f"archived checkpoint at step {num_frames}")
 
-    print(f"pN and ACmodel status saved at {run_ctx.model_dir}")
+    if archive:
+        archive_dir = Path(run_ctx.model_dir) / "checkpoints"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        # Named by ENVIRONMENT STEP, the one counter that means the same thing
+        # across rollout shapes (see training/schedule.py), and the SAME step
+        # in both filenames so a pair is found by matching the number.
+        if trains_prnn:
+            save_pN(comps.predictiveNet, str(archive_dir / f"predictiveNet_state_step{num_frames:010d}.pt"))
+        torch.save(policy_save, archive_dir / f"policy_state_step{num_frames:010d}.pt")
+        print(f"archived checkpoint at step {num_frames}")
+
+    print(f"pN and policy saved at {run_ctx.model_dir}")
 
 
 def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
