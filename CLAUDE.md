@@ -102,3 +102,6 @@ Re-read once:
 - Did you settle for minimal-to-green where the task deserved the change done right?
 - Did you lead with a confident answer before reading the evidence, or call a task done before its gate ran and passed? (Code written is not a task complete.)
 - Did you accept a "done" — yours or a subagent's — without re-running its gate?
+
+## Tips and tricks
+- A trap: pkill -f main_train.py matches the shell that is running the pkill, because the pattern text appears in its own command line. Every time, it killed the launcher and reported exit 144. Use pgrep -af to look first, and never put a pkill in the same command as anything whose text contains the pattern.
