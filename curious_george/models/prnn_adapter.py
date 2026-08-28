@@ -18,6 +18,8 @@ Temporal conventions (confirmed against ../pRNN source):
   (HD from the next step); their hidden state aligns to the next step.
 """
 
+import functools
+
 import numpy as np
 import torch
 
@@ -354,6 +356,34 @@ class _GraphWMTrainer:
         )
 
 
+def _compile_on_cuda_only(module: torch.nn.Module, **compile_kwargs) -> None:
+    """Compile `module.forward`, and run EAGER whenever the module is not on CUDA.
+
+    The compile is a CUDA-only optimisation to begin with (1.39x on CUDA, 1.01x
+    on CPU), but a compiled callable follows its module: `on_device(..., "cpu")`
+    moves the network for every eval, and device is a dynamo GUARD, so the CPU
+    call retraces the whole unrolled recurrence. Measured 2026-08-28 on
+    `multienv-impassable-traj`: one analysis event emitted 76,205 dynamo warning
+    lines re-tracing a 500-step unroll at batch 1, and the event costs ~88 s
+    against ~37 s with the compile off.
+
+    Compiling for a device the flag already excludes also made `compile=LAYER`
+    and `compile=OFF` runs read their evals through DIFFERENT code paths; after
+    this they agree.
+    """
+    eager = module.forward
+    compiled = torch.compile(eager, **compile_kwargs)
+    # The Parameter OBJECT, not its `.data`: `Module._apply` rebinds `.data` on
+    # the same object, so this witness follows the module across every move.
+    witness = next(module.parameters())
+
+    @functools.wraps(eager)
+    def forward(*args, **kwargs):
+        return (compiled if witness.device.type == "cuda" else eager)(*args, **kwargs)
+
+    module.forward = forward
+
+
 class PRNNAdapter:
     def __init__(
         self,
@@ -427,11 +457,9 @@ class PRNNAdapter:
         self.compile_mode = str(compile_cell) if compile_cell else ""
         if compile_cell and self.device.type == "cuda":
             if self.compile_mode == "layer":
-                rnn = self.pN.pRNN.rnn
-                rnn.forward = torch.compile(rnn.forward, dynamic=False)
+                _compile_on_cuda_only(self.pN.pRNN.rnn, dynamic=False)
             else:
-                cell = self.pN.pRNN.rnn.cell
-                cell.forward = torch.compile(cell.forward)
+                _compile_on_cuda_only(self.pN.pRNN.rnn.cell)
 
     def seq2pred(self, obs_dicts, act_np):
         """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item

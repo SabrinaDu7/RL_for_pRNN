@@ -218,10 +218,34 @@ nothing to do with the environment. A flat-at-zero trace and a
 rising-but-not-yet-finished trace look identical at the end and mean opposite things;
 only the shape separates them.
 
-**The compile/analysis trade, worked.** `compile=LAYER` is 2.18x on the training loop but
-2.4x on the analysis event (88 s against 37 s). Solving for the crossover in a 30-minute
-run: `LAYER` wins below **~13.7 events**. At 8 events it wins comfortably (~33M env steps
-of training against ~20M without). Above ~14 events, turn it off.
+**The compile/analysis trade — CORRECTED 2026-08-28 by direct measurement.** The earlier
+version of this section amortised the compile's analysis cost across every event and
+solved for a crossover at ~13.7 events. That was wrong in structure, not just in value.
+
+Measured on `multienv-impassable-traj` (`compile=LAYER`, `rooms_max=4`,
+`evals={SPATIAL_MULTIROOM}`, no behaviour eval), from the tqdm stream:
+
+```
+rollout, steady state                2.17 s   (mean over 525 rollouts)
+analysis event 1  @  8,388,608 env steps    63 s
+analysis event 2  @ 16,777,216              13 s
+analysis event 3  @ 25,165,824              21 s
+analysis event 4  @ 33,554,432              18 s
+```
+
+**The compile's extra cost is ONE-TIME, ~45 s, not per-event.** Dynamo re-traced the
+recurrence for CPU at the first event and cached it: the warning count stood at 76,205
+after event 1 and was still exactly 76,205 after event 4. So there is no crossover to
+solve for — the cost does not scale with the number of events, and `compile=LAYER` wins at
+any event count a 30-minute run would use.
+
+`EvalCfg.rooms_max`'s "~88 s" is NOT contradicted by the 11-19 s here: that figure is this
+eval **plus the behaviour eval on the same cadence**, and this run has behaviour off. Read
+it as the cost of the pair, which is what sizes a run that logs both.
+
+The ~45 s is now recovered anyway — `_compile_on_cuda_only` (`models/prnn_adapter.py`)
+keeps the compile off whenever the module is not on CUDA, which is every eval, since they
+all run under `on_device(..., "cpu")`. Gate: `tests/test_compile_is_cuda_only.py`.
 
 **Keep archiving checkpoints even though nothing probes them.** 3.2 MB each, and since
 `5a17103` the policy is archived beside the pRNN, so a later probe can pair a world model

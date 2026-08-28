@@ -64,13 +64,21 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
             sleepstd=cfg.eval.sleep_std,
         )
         rooms = " ".join(f"{r['sRSA']:.3f}" for r in result["per_room"])
+        # flush=True on every eval print, here and below. tqdm writes the
+        # progress bar to STDERR, which is unbuffered, while these go to stdout
+        # - block-buffered the moment a run is redirected to a file. A 4-hour
+        # run therefore shows steady progress and NONE of its measurements: the
+        # 2026-08-28 multi-room run completed four analysis events with no
+        # `rooms sRSA` line in its log, which is the one series it exists to
+        # produce.
         print(
             f"rooms sRSA [{rooms}] mean={result['mean_room_sRSA']:.4f} "
             f"pooled={result['pooled']['sRSA']:.4f} "
             f"remapping={result['remapping_index']:+.4f} "
             f"SWdist={result['pooled']['SWdist']:.4f} "
             f"episodes/room {list(map(int, comps.envs.layout_episodes))[:8]}"
-            f"{'' if len(scored) == len(layouts) else f' [{len(scored)}/{len(layouts)} rooms scored]'}"
+            f"{'' if len(scored) == len(layouts) else f' [{len(scored)}/{len(layouts)} rooms scored]'}",
+            flush=True,
         )
         if wandb_log:
             train_log.log_multi_room(result, comps.envs.layout_episodes)
@@ -94,7 +102,10 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
             trainDecoder=cfg.eval.spatial_path is SpatialEvalPath.LEGACY_DECODER,
             legacy_timesteps=cfg.eval.legacy_decoder_timesteps,
         )
-        print(f"{nameext[1:]} sRSA={metrics['sRSA']:.4f} SWdist={metrics['SWdist']:.4f}")
+        print(
+            f"{nameext[1:]} sRSA={metrics['sRSA']:.4f} SWdist={metrics['SWdist']:.4f}",
+            flush=True,
+        )
         if wandb_log:
             train_log.log_spatial(metrics, nameext)
 
@@ -161,7 +172,7 @@ def save_checkpoint(
         if trains_prnn:
             save_pN(comps.predictiveNet, str(archive_dir / f"predictiveNet_state_step{num_frames:010d}.pt"))
         torch.save(policy_save, archive_dir / f"policy_state_step{num_frames:010d}.pt")
-        print(f"archived checkpoint at step {num_frames}")
+        print(f"archived checkpoint at step {num_frames}", flush=True)
 
     print(f"pN and policy saved at {run_ctx.model_dir}")
 
