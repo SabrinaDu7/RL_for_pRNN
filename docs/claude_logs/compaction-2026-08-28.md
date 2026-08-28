@@ -182,6 +182,72 @@ before a day is spent optimising against it.
 
 ---
 
+## THE AGREED PLAN — do this next
+
+Decided 2026-08-28 with Sabrina. Iterate on multi-environment training with impassable
+objects **on its own**, before any question is asked of it. Short runs, online metrics
+only, no probe collection.
+
+### Step 0 — sanity-check `remapping_index` (minutes, no GPU)
+
+Do this FIRST. Build a population that IS room-specific by construction and confirm the
+index rises; build a room-agnostic one and confirm it stays near zero. The cached Q3
+collection already holds per-room rate maps for all twenty rooms
+(`experiment-curiousgeorge/outputs/cache/Q3_maps_*.npz`), so no training is needed.
+
+If the index cannot detect remapping that is there by construction, every number below is
+worthless and the day goes to fixing the metric instead.
+
+### Step 1 — the run
+
+```
+budget    ~26,000 pRNN gradient steps    (~30 min at 29,700 env steps/s)
+speed     compile=LAYER + train_prnn.cuda_graph + train_policy.cuda_graph
+                        + collect.rollout_cuda_graph
+          🔴 NONE of these are in PRESETS["multienv"]; without them the run is
+             8,700 env steps/s and takes 2.9 h. See the speed section above.
+eval      SPATIAL_MULTIROOM, analysis_every_steps ~= 4M env steps  ->  ~8 events
+archive   archive_every_steps ~= 8M  ->  ~4 checkpoints, pRNN AND policy
+probe     NONE. The probe/hidden-state collection is deferred, not deleted.
+```
+
+**Log the TRAJECTORY, not the endpoint.** This is the point of ~8 analysis events rather
+than one. A 30-minute run trains LESS than the 54-minute run that already produced
+`index = 0.0062`, so a single endpoint would reproduce that null for a reason that has
+nothing to do with the environment. A flat-at-zero trace and a
+rising-but-not-yet-finished trace look identical at the end and mean opposite things;
+only the shape separates them.
+
+**The compile/analysis trade, worked.** `compile=LAYER` is 2.18x on the training loop but
+2.4x on the analysis event (88 s against 37 s). Solving for the crossover in a 30-minute
+run: `LAYER` wins below **~13.7 events**. At 8 events it wins comfortably (~33M env steps
+of training against ~20M without). Above ~14 events, turn it off.
+
+**Keep archiving checkpoints even though nothing probes them.** 3.2 MB each, and since
+`5a17103` the policy is archived beside the pRNN, so a later probe can pair a world model
+with its contemporary policy. This is what makes "defer the hidden-state work" cost
+nothing rather than cost a retrain.
+
+### Step 2 — the walkable control
+
+Only after Step 1 has a trustworthy trace. Same rooms, `impassable=False`, everything else
+identical; observations are byte-for-byte the same, so the only difference is the
+affordance. The impassable arm is already run, so this is ONE run.
+
+### Step 3 — room count, then optimiser
+
+3 vs 10 vs 30 rooms, then learning rate and `episodes_per_grad_step`. In that order, and
+not before a control exists: a hyperparameter swept against an uncontrolled baseline
+teaches nothing.
+
+### What is deliberately NOT in these runs
+
+- probe collection and hidden-state analysis (the 3.5 h of the last run);
+- anything from `experiment-curiousgeorge` — this iteration happens in THIS repo;
+- Q3, which stays parked.
+
+---
+
 ## Q3, parked
 
 `../experiment-curiousgeorge` @ `66233d1`. Steps 2-5 complete, all values reproduce,
