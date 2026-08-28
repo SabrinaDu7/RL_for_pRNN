@@ -69,12 +69,24 @@ present upstream in the world model's own objective.
 ### A second consequence, not previously written down
 
 On phase 0 the observation input is NOT masked, and the target is `obs[t]` — **the
-target is present in the input**. That step is partly an autoencoding problem rather
-than a prediction problem. The artifact's own numbers are consistent with this: the two
-phase-0 steps score MSE `0.00285` and `0.00553`, against `0.00575`-`0.01715` across the
-ten masked steps — at or below the bottom of the masked range. Suggestive, not decisive:
-`n = 2` phase-0 steps in one rollout. **Inferred**, and cheap to settle by scoring MSE
-grouped by phase over a full probe.
+target is present in the input**, so that step could in principle be solved by
+autoencoding rather than prediction.
+
+**Measured 2026-08-28, and it is largely NOT happening.** Over ten rooms x 48 steps of
+`multienv-walkable-traj` @ step 31,457,280
+(`evaluation/prediction_figures.py`, grouped by `inMask` phase):
+
+```
+MSE where the observation is SHOWN    0.004265   (n = 80)
+MSE where it is MASKED                0.005195   (n = 400)
+ratio                                 0.821
+```
+
+Shown steps are only ~18% easier. A network exploiting the shortcut would drive the
+shown-step MSE toward zero; it does not. So the degeneracy exists structurally but is
+not being used, and it is **not** an argument for `predOffset=1` on its own. This
+supersedes the earlier inference from the artifact's `n = 2` phase-0 steps, which read
+the other way.
 
 ## 2. Three mechanisms, and only one is what we asked for
 
@@ -165,7 +177,10 @@ smaller change as well as the one asked for.**
 
 Not yet run:
 
-- **MSE grouped by phase** over a probe, to settle whether phase 0 is measurably easier
-  than phases 1-5 (section 1, marked inferred).
-- **A shape assertion** that under `predOffset=1`, `predict()`'s output at `t` is scored
-  against `obs[t+1]` — the direct analogue of the artifact, on the new path.
+- ~~MSE grouped by phase~~ — **done**, see section 1. Shown/masked ratio 0.821.
+- ~~An assertion that the target is `obs[t]`~~ — **done**, and it now runs on every
+  figure: `predictions_for_room` raises unless `obs_next == obs[:, :T]`
+  (`evaluation/prediction_figures.py`). It passed against the trained network, which is
+  a direct runtime confirmation of `predOffset=0` rather than a reading of the source.
+- **Still open:** the same assertion inverted, i.e. that under `predOffset=1` the target
+  becomes `obs[t+1]`. That cannot run until the fork edit in section 4 exists.
