@@ -5,8 +5,14 @@ whether the network is seeing ten different rooms at all - a run whose layout
 rotation silently collapsed to one room would still report a perfectly good
 per-room sRSA, because each "room" would be the same room. This draws the thing.
 
+    from curious_george.log_and_store.storage import get_model_dir
     from curious_george.evaluation.prediction_figures import plot_run_predictions
-    plot_run_predictions(run_dir="outputs/<run>", path="rooms.png")
+    plot_run_predictions(run_dir=get_model_dir("<run-name>"), path="rooms.png")
+
+`run_dir` is caller-supplied on purpose - this reads an existing run rather than
+writing one - but it is resolved through `get_model_dir` so a cluster run is
+found under RL_STORAGE instead of a literal `outputs/` that only exists on the
+machine that trained it.
 
 Everything is composed from `evaluation/checkpoint_series.py` - `build` for the
 network and env, `fixed_probe` for the rollout - so this is the same collection
