@@ -106,3 +106,69 @@ SWdist holds and sRSA stays flat, the reading is that the pending-action bit was
 was not what limited the place code — and the cleanup phase (`Circuit` enum, deleting
 `pastSR`) should not be spent on it. `docs/prnn-io-alignment.md` remains superseded and
 still needs rewriting either way.
+
+---
+
+# n = 2 (seed 3 added), and the cause
+
+## The result at n = 2
+
+| metric | off0 s2 | off0 s3 | off1 s2 | off1 s3 | reading |
+|---|---|---|---|---|---|
+| `pRNN loss` | 0.00442 | 0.00403 | 0.00576 | 0.00563 | **consistently ~35% higher, 2/2** |
+| `sRSA_onPolicy` | 0.74958 | 0.75084 | 0.66390 | 0.84640 | **means equal (0.750 vs 0.755); offset 1's SPREAD is 0.18 against offset 0's 0.001** |
+| `mean SI_onPolicy` | 0.98633 | 1.26356 | 0.96966 | 0.88127 | lower 2/2, but confounded by coverage |
+| `SI_units_zeroed` | 5 | 6 | 14 | 5 | |
+| `SWdist_onPolicy` | 0.09720 | 0.10939 | 0.04752 | 0.08152 | **lower 2/2, mean 37% better** |
+| `policy_entropy` MIN | 1.4490 | 1.5135 | **0.4910** | **0.3912** | **collapse reproduces 2/2** |
+| `loc_entropy` MIN | 4.9425 | 4.8581 | **2.8448** | **2.7754** | **collapse reproduces 2/2** |
+
+All four runs: 25.0-25.1 min, 43,936 pRNN and 175,744 policy gradient steps.
+
+**sRSA is not worse - it is UNSTABLE.** Offset 0 lands at 0.7496 and 0.7508, a spread of
+0.001. Offset 1 lands at 0.6639 and 0.8464, a spread of 0.18. The seed-2 conclusion
+("offset 1 is worse on sRSA") was an artifact of n=1; the real difference is variance, and
+the variance has a cause.
+
+## The cause: the policy collapses, and the circuit change is why
+
+**The collapse is the most reproducible thing here** - `policy_entropy` falls to 0.49/0.39
+bits (uniform over four actions is 2.000) and spatial coverage to 2.84/2.78 bits (~7 cells)
+in BOTH offset-1 seeds, and in NEITHER offset-0 seed.
+
+Ruled out as causes, by measurement:
+
+- **Not a backend bug.** The device path and the CPU-table path produce identical rollouts
+  at offset 1. That combination was untested - `test_device_collector.py` parametrizes over
+  `reward_alignment`, not `action_offset` - and is now covered.
+- **Not a biased reward.** Under a UNIFORM policy the per-action curiosity reward is flat
+  in both circuits: stay/forward is 1.04x at offset 0 and 1.02x at offset 1. The 2.2x
+  stay-put ratio seen during training is a selection effect OF the collapse, not its cause.
+
+What the data does say: the correlation between `policy_entropy` and `loc_entropy` is
+**+0.94 at lag 0** under offset 1 and **~0.00 at every lag** under offset 0. The circuit
+change created that coupling.
+
+**The mechanism is the change working, not failing.** `h[t]` is a strictly better basis for
+choosing an action than `h[t-1]`: it is trained to be linearly sufficient for `obs[t]` and
+it encodes the CURRENT position. Hand the policy that, with `entropy_coef=0.001` and
+nothing else restraining it, and it can condition sharply on where it is - so it does, and
+parks. Offset 0's staler state was acting as an accidental exploration regulariser.
+
+Then the trap closes: the spatial metrics are `spatial_onpolicy`. A policy that stops
+covering the room degrades both the MEASUREMENT and the world model's TRAINING
+distribution. sRSA's instability is a behavioural collapse being sampled at whatever phase
+the run happened to end in.
+
+## What to do next
+
+**Offset 1 with a higher `entropy_coef`.** The reference used 0.001; the `ultra` preset uses
+0.01. `[[local-4060-reproduces-cluster]]` already records that 0.0005 vs 0.001 moved
+`MI_policy` with the pRNN metrics unchanged, so this is the known knob for exactly this
+axis. If coverage holds and sRSA stabilises at or above offset 0, the circuit is good and
+only needed its exploration re-tuned - and the prediction-loss gap (which is structural:
+offset 1 predicts one more row per segment, from a first row with no preceding action)
+becomes the only remaining cost.
+
+Do NOT start the Phase 4 cleanup on this evidence. The circuit is not yet shown to be
+better; it is shown to be more informative to the policy, which is a different claim.
