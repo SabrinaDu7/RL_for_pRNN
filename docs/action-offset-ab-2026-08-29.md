@@ -1,0 +1,108 @@
+2026-08-29 · branch `sdu/predict-next-obs` · commits `d2538a5`, `5d1a419`, `bb1e816`
+
+# Does pairing obs[t] with the action that produced it improve the place code?
+
+**Question.** The pRNN's input row `t` carries `a[t]`, the action chosen *after* seeing
+`obs[t]`. Row `t+1` then needs `fwd(a[t])` to path-integrate but only receives `HD[t+1]`,
+so `h[t]` is forced to carry a **pending-action bit** alongside "where I am" — a nuisance
+variable in exactly the statistic sRSA measures. Setting `arch_prnn.action_offset = 1`
+makes row `t` carry `a[t-1]` instead, and hands the policy `h[t]` rather than `h[t-1]`.
+
+**Hypothesis.** Removing the pending bit from `h[t]` improves the spatial representation
+(sRSA, SI, SWdist) at unchanged prediction loss.
+
+## Method
+
+Both arms ran the `mila-parity` configuration verbatim on one local RTX 4060, differing in
+one integer. Standard single L-room (`EnvDefault` landmarks); the 256 environments are 256
+copies of the same room, so batching is throughput, not diversity — there are no per-room
+metrics and `configs.py:726` makes them unrepresentable here.
+
+```
+89,980,928 env steps | 43,936 pRNN and 175,744 policy gradient steps (identical in both)
+device table + pooled world model + compile=LAYER + rollout/prnn/policy CUDA graphs
+runtime 25.1 min per arm (the L40S cluster reference: 30.1 min)
+```
+
+n = 1 per arm. Runs: `offset0-parity_curious_26-08-29-02-10-39`,
+`offset1-parity_curious_26-08-29-02-35-59`.
+
+**The change is one integer, verified.** Fingerprinting every tensor that reaches
+`pN.predict` under both settings: 17 of 18 identical (architecture, encoding, `predOffset`,
+`actOffset`, `inMask`, weights, trajectory, observation input, target); only the action
+input differs. `tests/golden` is bitwise green at offset 0, and the local loop measures
+34.15 vs 33.94 wm_grad_steps/s before and after, so offset 0 is unchanged.
+
+## Result: the mechanism worked, the outcome did not follow
+
+**The mechanism is confirmed, decisively.** On each arm's own final checkpoint, over 12
+segments x 256 steps:
+
+| | offset 0 | offset 1 |
+|---|---|---|
+| `fwd(a[t])` decoded from `h[t]` (held-out balanced accuracy, chance 0.500) | **1.000** | **0.496** |
+| end-of-segment MSE, relative to the segment median | **3.29x** | **1.14x** |
+| MSE where `inMask` SHOWS the observation, relative to masked | 0.702 | 0.667 |
+
+The pending-action bit is perfectly decodable from `h[t]` at offset 0 and *at chance* at
+offset 1 — it is gone. The end-of-segment spike goes with it, as predicted: offset 1's tail
+row carries a real action and a real head direction where offset 0's carries neither.
+
+**The representation did not improve.** On matched environment steps
+(`check/wandb_compare`, band = the reference's own adjacent-sample spread):
+
+| metric | verdict | detail |
+|---|---|---|
+| `SWdist_onPolicy` | **improved** | 3 of 6 points outside band, **all** negative (lower is better): −0.072, −0.043, −0.050 over the second half. Final 0.0475 vs 0.0972. |
+| `sRSA_onPolicy` | **no difference** | 2 of 6 outside band with **opposite signs** (+0.118, +0.115 early; −0.087 late). The curves cross. Final 0.664 vs 0.750 is within the oscillation the curve itself shows. |
+| `mean SI_onPolicy` | **no difference** | 1 of 6 outside band, mixed sign. Active-only is 0.998 vs 0.996 — the same. |
+| `pRNN loss` | **slightly WORSE, consistently** | 4 of 6 outside band, all positive. Final 0.0058 vs 0.0044. |
+
+Endpoint summary against the L40S cluster reference (`mila-parity-e0.001`, a different
+machine and commit — the local offset-0 arm is the control that matters):
+
+```
+metric                          reference    offset 0    offset 1
+pRNN loss              control    0.00593     0.00442     0.00576
+sRSA_onPolicy                     0.72787     0.74958     0.66390
+mean SI_onPolicy                  1.03584     0.98633     0.96966
+SI_mean_active_only               1.05914     0.99629     0.99759
+SI_units_zeroed                        11           5          14
+SWdist_onPolicy   (lower better)  0.04860     0.09720     0.04752
+```
+`mean SI` cannot be read alone: it averages a structural zero into every unit that fired in
+fewer than `active_time_threshold` samples (`training/logging.py:115-119`). Offset 1 zeroed
+14 units to offset 0's 5, which is why its mean is lower while its active-only mean is not.
+
+## What was predicted wrongly
+
+**The "control" moved, and the prediction that it would not was too strong.** Prediction
+loss is consistently ~0.001 higher at offset 1. The two circuits do *not* pose the same
+problem: offset 1's segment has one MORE row to predict (the tail row it no longer discards)
+and its row 0 has no preceding action to condition on. "Same information either way" was
+wrong; "one extra prediction and a slightly harder first row" is right.
+
+## Two bugs found and fixed on the way
+
+Both invisible at offset 0, because `init_sr` returns zeros there and never reads the
+observation. Both would have silently corrupted the new arm.
+
+- **`collect_rollout` reset the tracker before the environment**, so `h[0]` was built from
+  the FINISHED episode's last view, at a position the agent had already left. Measured:
+  `SR[L] == bootstrap(previous episode's last obs)`.
+- **`init_sr` zeroed the whole action vector**, dropping `HD[0]` with it, so the rollout
+  disagreed with the training pass at row 0.
+
+`tests/test_action_offset.py` pins both, plus the shift itself and B=2-batched-equals-two-serial.
+
+## Reading, and what would settle it
+
+At n = 1 this is **not a win**: the mechanism did exactly what it was designed to do, and
+sRSA did not follow. SWdist improved consistently and in one direction, which is the only
+outcome signal here that survives its own noise band.
+
+The honest next step is n = 3 per arm (~2.5 h total at 25 min a run) on sRSA and SWdist. If
+SWdist holds and sRSA stays flat, the reading is that the pending-action bit was real but
+was not what limited the place code — and the cleanup phase (`Circuit` enum, deleting
+`pastSR`) should not be spent on it. `docs/prnn-io-alignment.md` remains superseded and
+still needs rewriting either way.
