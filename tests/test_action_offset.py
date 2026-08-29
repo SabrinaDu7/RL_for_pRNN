@@ -170,3 +170,56 @@ def test_boundary_bootstrap_reads_the_new_episode(offset):
     else:
         assert torch.allclose(algo.SRs[L], from_new, atol=1e-6)
         assert not torch.allclose(algo.SRs[L], from_stale, atol=1e-6)
+
+
+@pytest.mark.parametrize("offset", (0, 1))
+def test_batched_tracker_matches_two_serial_streams(offset):
+    """B=2 batched == two B=1 serial trajectories, row 0 and boundaries included.
+
+    Row 0 is the point: at offset 1 the batched shim has to build h[0] the same
+    way `init_sr` does - a phase-0 masked step carrying (no action, HD[0]) - and
+    it has to do it again at every episode reset. Zero noise, so a difference is
+    the code and not a draw.
+    """
+    from curious_george.models.prnn_adapter import BatchedSRTrackerShim, SingleSRTracker
+
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+    B, T, CUT = 2, 8, 4
+    envs = [_env(seed=SEED + i) for i in range(B)]
+    pN = _net(envs[0])
+    ad = PRNNAdapter(pN, torch.device("cpu"), pastSR=offset == 0)
+
+    rng = np.random.default_rng(SEED)
+    obss = [[e.reset()] for e in envs]
+    acts = [[] for _ in range(B)]
+    for b, e in enumerate(envs):
+        for _ in range(T):
+            a = int(rng.choice(4))
+            acts[b].append(a)
+            obss[b].append(e.step(np.array([a]))[0])
+
+    batched = BatchedSRTrackerShim(ad, [obss[b][0] for b in range(B)])
+    batched_srs = [batched.initial_sr().clone()]
+    for t in range(T):
+        det = np.array([acts[b][t] for b in range(B)])
+        pre = [obss[b][t] for b in range(B)]
+        post = [obss[b][t + 1] for b in range(B)]
+        batched_srs.append(batched.step(det, pre, post).clone())
+        if t + 1 == CUT:  # a synchronized episode cut, as the collector makes
+            rows = [batched.reset_env(b, obss[b][t + 1]) for b in range(B)]
+            batched_srs[-1] = torch.cat(rows)
+
+    for b in range(B):
+        ad.reset_state()
+        serial = SingleSRTracker(ad, obss[b][0])
+        expected = [serial.initial_sr().clone()]
+        for t in range(T):
+            det = np.array([acts[b][t]])
+            expected.append(serial.step(det, [obss[b][t]], [obss[b][t + 1]]).clone())
+            if t + 1 == CUT:
+                expected[-1] = serial.reset_env(0, obss[b][t + 1]).clone()
+        for t, want in enumerate(expected):
+            assert torch.allclose(batched_srs[t][b], want[0], atol=1e-6), (
+                f"stream {b}, step {t}"
+            )

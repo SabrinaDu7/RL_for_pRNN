@@ -220,6 +220,12 @@ class PredictivePPOAlgo:
             self._first_obs = [e.reset() for e in self.envs]
             loc_b = [self._pos(e) for e in self.envs]
         self.tracker = make_sr_tracker(self.adapter, self.device, self._first_obs)
+        if self.is_device_env and self.adapter is not None and not pastSR:
+            # The device pool's `reset_all` returns None placeholders, so the
+            # shim could not build h[0] at construction. Do it here, from the
+            # tensors, before the first SR is read.
+            images, directions = self.envs.observation_device()
+            self.tracker.reset_all_envs(images=images, directions=directions)
         if self.rollout_cuda_graph:
             from curious_george.rl.collect.rollout_graph import GraphRolloutStepper
 

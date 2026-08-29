@@ -492,6 +492,19 @@ class PRNNAdapter:
             rows[:, : self.num_acts] = 0
         return rows
 
+    def bootstrap_rows(self, hd_np) -> torch.Tensor:
+        """Row 0 for N streams: (no action, HD[0]) each.
+
+        The same row `action_rows` front-pads with, for callers that hold head
+        directions rather than observation dicts. -1 is "no action": it is not
+        FORWARD_IDX, so the speed bit stays zero while the head direction is
+        still written.
+        """
+        hd = np.asarray(hd_np).reshape(-1)
+        return encode_speed_hd_rows(
+            np.full(len(hd), -1), hd, self.num_acts, self.num_hd
+        )
+
     def seq2pred(self, obs_dicts, act_np):
         """env_shell.env2pred equivalent (bitwise at offset 0, SpeedHD) without
         per-item Python loops. obs_dicts has len(act_np)+1 entries, as env2pred
@@ -1041,12 +1054,36 @@ class BatchedSRTrackerShim:
 
     Resets are to zero state/phase (not the serial path's randInit noise) -
     a documented Phase 5 semantic; B>1 runs are not bit-comparable to B=1.
+    See `BatchedSRTracker.reset_all` for why matching them was reverted.
     """
 
-    def __init__(self, adapter: "PRNNAdapter", num_envs: int):
-        assert adapter.pastSR, "batched mode currently supports pastSR nets only"
+    def __init__(self, adapter: "PRNNAdapter", envs_obs: list):
         self.adapter = adapter
-        self.tracker = adapter.make_batched_tracker(num_envs)
+        self.B = len(envs_obs)
+        self.tracker = adapter.make_batched_tracker(self.B)
+        self._bootstrap(envs_obs)
+
+    def _bootstrap(self, obss: list) -> None:
+        """h[0] for every stream: row 0 of the sequence, (no action, HD[0]).
+
+        A no-op at offset 0, where the policy acts on h[t-1] and there is no
+        state to build yet. At offset 1 the policy acts on h[t], so h[0] has to
+        exist before the first action - and must carry exactly what row 0 of the
+        training pass carries, or the rollout and the pass disagree at row 0.
+        """
+        if not self.adapter.action_offset:
+            return
+        if obss[0] is None:
+            # The device backend keeps observations on-device and hands out None
+            # placeholders (`DeviceTableShellPool.reset_all`). It bootstraps
+            # through `reset_all_envs`, which takes the tensors directly - see
+            # `PredictivePPOAlgo.__init__`.
+            return
+        obs_x = flat_obs_rows(obss).to(self.adapter.device)
+        act_x = self.adapter.bootstrap_rows(
+            [o["direction"] for o in obss]
+        ).to(self.adapter.device)
+        self.tracker.step(obs_x, act_x)
 
     def initial_sr(self) -> torch.Tensor:
         return self.tracker.sr().clone()
@@ -1102,14 +1139,43 @@ class BatchedSRTrackerShim:
 
     def reset_env(self, b: int, current_obs) -> torch.Tensor:
         self.tracker.reset_env(b)
-        return torch.zeros((1, self.adapter.pN.hidden_size), device=self.adapter.device)
+        if not self.adapter.action_offset:
+            return self.tracker.sr()[b : b + 1].clone()
+        obs_x = flat_obs_rows([current_obs] * self.B).to(self.adapter.device)
+        act_x = self.adapter.bootstrap_rows(
+            [current_obs["direction"]] * self.B
+        ).to(self.adapter.device)
+        self.tracker.bootstrap(obs_x=obs_x, act_x=act_x, indices=[b])
+        return self.tracker.sr()[b : b + 1].clone()
 
-    def reset_all_envs(self) -> torch.Tensor:
+    def reset_all_envs(self, *, images=None, directions=None) -> torch.Tensor:
+        """Every stream at once - the device backend's synchronized segment cut.
+
+        `images`/`directions` are the observation AFTER the environment reset,
+        and offset 1 needs them: h[0] is built from where the agent NOW is, not
+        from the view the finished episode ended on.
+        """
         self.tracker.reset_all()
+        if self.adapter.action_offset:
+            self.step_device(
+                actions=torch.full(
+                    (self.B,), -1, dtype=torch.long, device=images.device
+                ),
+                images=images,
+                directions=directions,
+            )
         return self.tracker.sr().clone()
 
     def end_rollout(self) -> None:
-        self.tracker.reset_all()
+        """Deliberately nothing.
+
+        Episodes span rollouts (see CollectorState), and the collector carries
+        `state.sr` across the boundary - so resetting here would leave the
+        tracker's state disagreeing with the SR the next rollout acts on, which
+        `GraphRolloutStepper.prepare` asserts against. It was harmless only
+        because the last timestep always closes a segment AND h[-1] was zeros;
+        it is not harmless now that h[-1] is a draw.
+        """
 
 
 def make_sr_tracker(adapter, device: torch.device, envs_obs: list):
@@ -1120,7 +1186,7 @@ def make_sr_tracker(adapter, device: torch.device, envs_obs: list):
         return NullSRTracker(device, B)
     if B == 1:
         return SingleSRTracker(adapter, envs_obs[0])
-    return BatchedSRTrackerShim(adapter, B)
+    return BatchedSRTrackerShim(adapter, envs_obs)
 
 
 class BatchedSRTracker:
@@ -1169,9 +1235,36 @@ class BatchedSRTracker:
             self.state.zero_()
         self.phases = np.zeros(self.B, dtype=np.int64)
 
+    # h[-1] IS ZEROS HERE, and `actfun(noise)` in the serial rollout and in every
+    # `predict`/`trainStep` call - so this path is the odd one out. Matching them
+    # was tried and reverted: `tests/test_device_collector.py` asserts the device
+    # and table backends leave IDENTICAL RNG state, and they cannot once a reset
+    # draws. The table backend resets per environment (B kernel launches) where
+    # the device backend resets once, and CUDA's Philox advances its offset per
+    # launch, so no choice of draw size reconciles them. Unifying the two reset
+    # paths would; that is a separate change with its own gate.
+
     def reset_env(self, i: int) -> None:
         self.state[i].zero_()
         self.phases[i] = 0
+
+    def bootstrap(self, *, obs_x: torch.Tensor, act_x: torch.Tensor, indices) -> None:
+        """Row 0 for the named streams, leaving every other stream untouched.
+
+        The cell is one fused op over all B - splitting it per stream would mean
+        a second state tensor, and the whole point of allocating `state` once is
+        that captured graphs bake in its address. So it runs wide and the
+        untouched streams are put back. Only episode boundaries pay for it, and
+        the device backend does not pay at all: its resets are synchronized, so
+        every stream is in `indices` and nothing is restored.
+        """
+        keep_state, keep_phases = self.state.clone(), self.phases.copy()
+        self.step(obs_x, act_x)
+        untouched = np.ones(self.B, dtype=bool)
+        untouched[np.asarray(indices)] = False
+        if untouched.any():
+            self.state[untouched] = keep_state[untouched]
+            self.phases[untouched] = keep_phases[untouched]
 
     def sr(self) -> torch.Tensor:
         """Current SRs, shape (B, hidden_size) (trimmed to pN.hidden_size)."""
