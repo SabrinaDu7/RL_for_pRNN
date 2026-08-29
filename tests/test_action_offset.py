@@ -223,3 +223,52 @@ def test_batched_tracker_matches_two_serial_streams(offset):
             assert torch.allclose(batched_srs[t][b], want[0], atol=1e-6), (
                 f"stream {b}, step {t}"
             )
+
+
+@pytest.mark.parametrize("offset", (0, 1))
+def test_device_backend_matches_the_cpu_table_at_either_offset(offset):
+    """The fast path must compute the same rollout as the reference one.
+
+    `test_device_collector.py` makes this comparison across `reward_alignment`
+    but not across `action_offset`, and the A/B runs used the device backend -
+    so the combination that actually trained was the one nothing checked. The
+    offset touches `prediction_mses_device`, `train_on_episodes_batched`,
+    `step_device` and the captured rollout body, none of which the serial tests
+    above reach.
+    """
+    import dataclasses
+
+    from curious_george.configs import EnvBackend
+    from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
+    from tests.test_device_collector import (
+        _assert_rollouts_equal, _rng_state, _set_rng_state,
+    )
+
+    def build(device_env):
+        cfg = small_config(
+            backend=EnvBackend.DEVICE if device_env else EnvBackend.SERIAL_TABLE
+        )
+        return setup_training(dataclasses.replace(
+            cfg, arch_prnn=dataclasses.replace(cfg.arch_prnn, action_offset=offset)
+        )).algo
+
+    reference, device = build(False), build(True)
+    reference_rng, device_rng = _rng_state(reference.device), _rng_state(device.device)
+    try:
+        for _ in range(2):
+            _set_rng_state(reference.device, reference_rng)
+            expected, expected_logs = reference.collect_experiences()
+            reference_rng = _rng_state(reference.device)
+
+            _set_rng_state(device.device, device_rng)
+            actual, actual_logs = device.collect_experiences()
+            device_rng = _rng_state(device.device)
+
+            _assert_rollouts_equal(
+                reference, device, expected, actual, expected_logs, actual_logs
+            )
+    finally:
+        device.envs.close()
+        for shell in reference.envs:
+            shell.env.close()
