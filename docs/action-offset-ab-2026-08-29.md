@@ -172,3 +172,68 @@ becomes the only remaining cost.
 
 Do NOT start the Phase 4 cleanup on this evidence. The circuit is not yet shown to be
 better; it is shown to be more informative to the policy, which is a different claim.
+
+---
+
+# The entropy x offset 2x2 (Mila, commit `a9c665a`, seed 2, L40S)
+
+Four jobs, one commit, one GPU type, run in parallel; 27.3-27.9 min each, all at
+43,936 pRNN and 175,744 policy gradient steps.
+
+| metric | off0 e0.001 | off0 e0.01 | off1 e0.001 | off1 e0.01 |
+|---|---|---|---|---|
+| `pRNN loss` | 0.00425 | 0.00468 | 0.00479 | **0.00387** |
+| `sRSA_onPolicy` | 0.67249 | 0.54028 | 0.67051 | 0.60696 |
+| `mean SI_onPolicy` | 0.97888 | 1.02642 | 0.83239 | 0.96492 |
+| `SI_mean_active_only` | 0.99077 | 1.05382 | 0.85637 | 0.97664 |
+| `SI_units_zeroed` | 6 | 13 | 14 | 6 |
+| `SWdist_onPolicy` | 0.09164 | 0.07019 | **0.03957** | 0.05442 |
+| `policy_entropy` MIN | 1.5305 | 1.8187 | **0.7386** | **1.8270** |
+| `loc_entropy` MIN | 4.7155 | 6.1124 | **3.2205** | **5.9425** |
+| `MI_policy` MAX | 0.2111 | 0.0406 | **0.5306** | 0.0520 |
+
+## Confirmed: the loss cost was exploration, not the circuit
+
+**offset 1 at entropy 0.01 has the LOWEST prediction loss of all four arms** -
+0.00387, better than either offset-0 arm. At 0.001 it was the worst (0.00479).
+Nothing about the circuit changed between those two cells; only the entropy
+bonus did.
+
+The collapse goes with it: `policy_entropy` MIN rises 0.7386 -> 1.8270 and
+`loc_entropy` MIN 3.2205 -> 5.9425, both from worst-of-four to best-of-four.
+The prediction made before the runs - "offset 1 at 0.01 holds coverage and closes
+most of the loss gap" - is confirmed, and the original intuition that pairing
+obs[t] with the action that produced it should HELP prediction is vindicated
+once the policy is not starving the world model of data.
+
+`SWdist_onPolicy` favours offset 1 in every comparison run so far: both local
+seeds at 0.001, and both cluster entropies. That is 4/4.
+
+## But 0.01 over-corrects
+
+`MI_policy` MAX falls to 0.0406 and 0.0520, against 0.2111 and 0.5306 at 0.001.
+The policy is barely state-dependent at all - `policy_entropy` MIN of 1.82/1.83
+against a 2.000 ceiling is very nearly a uniform random walker. That matches
+what `slurm/train_fast.sh` already records: at 0.01 the entropy bonus is 0.0198
+against an advantage scale of 0.0369, over half the learning signal.
+
+And sRSA falls for BOTH arms when entropy is raised: off0 0.672 -> 0.540,
+off1 0.671 -> 0.607. So 0.01 buys coverage and prediction at the cost of the
+curiosity-driven behaviour the representation is supposed to come from. At
+matched entropy offset 1 is ahead on sRSA at 0.01 (0.607 vs 0.540) and tied at
+0.001 (0.671 vs 0.672) - but every cell is n = 1 and sRSA's own band is ~0.10,
+so none of those differences is resolvable.
+
+⚠️ The cluster sRSA values (0.54-0.67) sit below the local ones (0.66-0.85) at
+the same configuration. Treat sRSA comparisons ACROSS machines as meaningless
+here; only within-batch comparisons count.
+
+## Next
+
+`train_policy.entropy_coef_final` already exists and ramps the coefficient
+LINEARLY in environment steps, and `train_fast.sh` documents exactly why:
+"Collapse is a LATE phenomenon ... so a RISING coefficient puts the resistance
+where the drift is." A ramp 0.001 -> 0.01 keeps the early curiosity-driven
+learning that 0.01 flattens, and adds resistance where the collapse actually
+happens. That is the next arm, and it needs n = 3 on sRSA to say anything about
+the representation at all.
