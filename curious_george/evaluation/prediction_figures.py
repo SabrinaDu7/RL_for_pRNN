@@ -250,9 +250,7 @@ def trace_circuit(
     import torch
 
     from curious_george.models.device import eval_mode
-    from curious_george.models.prnn_adapter import (
-        PRNNAdapter, encode_speed_hd_rows, make_sr_tracker,
-    )
+    from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
 
     adapter = PRNNAdapter(pN, device, pastSR=action_offset == 0)
     rng = np.random.default_rng(seed)
@@ -277,15 +275,13 @@ def trace_circuit(
     hd = np.array([int(o["direction"]) for o in seq])
     L = len(acts)
 
-    # Both circuits get L+1 rows targeting obs[0..L], so the tail action is
-    # scored and the two are row-comparable. offset 0 pads a zero action at the
-    # tail (today's `target_offset=1` convention); offset 1 pads row 0 with a
-    # zero SPEED and the real HD[0].
-    padded = np.concatenate(([-1], acts)) if action_offset else np.concatenate((acts, [-1]))
-    act_f = encode_speed_hd_rows(padded, hd, adapter.num_acts, adapter.num_hd)[None]
+    # Exactly what the reward pass is scored on - `episode_prediction_rows`
+    # makes these same two calls, so the figure cannot drift from the thing it
+    # is drawing. Both circuits end at L+1 rows targeting obs[0..L].
+    obs_now, acts_now = adapter.reward_pass_inputs(obss, acts, last_obs, 1)
+    obs_f, act_f = adapter.seq2pred(obs_now, acts_now)
     if not action_offset:
-        act_f[:, -1, adapter.num_acts:] = 0     # today's tail row carries no HD either
-    obs_f = adapter.seq2pred(seq, acts)[0]
+        act_f[:, -1, :] = 0                     # the historical all-zero tail row
 
     h_init = torch.zeros((1, 1, pN.hidden_size))
     with eval_mode(pN.pRNN), torch.no_grad():

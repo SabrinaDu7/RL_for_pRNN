@@ -21,7 +21,6 @@ class ActorCriticAgent:
         self.pastSR = pastSR
         self.argmax = argmax
         self.name = "ActorCritic Agent"
-        assert pastSR is not ("prevAct" in prnn.pRNNtype)
 
     @property
     def device(self) -> torch.device:

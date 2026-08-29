@@ -181,7 +181,6 @@ class PredictivePPOAlgo:
         self.reward_alignment = reward_alignment
         self.loss_name = loss
         assert loss in LOSSES, f"unknown loss {loss!r}; available: {list(LOSSES)}"
-        assert pastSR ^ ("Next" in str(self.env.encodeAction))
         assert self.num_frames % self.num_envs == 0, "num_frames must divide by num_envs"
         if self.num_envs > 1:
             assert not intrinsic, "intrinsic rewards not supported with num_envs > 1"

@@ -432,17 +432,32 @@ def collect_rollout(
             state.finished_reshaped.append(state.ep_reshaped[b])
             state.finished_frames.append(state.ep_frames[b])
 
-            # reset order preserved: tracker/pN state first, then env
+            # The finished episode's last observation, banked before anything
+            # resets it - it is the world model's final prediction target.
+            last_obs_b[b].append(state.obs_b[b])
+
+            def restart_env() -> None:
+                if pool is None:
+                    state.obs_b[b] = envs[b].reset()  # completely new position
+                    state.loc_b[b] = _agent_pos(envs[b])
+
+            # ORDER IS THE CIRCUIT, not a style choice. `reset_env` builds h[0]
+            # from the observation it is handed, so under action_offset=1 the
+            # environment has to have moved FIRST - otherwise h[0] encodes the
+            # finished episode's last view, from a position the agent has
+            # already left, and nothing says so.
+            # Under action_offset=0 `init_sr` returns zeros and never reads the
+            # observation, so the historical order is kept: both calls consume
+            # RNG and tests/golden pins the sequence bitwise.
+            if not cfg.pastSR:
+                restart_env()
             new_row = tracker.reset_env(b, state.obs_b[b])
             if B == 1:
                 state.sr = new_row
             else:
                 state.sr[b] = new_row[0]
-            last_obs_b[b].append(state.obs_b[b])
-
-            if pool is None:
-                state.obs_b[b] = envs[b].reset()  # completely new position
-                state.loc_b[b] = _agent_pos(envs[b])
+            if cfg.pastSR:
+                restart_env()
             state.ep_return[b] = 0.0
             state.ep_reshaped[b] = 0.0
             state.ep_frames[b] = 0

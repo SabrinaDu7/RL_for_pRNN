@@ -355,11 +355,36 @@ class ArchPrnnCfg:
     noise_std: float = 0.05
     sparsity: float = 0.5
 
+    action_offset: int = 0
+    """WHICH ACTION SHARES A ROW WITH obs[t] - the whole circuit, in one integer.
+
+        0  row t = (obs[t], a[t])    the action chosen AFTER seeing obs[t];
+                                     the policy then acts on h[t-1]
+        1  row t = (obs[t], a[t-1])  the action that PRODUCED obs[t];
+                                     the policy acts on h[t], the state that
+                                     already represents the current position
+
+    Nothing else moves: same architecture, same `action_encoding`, same
+    `predOffset`, same `actOffset=0`. Fingerprinting every tensor that reaches
+    `pN.predict` under both settings differs in exactly one - the action input.
+
+    NOT `actOffset`. That upstream parameter front-pads ZEROS and tail-drops, so
+    it loses `HD[0]` from row 0 and discards each segment's last action. The
+    shift is built where the rows are built, in `PRNNAdapter.action_rows`.
+    """
+
     @property
     def prnn_type(self) -> pRNNtypes:
         """Fixed. The prevAct variant is retired; it is still named here because
         prnn's loader reads it and it belongs in provenance."""
         return pRNNtypes.masked
+
+    def __post_init__(self) -> None:
+        if self.action_offset not in (0, 1):
+            raise ValueError(
+                f"action_offset is which action shares a row with obs[t]; "
+                f"only 0 and 1 mean anything, got {self.action_offset}"
+            )
 
 
 @dataclass(frozen=True)
