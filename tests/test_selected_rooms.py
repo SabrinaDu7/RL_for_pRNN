@@ -128,6 +128,18 @@ def test_the_flip_changes_no_observation(room_index):
     NOT match at a fixed seed because the agent cannot spawn on an obstacle.
     """
     import gymnasium as gym
+    from minigrid.core.grid import Grid
+
+    # HERMETIC. `Grid.tile_cache` is a CLASS-level dict keyed on
+    # obj.encode() + (agent_dir, highlight, tile_size), and it survives across
+    # tests. Running `pytest tests/test_novel_object.py tests/test_selected_rooms.py`
+    # made this assertion report 209 of 688 observations differing, while either
+    # file alone reports 0 - so a previous test's cache entries change what this
+    # one renders. The underlying claim is INDEPENDENTLY true: rendering a Floor
+    # and an Obstacle of the same colour directly, with the cache cleared, gives
+    # byte-identical tiles at tile_size 1 and 8. Clearing here makes the test
+    # measure the rendering rather than the process's history.
+    Grid.tile_cache.clear()
 
     cells = sorted(base_walkable(BASE_ROOM_ID))
 
