@@ -11,11 +11,7 @@ import torch
 from prnn.utils import PredictiveNet, MinigridEnvNames, ActionEncodingsEnum
 from curious_george import AgentInputType, make_env
 from curious_george.rl.update.rewards import compute_curious_rewards
-from curious_george.models.prnn_adapter import (
-    PRNNAdapter,
-    infer_past_sr,
-    validate_action_encoding,
-)
+from curious_george.models.prnn_adapter import PRNNAdapter
 from curious_george.models.device import on_device, eval_mode
 
 
@@ -77,7 +73,7 @@ def episode_stream():
         trainNoiseMeanStd=(0, 0), wandb_log=False,
     )
     pN.pRNN.eval()
-    adapter = PRNNAdapter(pN, torch.device("cpu"), pastSR=True)
+    adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=0)
 
     rng = np.random.default_rng(3)
     obs = env.reset()
@@ -133,7 +129,7 @@ def test_batched_curiosity_matches_serial_without_stochasticity(
     batched = PRNNAdapter(
         serial.pN,
         torch.device("cpu"),
-        pastSR=True,
+        action_offset=0,
         batched_curiosity=True,
     )
     obss_2 = obss + obss
@@ -147,43 +143,19 @@ def test_batched_curiosity_matches_serial_without_stochasticity(
     assert torch.allclose(actual, expected, atol=1e-5)
 
 
-# ---------------------------------------------------------------------------
-# pastSR / action-encoding conventions
-# ---------------------------------------------------------------------------
-
-class _StubModule:
-    def __init__(self, name):
-        self._name = name
-
-    def __str__(self):
-        return self._name
-
-
-class _StubPN:
-    def __init__(self, arch_name):
-        self.pRNN = _StubModule(arch_name)
-        # infer_past_sr keys off pRNNtype since the prnn-new migration
-        # (upstream partial(MaskedRNN, ...) factories erased "prevAct" from
-        # the class repr).
-        self.pRNNtype = arch_name.split("(")[0]
-
-
-class _StubEnv:
-    def __init__(self, enc_name):
-        self.encodeAction = _StubModule(enc_name)
-
-
-def test_infer_past_sr():
-    assert infer_past_sr(_StubPN("thRNN_5win(...)")) is True
-    assert infer_past_sr(_StubPN("thRNN_5win_prevAct(...)")) is False
-
-
-def test_validate_action_encoding():
-    validate_action_encoding(_StubPN("thRNN_5win"), _StubEnv("<function SpeedHD>"), pastSR=True)
-    validate_action_encoding(_StubPN("thRNN_5win_prevAct"), _StubEnv("<function SpeedNextHD>"), pastSR=False)
-    with pytest.raises(AssertionError):
-        validate_action_encoding(_StubPN("thRNN_5win"), _StubEnv("<function SpeedNextHD>"), pastSR=True)
-
+# `infer_past_sr` and `validate_action_encoding` USED to be tested here, with
+# stub architectures. Both were deleted with `pastSR` itself and their tests
+# went with them rather than being rewritten against a subject that no longer
+# exists:
+#   infer_past_sr          derived the circuit from the ARCHITECTURE'S NAME.
+#                          `training/setup.py` reads `cfg.arch_prnn.action_offset`
+#                          instead, so nothing inferred it any more.
+#   validate_action_encoding  asserted `pastSR ^ ("Next" in encodeAction)`, i.e.
+#                          that offset 1 REQUIRES SpeedNextHD. That is false for
+#                          the route this repo takes - offset 1 runs on plain
+#                          SpeedHD with the rows built in `action_rows` - so the
+#                          check would have fired on a correct configuration.
+#                          It was already unreachable: nothing called it.
 
 # ---------------------------------------------------------------------------
 # device / eval-mode context managers

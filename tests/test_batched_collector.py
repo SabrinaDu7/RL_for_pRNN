@@ -39,7 +39,7 @@ def batched_algo():
         entropy_coef=0.0, value_loss_coef=1, max_grad_norm=0.5, adam_eps=1e-8,
         clip_eps=0.2, epochs=4, batch_size=16, preprocess_obss=preprocess_obss,
         train_pN=True, noise_mu=0, noise_std=0.05, prnn_seqdur=SEQDUR,
-        intrinsic=False, k_int=1, pastSR=True, curious_agent=True, k_curious=1,
+        intrinsic=False, k_int=1, action_offset=0, curious_agent=True, k_curious=1,
     )
 
 

@@ -108,8 +108,9 @@ def build_fixture() -> dict:
     )
     acmodel.to(DEVICE)
 
-    pastSR = "prevAct" not in predictiveNet.pRNNtype
-    assert pastSR
+    # The fixture is the offset-0 circuit. It used to INFER that from the
+    # architecture's name; `action_offset` is now the only name for it.
+    action_offset = 0
 
     algo = PredictivePPOAlgo(
         env,
@@ -134,7 +135,7 @@ def build_fixture() -> dict:
         prnn_seqdur=SEQDUR,
         intrinsic=False,
         k_int=1,
-        pastSR=pastSR,
+        action_offset=action_offset,
         curious_agent=True,
         k_curious=1,
     )

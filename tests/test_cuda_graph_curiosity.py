@@ -48,7 +48,7 @@ def _adapter(*, graphed: bool, dropp: float = 0.0, noise: tuple = (0.0, 0.0)):
     pN = _make_pN(dropp=dropp, noise=noise)
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    return pN, PRNNAdapter(pN, dev, pastSR=True, curiosity_cuda_graph=graphed)
+    return pN, PRNNAdapter(pN, dev, action_offset=0, curiosity_cuda_graph=graphed)
 
 
 def _batch(pN, adapter, *, target_offset: int, n: int = GROUP, first: int = 0):

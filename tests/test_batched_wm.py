@@ -31,7 +31,7 @@ def setup():
     )
     pN = PredictiveNet(env, hidden_size=16, pRNNtype="thRNN_5win",
                        trainNoiseMeanStd=(0, 0), wandb_log=False)
-    adapter = PRNNAdapter(pN, torch.device("cpu"), pastSR=True)
+    adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=0)
 
     agent = RandomActionAgent(env.action_space, np.array([0.15, 0.15, 0.6, 0.1]))
     obs_dicts, acts = [env.reset()], []

@@ -252,7 +252,7 @@ def trace_circuit(
     from curious_george.models.device import eval_mode
     from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
 
-    adapter = PRNNAdapter(pN, device, pastSR=action_offset == 0)
+    adapter = PRNNAdapter(pN, device, action_offset=action_offset)
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
 

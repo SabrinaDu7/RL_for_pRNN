@@ -62,6 +62,7 @@ OUT = REPO / "tests" / "golden" / "golden_setup_v1.pt"
 #: composition, which is now the `reference` preset.
 COMPOSITIONS: dict[str, str] = {
     "default": "reference",
+    "parity": "parity",
     "multienv": "multienv",
     "ultra": "ultra",
 }
@@ -159,7 +160,7 @@ def build_fixture() -> dict:
                 "env_steps_per_prnn_step": schedule.env_steps_per_prnn_step,
                 "env_steps_per_policy_step": schedule.env_steps_per_policy_step,
             },
-            "pastSR": comps.pastSR,
+            "action_offset": comps.action_offset,
         }
         print(f"  captured {name}: {len(fixture[name]['kwargs'])} kwargs, "
               f"{fixture[name]['schedule']['prnn_grad_steps']:,} pRNN grad steps")
@@ -182,8 +183,17 @@ def compare(reference: dict, fresh: dict) -> list[str]:
                 a, b = ref.get(key, "<absent>"), new.get(key, "<absent>")
                 if a != b:
                     bad.append(f"{name}.{section}.{key}: {a!r} -> {b!r}")
-        if reference[name]["pastSR"] != fresh[name]["pastSR"]:
-            bad.append(f"{name}.pastSR: {reference[name]['pastSR']} -> {fresh[name]['pastSR']}")
+        # The fixture key was renamed with `pastSR` itself; a fixture captured
+        # before that carries the old key and must be re-captured, not silently
+        # skipped.
+        for f in (reference[name], fresh[name]):
+            assert "action_offset" in f, (
+                f"{name}: fixture predates the pastSR -> action_offset rename; "
+                "re-capture it with tests/golden/capture_golden_setup.py"
+            )
+        if reference[name]["action_offset"] != fresh[name]["action_offset"]:
+            bad.append(f"{name}.action_offset: {reference[name]['action_offset']} "
+                       f"-> {fresh[name]['action_offset']}")
     return bad
 
 

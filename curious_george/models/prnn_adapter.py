@@ -11,11 +11,16 @@ Temporal conventions (confirmed against ../pRNN source):
   from `inMask` zeroing the observation input on 5 of every 6 steps, not from
   a +1 offset. Docstrings in prnn claiming t+1 describe the base-class default
   (`predOffset=1`) which every 5win subclass overrides.
-- `pastSR` (== not a `prevAct` architecture): action index t is the action
-  taken AFTER observing obs[t], HD comes from the current step (`SpeedHD`),
-  and the hidden state aligns to the current/past position. `prevAct`
-  architectures shift actions by one and pair with `SpeedNextHD`
-  (HD from the next step); their hidden state aligns to the next step.
+- `action_offset` (`configs.py::ArchPrnnCfg`) is the whole circuit, and the
+  ONLY name for it:
+      0  row t = (obs[t], a[t])    the action chosen AFTER obs[t]; policy
+                                   acts on h[t-1]. HD is the current step's.
+      1  row t = (obs[t], a[t-1])  the action that PRODUCED obs[t]; policy
+                                   acts on h[t].
+  Both use `SpeedHD`. The rows are built here (`action_rows`) rather than by
+  an upstream `prevAct` architecture + `SpeedNextHD`, because that route
+  front-pads zeros - losing HD[0] from row 0 - and tail-drops each segment's
+  last action. See `docs/prnn-io-alignment.md`.
 """
 
 import functools
@@ -71,27 +76,6 @@ def encode_speed_hd_seq(act_np, hd_np, num_acts: int, num_hd: int) -> torch.Tens
     if len(rows) and np.asarray(act_np).reshape(-1)[0] < 0:
         rows[:, :num_acts] = 0
     return rows.unsqueeze(0)
-
-
-def infer_past_sr(predictive_net: PredictiveNet) -> bool:
-    """pastSR is determined by the architecture family (see module docstring).
-
-    Detection is by pRNNtype key, not str(pN.pRNN): upstream prnn builds the
-    architectures from partial(MaskedRNN, ...) factories, so the class repr no
-    longer contains "prevAct".
-    """
-    return "prevAct" not in predictive_net.pRNNtype
-
-
-def validate_action_encoding(predictive_net: PredictiveNet, env, pastSR: bool) -> None:
-    """The env's action encoding must match the architecture's convention:
-    pastSR=True pairs with SpeedHD (current HD), pastSR=False with
-    SpeedNextHD (next HD). Mismatch silently misaligns SRs by one step.
-    """
-    assert pastSR ^ ("Next" in str(env.encodeAction)), (
-        f"Action encoding {env.encodeAction} inconsistent with "
-        f"architecture {type(predictive_net.pRNN).__name__} (pastSR={pastSR})"
-    )
 
 
 class _GraphCuriosityForward:
@@ -389,7 +373,7 @@ class PRNNAdapter:
         self,
         predictive_net: PredictiveNet,
         device: torch.device,
-        pastSR: bool,
+        action_offset: int,
         cuda_graph: bool = False,
         batched_curiosity: bool = False,
         compile_cell: bool | str = False,
@@ -397,13 +381,13 @@ class PRNNAdapter:
     ):
         self.pN = predictive_net
         self.device = device
-        self.pastSR = pastSR
-        # WHICH ACTION SHARES A ROW WITH obs[t]. Derived, not passed: it is the
-        # same fact as `pastSR` seen from the sequence side, and two names for
-        # one fact are two things that can disagree.
+        # WHICH ACTION SHARES A ROW WITH obs[t] - the whole circuit, and the
+        # only name for it. There used to be a second, `pastSR`, meaning the
+        # same fact from the rollout side; two names for one fact are two
+        # things that can disagree.
         #   0  row t = (obs[t], a[t])    policy acts on h[t-1]
         #   1  row t = (obs[t], a[t-1])  policy acts on h[t]
-        self.action_offset = 0 if pastSR else 1
+        self.action_offset = action_offset
         # Theta-cycle nets (thcyc*) roll k+1 windows along dim 0 of predict()'s
         # returns; masked nets (thRNN_5win*) have no .k attribute.
         self.theta = "thcyc" in self.pN.pRNNtype
@@ -537,7 +521,7 @@ class PRNNAdapter:
         whole action vector here - which is what this did - drops HD[0] and puts
         the rollout one step out of agreement with the pass it is training.
         """
-        if self.pastSR:
+        if self.action_offset == 0:
             return torch.zeros((1, self.pN.hidden_size), device=self.device)
 
         assert self.fast_speedhd, (
@@ -552,8 +536,8 @@ class PRNNAdapter:
     def next_sr(self, act, obs) -> torch.Tensor:
         """SR for step t based on obs and action from step t-1.
 
-        The caller chooses which obs to pass: the pre-action obs (pastSR) or
-        the post-action obs (next-step nets).
+        The caller chooses which obs to pass: the pre-action obs at
+        `action_offset=0`, the post-action obs at 1.
         """
         if self.theta:
             obs = [obs] * (self.k + 1)
@@ -1017,7 +1001,7 @@ class SingleSRTracker:
         return self._initial
 
     def step(self, det_np: np.ndarray, pre_obss: list, post_obss: list) -> torch.Tensor:
-        obs = pre_obss[0] if self.adapter.pastSR else post_obss[0]
+        obs = pre_obss[0] if self.adapter.action_offset == 0 else post_obss[0]
         return self.adapter.next_sr(det_np, obs)
 
     def reset_env(self, b: int, current_obs) -> torch.Tensor:
@@ -1089,7 +1073,7 @@ class BatchedSRTrackerShim:
         return self.tracker.sr().clone()
 
     def step(self, det_np: np.ndarray, pre_obss: list, post_obss: list) -> torch.Tensor:
-        obs_src = pre_obss if self.adapter.pastSR else post_obss
+        obs_src = pre_obss if self.adapter.action_offset == 0 else post_obss
         if self.adapter.fast_speedhd:
             # one batched conversion (bitwise-equal to the per-env env2pred loop)
             with timer("collect/sr/format_and_transfer"):

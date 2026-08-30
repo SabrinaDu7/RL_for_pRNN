@@ -73,7 +73,7 @@ class RolloutConfig:
     num_frames: int
     device: torch.device
     prnn_seqdur: int = 0
-    pastSR: bool = True
+    action_offset: int = 0
     curious_agent: bool = False
     reward_alignment: str = "legacy"
     intrinsic: bool = False
@@ -157,7 +157,7 @@ def collect_rollout(
                 "device_env does not carry the single-env intrinsic reference"
             )
 
-    if pool is not None and not cfg.pastSR:
+    if pool is not None and cfg.action_offset:
         raise ValueError(
             "action_offset=1 builds h[0] from the observation the tracker is "
             "handed, and AsyncShellPool resets its environments only after the "
@@ -211,7 +211,7 @@ def collect_rollout(
         # position) for one synchronized segment, all still on-device.
         device_last_batches: list[tuple[torch.Tensor, ...]] = []
 
-    last_post_obs = None  # final pre-reset obs (intrinsic tail, non-pastSR)
+    last_post_obs = None  # final pre-reset obs (intrinsic tail, action_offset=1)
 
     def _close_device_segment(post_images, post_directions) -> None:
         """End a synchronized device segment: bank its tail, reset, re-observe.
@@ -256,7 +256,7 @@ def collect_rollout(
         # episode ended on, from a position the agent has already left.
         # Under offset 0 nothing reads the observation, and the historical order
         # is kept because both calls consume RNG.
-        if cfg.pastSR:
+        if cfg.action_offset == 0:
             state.sr = tracker.reset_all_envs()
             device_pool.apply_prepared_reset(index=device_reset_index)
             device_reset_index += 1
@@ -429,7 +429,7 @@ def collect_rollout(
                 # tensors; the pre-step ones are the rows just banked.
                 sr_images, sr_directions = (
                     (device_images[t], device_directions[t])
-                    if cfg.pastSR
+                    if cfg.action_offset == 0
                     else (post_images, post_directions)
                 )
                 state.sr = tracker.step_device(
@@ -477,14 +477,14 @@ def collect_rollout(
             # Under action_offset=0 `init_sr` returns zeros and never reads the
             # observation, so the historical order is kept: both calls consume
             # RNG and tests/golden pins the sequence bitwise.
-            if not cfg.pastSR:
+            if cfg.action_offset:
                 restart_env()
             new_row = tracker.reset_env(b, state.obs_b[b])
             if B == 1:
                 state.sr = new_row
             else:
                 state.sr[b] = new_row[0]
-            if cfg.pastSR:
+            if cfg.action_offset == 0:
                 restart_env()
             state.ep_return[b] = 0.0
             state.ep_reshaped[b] = 0.0

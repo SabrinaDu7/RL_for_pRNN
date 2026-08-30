@@ -310,7 +310,7 @@ def collect_eval_rollouts_batched(
 
     with on_device(eval_modules, "cpu"):
         device = torch.device("cpu")
-        adapter = PRNNAdapter(pN, device, agent.pastSR)
+        adapter = PRNNAdapter(pN, device, agent.action_offset)
         tracker = BatchedSRTrackerShim(adapter, B)
         preprocess = get_obss_preprocessor(envs_eval[0].observation_space)[1]
 

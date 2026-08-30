@@ -69,7 +69,7 @@ kwargs = dict(
     adam_eps=1e-8, clip_eps=0.2, epochs=4, batch_size=16,
     preprocess_obss=preprocess_obss, train_pN=True, noise_mu=0,
     noise_std=0.05, prnn_seqdur=SEQDUR, intrinsic=False, k_int=1,
-    pastSR=True, curious_agent=True, k_curious=1,
+    action_offset=0, curious_agent=True, k_curious=1,
 )
 sig = inspect.signature(PredictivePPOAlgo.__init__).parameters
 if "place_cells" in sig:
@@ -98,7 +98,7 @@ pN_b, acmodel_b, _ = build_models(env_b)
 pN_b.pRNN.to(DEVICE)
 pN_b.pRNN.eval()
 acmodel_b.eval()
-agent = ActorCriticAgent(env_b.action_space, acmodel_b, pN_b, DEVICE, argmax=False, pastSR=True)
+agent = ActorCriticAgent(env_b.action_space, acmodel_b, pN_b, DEVICE, argmax=False, action_offset=0)
 obs_l, act, state, _ = agent.getObservations(env_b, 50)
 results["B"] = {
     "act": np.asarray(act).copy(),
@@ -113,7 +113,7 @@ RLutils.seed(13)
 env_c = build_env(13 + 10000)
 pN_c, acmodel_c, _ = build_models(env_c)
 pN_c.pRNN.to("cpu")
-agent_c = ActorCriticAgent(env_c.action_space, acmodel_c, pN_c, DEVICE, argmax=False, pastSR=True)
+agent_c = ActorCriticAgent(env_c.action_space, acmodel_c, pN_c, DEVICE, argmax=False, action_offset=0)
 _, _, _, sRSA = pN_c.calculateSpatialRepresentation(
     env_c, agent_c, trainDecoder=True, trainHDDecoder=False,
     saveTrainingData=False, bitsec=False, calculatesRSA=True,

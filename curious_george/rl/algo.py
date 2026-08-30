@@ -60,7 +60,7 @@ class IntrinsicReference:
     def update_on_done(self, state: CollectorState, det_np):
         algo = self.algo
         sr = state.sr
-        if algo.pastSR:
+        if algo.action_offset == 0:
             preprocessed = algo.preprocess_obss([state.obs_b[0]], device=algo.device)
             with torch.no_grad():
                 dist, _ = algo.acmodel(preprocessed, SR=state.sr)
@@ -75,7 +75,7 @@ class IntrinsicReference:
             dist, _ = algo.acmodel(preprocessed, SR=state.sr)
         action = dist.sample()
         det_np = action.cpu().numpy()
-        obs = state.obs_b[0] if algo.pastSR else last_post_obs
+        obs = state.obs_b[0] if algo.action_offset == 0 else last_post_obs
         sr = algo.adapter.next_sr(det_np, obs)
 
         all_SRs = torch.cat((SRs, sr), dim=0).cpu()
@@ -113,7 +113,9 @@ class PredictivePPOAlgo:
         prnn_seqdur=0,
         intrinsic=False,
         k_int=1,
-        pastSR=False,
+        # NOT 0: preserved verbatim from the `pastSR=False` this replaced.
+        # Only direct constructions see it; setup_algo always passes one.
+        action_offset: int = 1,
         curious_agent=False,
         k_curious=1,
         reward_alignment="legacy",
@@ -175,7 +177,7 @@ class PredictivePPOAlgo:
         self.rollout_cuda_graph = bool(rollout_cuda_graph) and device.type == "cuda"
         self._rollout_graph = None
         self.cuda_graph = cuda_graph
-        self.pastSR = pastSR
+        self.action_offset = action_offset
         self.curious_agent = curious_agent
         self.k_curious = k_curious
         self.reward_alignment = reward_alignment
@@ -192,7 +194,7 @@ class PredictivePPOAlgo:
             PRNNAdapter(
                 self.pN,
                 self.device,
-                pastSR,
+                action_offset,
                 cuda_graph=cuda_graph,
                 batched_curiosity=batched_curiosity,
                 compile_cell=compile_cell,
@@ -220,7 +222,7 @@ class PredictivePPOAlgo:
             self._first_obs = [e.reset() for e in self.envs]
             loc_b = [self._pos(e) for e in self.envs]
         self.tracker = make_sr_tracker(self.adapter, self.device, self._first_obs)
-        if self.is_device_env and self.adapter is not None and not pastSR:
+        if self.is_device_env and self.adapter is not None and action_offset:
             # The device pool's `reset_all` returns None placeholders, so the
             # shim could not build h[0] at construction. Do it here, from the
             # tensors, before the first SR is read.
@@ -371,7 +373,7 @@ class PredictivePPOAlgo:
                 num_frames=self.num_frames,
                 device=self.device,
                 prnn_seqdur=self.prnn_seqdur,
-                pastSR=self.pastSR,
+                action_offset=self.action_offset,
                 curious_agent=self.curious_agent,
                 reward_alignment=self.reward_alignment,
                 intrinsic=self.intrinsic,
