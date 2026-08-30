@@ -1,12 +1,16 @@
 #!/bin/bash
 # The action_offset A/B, at the mila-parity configuration, one arm per job.
 #
-#   sbatch slurm/action_offset_ab.sh [offset] [entropy] [seed] [branch]
-#     offset  : 0 | 1   (arch_prnn.action_offset - which action shares a row
+#   sbatch slurm/action_offset_ab.sh [offset] [entropy] [seed] [branch] [ent_final]
+#     offset    : 0 | 1 (arch_prnn.action_offset - which action shares a row
 #                        with obs[t]; see docs/action-offset-ab-2026-08-29.md)
-#     entropy : train_policy.entropy_coef        (default 0.01)
-#     seed    : run.seed                         (default 2)
-#     branch  : branch to check out              (default sdu/predict-next-obs)
+#     entropy   : train_policy.entropy_coef        (default 0.01)
+#     seed      : run.seed                         (default 2)
+#     branch    : branch to check out              (default sdu/predict-next-obs)
+#     ent_final : train_policy.entropy_coef_final; omit or "" for a CONSTANT
+#                 coefficient. Set it to ramp LINEARLY in environment steps
+#                 from `entropy` to this value (training/schedule.py's
+#                 EntropySchedule).
 #
 # WHY THIS EXISTS RATHER THAN A train_fast.sh FLAG. train_fast.sh owns the 2-hour
 # multi-room production preset: its own budget, its own regime knobs, its own
@@ -41,10 +45,11 @@
 
 set -eo pipefail
 OFFSET="${1:-1}"; ENT="${2:-0.01}"; SEED="${3:-2}"; BRANCH="${4:-sdu/predict-next-obs}"
+ENT_FINAL="${5:-}"
 case "$OFFSET" in 0|1) ;; *) echo "offset must be 0 or 1, got $OFFSET" >&2; exit 1 ;; esac
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)"
-echo "action_offset=$OFFSET entropy_coef=$ENT seed=$SEED branch=$BRANCH"
+echo "action_offset=$OFFSET entropy_coef=$ENT${ENT_FINAL:+ -> $ENT_FINAL} seed=$SEED branch=$BRANCH"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 module --force purge && module load python/3.10
@@ -85,7 +90,10 @@ DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p "$DEST"
 save () { rsync -a outputs/ "$DEST/outputs/" 2>/dev/null || true; }
 trap save EXIT
 
-NAME="mila-off${OFFSET}-e${ENT}-s${SEED}"
+NAME="mila-off${OFFSET}-e${ENT}${ENT_FINAL:+to$ENT_FINAL}-s${SEED}"
+# Empty expands to NOTHING (unquoted, deliberately) so a constant-coefficient
+# run passes no flag at all and `entropy_coef_final` keeps its None default.
+RAMP=${ENT_FINAL:+--train-policy.entropy-coef-final $ENT_FINAL}
 # `mila-parity-e0.001_curious_26-08-27-14-32-32` verbatim, plus the two knobs
 # under test. The gradient-step counts are the ground truth the arms are matched
 # on: 43,936 world-model and 175,744 policy steps, 89,980,928 environment steps.
@@ -97,7 +105,7 @@ uv run python main_train.py reference \
     --train-prnn.cuda-graph --train-prnn.no-curiosity-cuda-graph \
     --train-prnn.total-grad-steps 43936 \
     --train-policy.total-grad-steps 175744 --train-policy.cuda-graph \
-    --train-policy.entropy-coef "$ENT" \
+    --train-policy.entropy-coef "$ENT" $RAMP \
     --arch-prnn.action-offset "$OFFSET" \
     --run.wandb \
     --eval.analysis-every-steps 3333328 --eval.plot-every-steps 7499989 \
