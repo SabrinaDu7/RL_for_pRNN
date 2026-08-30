@@ -233,8 +233,12 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
     # AFTER provenance had already recorded it.
     prnn_seqdur = cfg.collect.episode_steps if cfg.train_prnn.train else 0
 
-    pastSR = "prevAct" not in predictiveNet.pRNNtype
-    print("pastSR:", pastSR)
+    # The circuit, from the config rather than from an architecture's name.
+    # `action_offset` and `pastSR` are one fact seen from two sides: which
+    # action shares a row with obs[t], and which observation the rollout
+    # tracker pairs with the action just taken. They cannot disagree.
+    pastSR = cfg.arch_prnn.action_offset == 0
+    print(f"action_offset: {cfg.arch_prnn.action_offset}  (pastSR: {pastSR})")
 
     algo = PredictivePPOAlgo(
         envs if len(envs) > 1 else envs[0],

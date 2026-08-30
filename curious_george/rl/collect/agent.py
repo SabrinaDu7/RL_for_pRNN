@@ -21,7 +21,6 @@ class ActorCriticAgent:
         self.pastSR = pastSR
         self.argmax = argmax
         self.name = "ActorCritic Agent"
-        assert pastSR is not ("prevAct" in prnn.pRNNtype)
 
     @property
     def device(self) -> torch.device:
@@ -60,6 +59,30 @@ class ActorCriticAgent:
         else:
             o = env.env.gen_obs()
             obs[0] = env.env.observation(o)
+
+        if start_pos is not None or start_dir is not None:
+            # These were DECLARED and never read: every caller that passed them
+            # silently got a random start. Placing the agent is the same
+            # assignment `envs/obs_bank.py` uses to enumerate the room, and the
+            # observation has to be regenerated afterwards or obs[0] still shows
+            # the view from wherever reset() happened to land.
+            u = env.env.unwrapped
+            if start_pos is not None:
+                x, y = (int(v) for v in start_pos)
+                cell = u.grid.get(x, y)
+                if not (0 <= x < u.width and 0 <= y < u.height) or (
+                    cell is not None and not cell.can_overlap()
+                ):
+                    raise ValueError(
+                        f"start_pos {(x, y)} is not a standable cell of this "
+                        f"{u.width}x{u.height} room"
+                    )
+                u.agent_pos = (x, y)
+            if start_dir is not None:
+                if not 0 <= int(start_dir) < 4:
+                    raise ValueError(f"start_dir must be 0..3, got {start_dir}")
+                u.agent_dir = int(start_dir)
+            obs[0] = env.env.observation(env.env.gen_obs())
 
         state = {
             "agent_pos": np.resize(env.get_agent_pos(), (1, 2)),

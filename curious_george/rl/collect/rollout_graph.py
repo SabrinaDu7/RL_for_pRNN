@@ -219,10 +219,19 @@ class GraphRolloutStepper:
         b.directions.index_copy_(0, t, directions.unsqueeze(0))
         b.positions.index_copy_(0, t, pool.positions.unsqueeze(0))
 
-        _, _, step_rewards = pool.step_device(actions=action)
+        post_images, post_directions, step_rewards = pool.step_device(actions=action)
         b.rewards.index_copy_(0, t, step_rewards.unsqueeze(0))
 
-        self.shim.step_device(actions=action, images=images, directions=directions)
+        # The circuit, inside the capture: offset 0 feeds the pRNN the
+        # observation the action was chosen from, offset 1 the one it produced.
+        # `step_device` already returns both, and the branch is a Python
+        # constant for the run, so it is resolved at capture time.
+        if self.shim.adapter.action_offset:
+            self.shim.step_device(
+                actions=action, images=post_images, directions=post_directions
+            )
+        else:
+            self.shim.step_device(actions=action, images=images, directions=directions)
         t.add_(1)
 
     # --- capture ------------------------------------------------------------

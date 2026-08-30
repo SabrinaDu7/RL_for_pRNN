@@ -355,11 +355,36 @@ class ArchPrnnCfg:
     noise_std: float = 0.05
     sparsity: float = 0.5
 
+    action_offset: int = 0
+    """WHICH ACTION SHARES A ROW WITH obs[t] - the whole circuit, in one integer.
+
+        0  row t = (obs[t], a[t])    the action chosen AFTER seeing obs[t];
+                                     the policy then acts on h[t-1]
+        1  row t = (obs[t], a[t-1])  the action that PRODUCED obs[t];
+                                     the policy acts on h[t], the state that
+                                     already represents the current position
+
+    Nothing else moves: same architecture, same `action_encoding`, same
+    `predOffset`, same `actOffset=0`. Fingerprinting every tensor that reaches
+    `pN.predict` under both settings differs in exactly one - the action input.
+
+    NOT `actOffset`. That upstream parameter front-pads ZEROS and tail-drops, so
+    it loses `HD[0]` from row 0 and discards each segment's last action. The
+    shift is built where the rows are built, in `PRNNAdapter.action_rows`.
+    """
+
     @property
     def prnn_type(self) -> pRNNtypes:
         """Fixed. The prevAct variant is retired; it is still named here because
         prnn's loader reads it and it belongs in provenance."""
         return pRNNtypes.masked
+
+    def __post_init__(self) -> None:
+        if self.action_offset not in (0, 1):
+            raise ValueError(
+                f"action_offset is which action shares a row with obs[t]; "
+                f"only 0 and 1 mean anything, got {self.action_offset}"
+            )
 
 
 @dataclass(frozen=True)
@@ -541,6 +566,23 @@ class TrainPolicyCfg:
             raise ValueError(f"total_grad_steps must be >= 1, got {self.total_grad_steps}")
         if self.ppo_epochs < 1:
             raise ValueError(f"ppo_epochs must be >= 1, got {self.ppo_epochs}")
+        if self.entropy_coef_final is not None and self.cuda_graph:
+            # A CAPTURED policy step cannot see a changing coefficient.
+            # `algo.py` builds GraphPolicyTrainer ONCE with
+            # loss_kwargs=dict(entropy_coef=self.entropy_coef) as a Python
+            # float; `policy_graph._region` bakes that float into the capture;
+            # and `rl/update/policy.py` routes graphed updates to
+            # `_update_policy_epochs_graphed`, which never re-reads
+            # `algo.entropy_coef`. So the ramp is silently pinned at its start
+            # value - and `entropy_coef` is not logged, so nothing shows it.
+            # One run (`mila-off1-e0.001to0.01-s2`) was wasted this way before
+            # the combination was made unrepresentable.
+            raise ValueError(
+                "entropy_coef_final ramps the coefficient per update, but "
+                "cuda_graph bakes it into the captured step, so the ramp would "
+                "silently never happen. Choose one: drop the ramp, or set "
+                "--train-policy.no-cuda-graph and pay the throughput."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -823,8 +865,60 @@ def _ultra() -> Config:
     )
 
 
+def _parity() -> Config:
+    """The accelerated single L-room the circuit A/B is defined against.
+
+    89,980,928 environment steps at 43,936 world-model and 175,744 policy
+    gradient steps - the shape every `*-parity` run in wandb holds, starting
+    from `mila-parity-e0.001_curious_26-08-27-14-32-32`. Everything here is a
+    knob the arms hold FIXED.
+
+    The two knobs UNDER TEST are deliberately left at their defaults so they
+    have to be typed to be changed, and the changed variable is therefore always
+    visible on the command line:
+
+        main_train.py parity                                # offset 0, the unchanged circuit
+        main_train.py parity --arch-prnn.action-offset 1     # the new circuit
+        main_train.py parity --train-policy.entropy-coef 0.005
+
+    `entropy_coef` is 0.003: the MEASURED knee, not the 0.001 the original
+    reference ran. It is the lowest value whose policy-collapse duty cycle is
+    0.0% - in 5 of 5 seeds - at a prediction loss matching the offset-0 baseline
+    and 3.7x the mutual information of a flat 0.01. See
+    `docs/entropy-sweep-and-noise-floor-2026-08-29.md`. To reproduce the older
+    runs exactly, pass `--train-policy.entropy-coef 0.001`.
+
+    NOT a replacement for `reference`, which names the SERIAL baseline and is
+    what older runs and `tests/test_configs.py` mean by the word.
+    """
+    base = Config()
+    return replace(
+        base,
+        collect=replace(
+            base.collect, backend=EnvBackend.DEVICE, num_envs=256,
+            episodes_per_env=1, episode_steps=256, rollout_cuda_graph=True,
+        ),
+        train_prnn=replace(
+            base.train_prnn, batched=True, batched_curiosity=True,
+            episodes_per_grad_step=8, compile=CompileMode.LAYER,
+            cuda_graph=True, total_grad_steps=43_936,
+        ),
+        train_policy=replace(
+            base.train_policy, total_grad_steps=175_744, cuda_graph=True,
+            entropy_coef=0.003,
+        ),
+        eval=replace(
+            base.eval, analysis_every_steps=3_333_328, plot_every_steps=7_499_989
+        ),
+        run=replace(
+            base.run, save_every_steps=8_388_608, archive_every_steps=8_388_608
+        ),
+    )
+
+
 PRESETS: dict[str, tuple[str, Config]] = {
     "reference": ("serial static L-room baseline", _reference()),
+    "parity": ("accelerated static L-room, 90.0M env steps (the A/B shape)", _parity()),
     "multienv": ("multi-room, pooled world model", _multienv()),
     "ultra": ("measured high-throughput static L-room", _ultra()),
 }

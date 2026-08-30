@@ -398,6 +398,12 @@ class PRNNAdapter:
         self.pN = predictive_net
         self.device = device
         self.pastSR = pastSR
+        # WHICH ACTION SHARES A ROW WITH obs[t]. Derived, not passed: it is the
+        # same fact as `pastSR` seen from the sequence side, and two names for
+        # one fact are two things that can disagree.
+        #   0  row t = (obs[t], a[t])    policy acts on h[t-1]
+        #   1  row t = (obs[t], a[t-1])  policy acts on h[t]
+        self.action_offset = 0 if pastSR else 1
         # Theta-cycle nets (thcyc*) roll k+1 windows along dim 0 of predict()'s
         # returns; masked nets (thRNN_5win*) have no .k attribute.
         self.theta = "thcyc" in self.pN.pRNNtype
@@ -461,15 +467,53 @@ class PRNNAdapter:
             else:
                 _compile_on_cuda_only(self.pN.pRNN.rnn.cell)
 
+    def action_rows(self, act_np, hd_np) -> torch.Tensor:
+        """SpeedHD rows for one segment, paired by `action_offset`.
+
+        offset 0: row t = (fwd(a[t]),   HD[t])  -> len(act_np) rows
+        offset 1: row t = (fwd(a[t-1]), HD[t])  -> len(act_np) + 1 rows, row 0
+                  being (no action, HD[0]): zero SPEED and the REAL head
+                  direction. `actOffset` cannot express that row - it front-pads
+                  zeros - which is why the shift is built here instead.
+
+        `hd_np` carries one direction per ROW: L for offset 0, L+1 for offset 1.
+        It is sliced, so passing all L+1 is always safe.
+
+        `encode_speed_hd_rows`, NOT `encode_speed_hd_seq`: the sequence variant
+        carries OneHot's sequence-level no-action flag, which would see the
+        front-pad sentinel and zero the action block for every row. The flag is
+        re-applied below against the caller's OWN first action, preserving it.
+        """
+        act = np.asarray(act_np).reshape(-1)
+        padded = np.concatenate(([-1], act)) if self.action_offset else act
+        hd = np.asarray(hd_np).reshape(-1)[: len(padded)]
+        rows = encode_speed_hd_rows(padded, hd, self.num_acts, self.num_hd)
+        if len(act) and act[0] < 0:
+            rows[:, : self.num_acts] = 0
+        return rows
+
+    def bootstrap_rows(self, hd_np) -> torch.Tensor:
+        """Row 0 for N streams: (no action, HD[0]) each.
+
+        The same row `action_rows` front-pads with, for callers that hold head
+        directions rather than observation dicts. -1 is "no action": it is not
+        FORWARD_IDX, so the speed bit stays zero while the head direction is
+        still written.
+        """
+        hd = np.asarray(hd_np).reshape(-1)
+        return encode_speed_hd_rows(
+            np.full(len(hd), -1), hd, self.num_acts, self.num_hd
+        )
+
     def seq2pred(self, obs_dicts, act_np):
-        """env_shell.env2pred equivalent (bitwise, SpeedHD) without per-item
-        Python loops. obs_dicts has len(act_np)+1 entries, as env2pred expects."""
+        """env_shell.env2pred equivalent (bitwise at offset 0, SpeedHD) without
+        per-item Python loops. obs_dicts has len(act_np)+1 entries, as env2pred
+        expects; at offset 1 the extra one supplies the tail row's HD."""
         if not self.fast_speedhd:
             return self.pN.env_shell.env2pred(obs_dicts, act_np)
         obs = flat_obs_rows(obs_dicts).unsqueeze(0)
-        hd = [o["direction"] for o in obs_dicts[:-1]]
-        act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)
-        return obs, act
+        hd = [o["direction"] for o in obs_dicts]
+        return obs, self.action_rows(act_np, hd).unsqueeze(0)
 
     @property
     def hidden_size(self) -> int:
@@ -482,20 +526,28 @@ class PRNNAdapter:
         self.pN.reset_state(device=str(self.device))
 
     def init_sr(self, obs) -> torch.Tensor:
-        """SR before the first action of an episode.
+        """The SR the policy acts on before the episode's first action.
 
-        pastSR nets start from zeros (the SR for step 0 is 'from step -1');
-        next-step nets bootstrap from a zero-action prediction on the first obs.
+        offset 0: the policy acts on h[t-1], so at t=0 there is no state yet -
+        zeros, and `obs` is not read at all.
+
+        offset 1: the policy acts on h[t], so h[0] must exist BEFORE a[0] is
+        chosen. h[0] is row 0 of the sequence and must carry exactly what row 0
+        of the training pass carries: no action, and the REAL HD[0]. Zeroing the
+        whole action vector here - which is what this did - drops HD[0] and puts
+        the rollout one step out of agreement with the pass it is training.
         """
         if self.pastSR:
             return torch.zeros((1, self.pN.hidden_size), device=self.device)
 
-        obs_pN, act_pN = self.pN.env_shell.env2pred([obs, obs], np.array([0]))
-        act_pN = torch.zeros_like(act_pN)
-        obs_pN, act_pN = obs_pN.to(self.device), act_pN.to(self.device)
+        assert self.fast_speedhd, (
+            "action_offset=1 builds row 0 as (no action, HD[0]); only the "
+            f"SpeedHD encoding is vectorized for that, got {self.pN.env_shell.encodeAction}"
+        )
+        obs_pN = flat_obs_rows([obs]).unsqueeze(0).to(self.device)
+        act_pN = self.action_rows([], [obs["direction"]]).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            SR = self.pN.predict_single(obs_pN[:, :-1, :], act_pN).squeeze(dim=0)
-        return SR
+            return self.pN.predict_single(obs_pN, act_pN).squeeze(dim=0)
 
     def next_sr(self, act, obs) -> torch.Tensor:
         """SR for step t based on obs and action from step t-1.
@@ -646,17 +698,12 @@ class PRNNAdapter:
             act_rows = []
             for idx in range(1, len(done_indices)):
                 start, end = done_indices[idx - 1], done_indices[idx]
-                acts_ep = actions_np[start:end]
-                last_obs = last_observations[idx - 1]
-                if target_offset == 0:
-                    acts_now = acts_ep
-                    obs_now = list(obss[start:end]) + [last_obs]
-                else:
-                    acts_now = np.append(acts_ep, 0)
-                    obs_now = list(obss[start:end]) + [last_obs, last_obs]
-
+                obs_now, acts_now = self.reward_pass_inputs(
+                    obss[start:end], actions_np[start:end],
+                    last_observations[idx - 1], target_offset,
+                )
                 obs_formatted, act_formatted = self.seq2pred(obs_now, acts_now)
-                if target_offset == 1:
+                if target_offset == 1 and not self.action_offset:
                     act_formatted[:, -1, :] = 0
                 obs_rows.append(obs_formatted[0])
                 act_rows.append(act_formatted[0])
@@ -716,41 +763,67 @@ class PRNNAdapter:
                 / 255
             )
 
-            if target_offset == 0:
+            fwd = (actions == FORWARD_IDX).to(torch.int64)
+            if self.action_offset:
+                # L+1 rows meeting L+1 observations: the tail row carries the
+                # segment's real last action and the post-step head direction
+                # the pool already banked. Nothing zeroed, nothing duplicated.
+                last_dirs = (
+                    torch.stack([batch[1] for batch in last_batches])
+                    .permute(1, 0).reshape(N, 1).long()
+                )
                 obs_b = torch.cat([images, last_images], dim=1)
-                act_b = torch.zeros(
-                    (N, L, self.num_acts + self.num_hd),
-                    dtype=torch.int64,
-                    device=images.device,
+                hd = torch.cat([directions, last_dirs], dim=1)
+                fwd = torch.cat(
+                    [torch.zeros((N, 1), dtype=torch.int64, device=images.device), fwd],
+                    dim=1,
                 )
-                act_b[:, :, FORWARD_IDX] = (
-                    actions == FORWARD_IDX
-                ).to(torch.int64)
-                act_b.scatter_(
-                    2,
-                    (self.num_acts + directions).unsqueeze(-1),
-                    1,
-                )
+                rows = L + 1
+            elif target_offset == 0:
+                obs_b = torch.cat([images, last_images], dim=1)
+                hd, rows = directions, L
             else:
-                obs_b = torch.cat(
-                    [images, last_images, last_images], dim=1
-                )
-                act_b = torch.zeros(
-                    (N, L + 1, self.num_acts + self.num_hd),
-                    dtype=torch.int64,
-                    device=images.device,
-                )
-                act_b[:, :L, FORWARD_IDX] = (
-                    actions == FORWARD_IDX
-                ).to(torch.int64)
-                act_b[:, :L].scatter_(
-                    2,
-                    (self.num_acts + directions).unsqueeze(-1),
-                    1,
-                )
+                # The historical shape: a duplicated observation, and a tail row
+                # left all-zero - carrying neither an action nor a direction.
+                obs_b = torch.cat([images, last_images, last_images], dim=1)
+                hd, rows = directions, L + 1
+
+            act_b = torch.zeros(
+                (N, rows, self.num_acts + self.num_hd),
+                dtype=torch.int64,
+                device=images.device,
+            )
+            filled = hd.size(1)
+            act_b[:, :filled, FORWARD_IDX] = fwd
+            act_b[:, :filled].scatter_(2, (self.num_acts + hd).unsqueeze(-1), 1)
 
         errors = self._curiosity_errors(obs_b, act_b, target_offset=target_offset)
         return errors.reshape(B, segments, L).reshape(B * T)
+
+    def reward_pass_inputs(self, obss_ep, acts_ep, last_obs, target_offset: int):
+        """The (observations, actions) one segment's REWARD pass is scored on.
+
+        Both circuits end up with L+1 rows targeting obs[0..L], so the segment's
+        final action is scored either way. They get there differently:
+
+        offset 0  appends a zero-action tail step and duplicates last_obs, which
+                  is what makes `minsize` L+1. That tail row carries no action
+                  AND no head direction; it is the historical shape, pinned
+                  bitwise by tests/golden.
+        offset 1  needs neither: `action_rows` front-pads, so L+1 rows already
+                  meet the L+1 observations and the tail row carries the
+                  segment's REAL last action and its real HD.
+        """
+        if self.action_offset:
+            assert target_offset == 1, (
+                "at action_offset=1 row t's error is caused by the action row t "
+                "encodes, a[t-1], so the reward for a[i] is row i+1 - that is "
+                f"reward_alignment='next_obs'; got target_offset={target_offset}"
+            )
+            return list(obss_ep) + [last_obs], acts_ep
+        if target_offset == 0:
+            return list(obss_ep) + [last_obs], acts_ep
+        return list(obss_ep) + [last_obs, last_obs], np.append(acts_ep, 0)
 
     def episode_prediction_rows(
         self,
@@ -771,17 +844,12 @@ class PRNNAdapter:
         """
         assert target_offset in (0, 1)
         with torch.no_grad():
-            if target_offset == 0:
-                acts_now = acts_ep
-                obs_now = list(obss_ep) + [last_obs]
-            else:
-                # extra step so last_obs is also a prediction target
-                acts_now = np.append(acts_ep, 0)
-                obs_now = list(obss_ep) + [last_obs, last_obs]
-
+            obs_now, acts_now = self.reward_pass_inputs(
+                obss_ep, acts_ep, last_obs, target_offset
+            )
             obs_formatted, act_formatted = self.seq2pred(obs_now, acts_now)
             obs_formatted, act_formatted = obs_formatted.to(self.device), act_formatted.to(self.device)
-            if target_offset == 1:
+            if target_offset == 1 and not self.action_offset:
                 act_formatted[:, -1, :] = 0  # zero-action step (init_sr convention)
 
             obs_pred, obs_next, h = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
@@ -809,8 +877,10 @@ class PRNNAdapter:
             [images_tensor.detach().reshape(L, -1).to(torch.float32) / 255, last_img]
         )
         hd = hd_tensor.detach().cpu().numpy()
-        act = encode_speed_hd_seq(act_np, hd, self.num_acts, self.num_hd)[0]
-        return obs, act
+        if self.action_offset:
+            # The tail row predicts last_obs, so it needs last_obs's direction.
+            hd = np.append(hd, int(last_obs["direction"]))
+        return obs, self.action_rows(act_np, hd)
 
     def _use_graph_wm(self) -> bool:
         return self.cuda_graph and self.fast_speedhd and not self.theta
@@ -883,15 +953,30 @@ class PRNNAdapter:
                 [images.to(torch.float32) / 255, last_images[:, None, :]], dim=1
             )
 
+            # One row per prediction. At offset 1 that is L+1: a front row of
+            # (no action, HD[0]), then a[t-1] against HD[t] - so the segment's
+            # last action is trained on instead of clipped away.
+            fwd = (actions == FORWARD_IDX).to(torch.int64)
+            hd = directions
+            if self.action_offset:
+                last_dirs = torch.tensor(
+                    [int(o["direction"]) for o in last_observations],
+                    dtype=torch.long, device=self.device,
+                )
+                hd = torch.cat([directions, last_dirs[:, None]], dim=1)
+                fwd = torch.cat(
+                    [torch.zeros((B, 1), dtype=torch.int64, device=self.device), fwd],
+                    dim=1,
+                )
             act_b = torch.zeros(
-                (B, L, self.num_acts + self.num_hd),
+                (B, hd.size(1), self.num_acts + self.num_hd),
                 dtype=torch.int64,
                 device=self.device,
             )
-            act_b[:, :, FORWARD_IDX] = (actions == FORWARD_IDX).to(torch.int64)
+            act_b[:, :, FORWARD_IDX] = fwd
             act_b.scatter_(
                 2,
-                (self.num_acts + directions).unsqueeze(-1),
+                (self.num_acts + hd).unsqueeze(-1),
                 1,
             )
             # The speed channel is already zero when the action is the
@@ -969,12 +1054,36 @@ class BatchedSRTrackerShim:
 
     Resets are to zero state/phase (not the serial path's randInit noise) -
     a documented Phase 5 semantic; B>1 runs are not bit-comparable to B=1.
+    See `BatchedSRTracker.reset_all` for why matching them was reverted.
     """
 
-    def __init__(self, adapter: "PRNNAdapter", num_envs: int):
-        assert adapter.pastSR, "batched mode currently supports pastSR nets only"
+    def __init__(self, adapter: "PRNNAdapter", envs_obs: list):
         self.adapter = adapter
-        self.tracker = adapter.make_batched_tracker(num_envs)
+        self.B = len(envs_obs)
+        self.tracker = adapter.make_batched_tracker(self.B)
+        self._bootstrap(envs_obs)
+
+    def _bootstrap(self, obss: list) -> None:
+        """h[0] for every stream: row 0 of the sequence, (no action, HD[0]).
+
+        A no-op at offset 0, where the policy acts on h[t-1] and there is no
+        state to build yet. At offset 1 the policy acts on h[t], so h[0] has to
+        exist before the first action - and must carry exactly what row 0 of the
+        training pass carries, or the rollout and the pass disagree at row 0.
+        """
+        if not self.adapter.action_offset:
+            return
+        if obss[0] is None:
+            # The device backend keeps observations on-device and hands out None
+            # placeholders (`DeviceTableShellPool.reset_all`). It bootstraps
+            # through `reset_all_envs`, which takes the tensors directly - see
+            # `PredictivePPOAlgo.__init__`.
+            return
+        obs_x = flat_obs_rows(obss).to(self.adapter.device)
+        act_x = self.adapter.bootstrap_rows(
+            [o["direction"] for o in obss]
+        ).to(self.adapter.device)
+        self.tracker.step(obs_x, act_x)
 
     def initial_sr(self) -> torch.Tensor:
         return self.tracker.sr().clone()
@@ -1030,14 +1139,43 @@ class BatchedSRTrackerShim:
 
     def reset_env(self, b: int, current_obs) -> torch.Tensor:
         self.tracker.reset_env(b)
-        return torch.zeros((1, self.adapter.pN.hidden_size), device=self.adapter.device)
+        if not self.adapter.action_offset:
+            return self.tracker.sr()[b : b + 1].clone()
+        obs_x = flat_obs_rows([current_obs] * self.B).to(self.adapter.device)
+        act_x = self.adapter.bootstrap_rows(
+            [current_obs["direction"]] * self.B
+        ).to(self.adapter.device)
+        self.tracker.bootstrap(obs_x=obs_x, act_x=act_x, indices=[b])
+        return self.tracker.sr()[b : b + 1].clone()
 
-    def reset_all_envs(self) -> torch.Tensor:
+    def reset_all_envs(self, *, images=None, directions=None) -> torch.Tensor:
+        """Every stream at once - the device backend's synchronized segment cut.
+
+        `images`/`directions` are the observation AFTER the environment reset,
+        and offset 1 needs them: h[0] is built from where the agent NOW is, not
+        from the view the finished episode ended on.
+        """
         self.tracker.reset_all()
+        if self.adapter.action_offset:
+            self.step_device(
+                actions=torch.full(
+                    (self.B,), -1, dtype=torch.long, device=images.device
+                ),
+                images=images,
+                directions=directions,
+            )
         return self.tracker.sr().clone()
 
     def end_rollout(self) -> None:
-        self.tracker.reset_all()
+        """Deliberately nothing.
+
+        Episodes span rollouts (see CollectorState), and the collector carries
+        `state.sr` across the boundary - so resetting here would leave the
+        tracker's state disagreeing with the SR the next rollout acts on, which
+        `GraphRolloutStepper.prepare` asserts against. It was harmless only
+        because the last timestep always closes a segment AND h[-1] was zeros;
+        it is not harmless now that h[-1] is a draw.
+        """
 
 
 def make_sr_tracker(adapter, device: torch.device, envs_obs: list):
@@ -1048,7 +1186,7 @@ def make_sr_tracker(adapter, device: torch.device, envs_obs: list):
         return NullSRTracker(device, B)
     if B == 1:
         return SingleSRTracker(adapter, envs_obs[0])
-    return BatchedSRTrackerShim(adapter, B)
+    return BatchedSRTrackerShim(adapter, envs_obs)
 
 
 class BatchedSRTracker:
@@ -1097,9 +1235,36 @@ class BatchedSRTracker:
             self.state.zero_()
         self.phases = np.zeros(self.B, dtype=np.int64)
 
+    # h[-1] IS ZEROS HERE, and `actfun(noise)` in the serial rollout and in every
+    # `predict`/`trainStep` call - so this path is the odd one out. Matching them
+    # was tried and reverted: `tests/test_device_collector.py` asserts the device
+    # and table backends leave IDENTICAL RNG state, and they cannot once a reset
+    # draws. The table backend resets per environment (B kernel launches) where
+    # the device backend resets once, and CUDA's Philox advances its offset per
+    # launch, so no choice of draw size reconciles them. Unifying the two reset
+    # paths would; that is a separate change with its own gate.
+
     def reset_env(self, i: int) -> None:
         self.state[i].zero_()
         self.phases[i] = 0
+
+    def bootstrap(self, *, obs_x: torch.Tensor, act_x: torch.Tensor, indices) -> None:
+        """Row 0 for the named streams, leaving every other stream untouched.
+
+        The cell is one fused op over all B - splitting it per stream would mean
+        a second state tensor, and the whole point of allocating `state` once is
+        that captured graphs bake in its address. So it runs wide and the
+        untouched streams are put back. Only episode boundaries pay for it, and
+        the device backend does not pay at all: its resets are synchronized, so
+        every stream is in `indices` and nothing is restored.
+        """
+        keep_state, keep_phases = self.state.clone(), self.phases.copy()
+        self.step(obs_x, act_x)
+        untouched = np.ones(self.B, dtype=bool)
+        untouched[np.asarray(indices)] = False
+        if untouched.any():
+            self.state[untouched] = keep_state[untouched]
+            self.phases[untouched] = keep_phases[untouched]
 
     def sr(self) -> torch.Tensor:
         """Current SRs, shape (B, hidden_size) (trimmed to pN.hidden_size)."""

@@ -152,11 +152,18 @@ def collect_rollout(
                 "device_env requires positive synchronized prnn_seqdur cuts "
                 "that divide frames/num_envs"
             )
-        if not cfg.pastSR or intrinsic_ref is not None:
+        if intrinsic_ref is not None:
             raise ValueError(
-                "device_env currently supports batched pastSR collection "
-                "without the single-env intrinsic reference"
+                "device_env does not carry the single-env intrinsic reference"
             )
+
+    if pool is not None and not cfg.pastSR:
+        raise ValueError(
+            "action_offset=1 builds h[0] from the observation the tracker is "
+            "handed, and AsyncShellPool resets its environments only after the "
+            "timestep loop - so that observation would be the finished "
+            "episode's. Use the device or serial backend."
+        )
 
     diagnostics_env = envs if pool is not None or device_pool is not None else envs[0]
     joint = new_joint_probabilities(diagnostics_env, getattr(acmodel, "act_dim"))
@@ -243,10 +250,24 @@ def collect_rollout(
         state.done_counter += B
         state.finished_frames.extend([cfg.prnn_seqdur] * B)
 
-        state.sr = tracker.reset_all_envs()
-        device_pool.apply_prepared_reset(index=device_reset_index)
-        device_reset_index += 1
-        device_obs = device_pool.observation_device()
+        # ORDER IS THE CIRCUIT. `reset_all_envs` builds h[0] from the
+        # observation it is given, so under action_offset=1 the environment has
+        # to have moved first - otherwise h[0] encodes the view the finished
+        # episode ended on, from a position the agent has already left.
+        # Under offset 0 nothing reads the observation, and the historical order
+        # is kept because both calls consume RNG.
+        if cfg.pastSR:
+            state.sr = tracker.reset_all_envs()
+            device_pool.apply_prepared_reset(index=device_reset_index)
+            device_reset_index += 1
+            device_obs = device_pool.observation_device()
+        else:
+            device_pool.apply_prepared_reset(index=device_reset_index)
+            device_reset_index += 1
+            device_obs = device_pool.observation_device()
+            state.sr = tracker.reset_all_envs(
+                images=device_obs[0], directions=device_obs[1]
+            )
 
     if rollout_graph is not None:
         rollout_graph.prepare(sr=state.sr)
@@ -402,10 +423,17 @@ def collect_rollout(
         # --- SR step (batched; before any reset, matching serial order) ---
         with timer("collect/sr_step"):
             if device_pool is not None:
+                # Which observation the pRNN ingests IS the circuit: the one the
+                # action was chosen from (offset 0), or the one it produced
+                # (offset 1). `step_device` already returned the post-step
+                # tensors; the pre-step ones are the rows just banked.
+                sr_images, sr_directions = (
+                    (device_images[t], device_directions[t])
+                    if cfg.pastSR
+                    else (post_images, post_directions)
+                )
                 state.sr = tracker.step_device(
-                    actions=action,
-                    images=device_images[t],
-                    directions=device_directions[t],
+                    actions=action, images=sr_images, directions=sr_directions,
                 )
             else:
                 state.sr = tracker.step(det_np, pre_obs_b, state.obs_b)
@@ -432,17 +460,32 @@ def collect_rollout(
             state.finished_reshaped.append(state.ep_reshaped[b])
             state.finished_frames.append(state.ep_frames[b])
 
-            # reset order preserved: tracker/pN state first, then env
+            # The finished episode's last observation, banked before anything
+            # resets it - it is the world model's final prediction target.
+            last_obs_b[b].append(state.obs_b[b])
+
+            def restart_env() -> None:
+                if pool is None:
+                    state.obs_b[b] = envs[b].reset()  # completely new position
+                    state.loc_b[b] = _agent_pos(envs[b])
+
+            # ORDER IS THE CIRCUIT, not a style choice. `reset_env` builds h[0]
+            # from the observation it is handed, so under action_offset=1 the
+            # environment has to have moved FIRST - otherwise h[0] encodes the
+            # finished episode's last view, from a position the agent has
+            # already left, and nothing says so.
+            # Under action_offset=0 `init_sr` returns zeros and never reads the
+            # observation, so the historical order is kept: both calls consume
+            # RNG and tests/golden pins the sequence bitwise.
+            if not cfg.pastSR:
+                restart_env()
             new_row = tracker.reset_env(b, state.obs_b[b])
             if B == 1:
                 state.sr = new_row
             else:
                 state.sr[b] = new_row[0]
-            last_obs_b[b].append(state.obs_b[b])
-
-            if pool is None:
-                state.obs_b[b] = envs[b].reset()  # completely new position
-                state.loc_b[b] = _agent_pos(envs[b])
+            if cfg.pastSR:
+                restart_env()
             state.ep_return[b] = 0.0
             state.ep_reshaped[b] = 0.0
             state.ep_frames[b] = 0

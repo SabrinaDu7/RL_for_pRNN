@@ -134,3 +134,38 @@ def test_cli_selects_presets_and_applies_overrides():
     assert cli(["multienv"]).collect.backend is EnvBackend.DEVICE
     assert cli(["multienv", "--run.seed", "3"]).run.seed == 3
     assert cli(["ultra"]).collect.num_envs == 128
+
+
+def test_a_ramp_under_the_policy_graph_is_refused():
+    """A captured policy step bakes `entropy_coef` in, so the ramp cannot fire.
+
+    `algo.py` builds GraphPolicyTrainer once with the coefficient as a Python
+    float, `policy_graph._region` captures that float, and graphed updates route
+    to `_update_policy_epochs_graphed`, which never re-reads it. The coefficient
+    is not logged either, so a dead ramp is invisible - one cluster run was
+    spent before this combination was made unrepresentable.
+    """
+    import pytest
+
+    from curious_george.configs import TrainPolicyCfg
+
+    with pytest.raises(ValueError, match="silently never happen"):
+        TrainPolicyCfg(entropy_coef=0.001, entropy_coef_final=0.01, cuda_graph=True)
+
+    # Either alone is fine, and so is a ramp on the eager path.
+    TrainPolicyCfg(entropy_coef=0.001, entropy_coef_final=0.01, cuda_graph=False)
+    TrainPolicyCfg(entropy_coef=0.003, cuda_graph=True)
+
+
+def test_parity_defaults_to_the_measured_entropy_knee():
+    """0.003, not the 0.001 the original reference ran.
+
+    The knee is the lowest coefficient with a 0.0% collapse duty cycle across 5
+    seeds; see docs/entropy-sweep-and-noise-floor-2026-08-29.md.
+    """
+    from curious_george.configs import PRESETS
+
+    cfg = PRESETS["parity"][1]
+    assert cfg.train_policy.entropy_coef == 0.003
+    assert cfg.train_policy.entropy_coef_final is None
+    assert cfg.arch_prnn.action_offset == 0, "the circuit must still be typed to change"
