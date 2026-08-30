@@ -176,28 +176,24 @@ class EntropySchedule:
     first excursion below 1.0 bits of policy entropy lands at 80.2% of training
     (75.7% at flat 0.002), and at a flat 0 policy entropy holds near 1.43 at 20M
     environment steps and falls to 0.59-1.18 by 60-80M with mutual information
-    spiking inversely.
+    spiking inversely. A coefficient that RISES with progress would put the
+    resistance where the drift is.
 
-    🔴 BUT THE RAMP DOES NOT FIX IT, AND MAKES IT WORSE. Measured
-    (`mila-off1-e0.001to0.01-s2`, against the flat arms at matched gradient
-    steps): a 0.001 -> 0.01 ramp spends **13.3%** of updates below 1.0 bits
-    against flat 0.001's 1.9% and flat 0.003's 0.0%, starts collapsing at 35.2%
-    of training rather than 80.2%, and has the WORST prediction loss of every
-    arm run (0.00590). The reasoning "a rising coefficient puts the resistance
-    where the drift is" assumed collapse is driven by the CONTEMPORANEOUS
-    coefficient. It is not: at 35% of training the ramp already sits near
-    0.0042, above the flat 0.003 that never collapses at all. What matters is
-    whether the policy was allowed to sharpen EARLY, which a ramp specifically
-    permits.
+    🔴 **WHETHER IT ACTUALLY HELPS IS UNMEASURED.** The one run that configured
+    a ramp (`mila-off1-e0.001to0.01-s2`) also passed `--train-policy.cuda-graph`,
+    which pins the coefficient at its START value - so that run was a second
+    flat-0.001 run and says nothing about ramps. Confirmed twice: by reading the
+    capture path, and by the run itself, which spent 37.7% of its LAST TENTH of
+    training below 1.0 bits where a live 0.01 empirically gives 0.0%. The
+    combination is now rejected in `TrainPolicyCfg.__post_init__`, so the next
+    ramp arm will be real. Until one runs, this schedule is a hypothesis.
 
-    Prefer a flat coefficient. 0.003 is the measured knee at `action_offset=1`:
-    the lowest value with a 0.0% collapse duty cycle, at a prediction loss
-    (0.00458) matching the offset-0 baseline and 3.7x the mutual information of
-    a flat 0.01.
-
-    Both endpoints are measured, the middle is not: 0.0 drifts to 0.79-1.12 over
-    a long run; 0.01 pins entropy near its 1.98 maximum and crushes mutual
-    information to 0.015, the bonus being over half the learning signal.
+    Flat coefficients ARE measured, at `action_offset=1`: 0.003 is the knee -
+    the lowest value with a 0.0% collapse duty cycle (5 of 5 seeds), at a
+    prediction loss matching the offset-0 baseline and 3.7x the mutual
+    information of a flat 0.01. 0.01 pins entropy near its 1.98 maximum and
+    crushes mutual information to 0.014. See
+    `docs/entropy-sweep-and-noise-floor-2026-08-29.md`.
 
     `final is None` means constant.
     """

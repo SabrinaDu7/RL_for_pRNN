@@ -20,19 +20,37 @@ the last 200 updates.
 | **0.003** | **0.00458** | 0.7178 | 0.0530 | **0.0%** | 6.989 |
 | 0.005 | 0.00439 | 0.7326 | 0.0290 | 0.0% | 7.110 |
 | 0.01 | 0.00429 | 0.6780 | 0.0144 | 0.0% | 7.217 |
-| 0.001 -> 0.01 ramp | 0.00590 | 0.7457 | 0.3325 | **13.3%** | 6.753 |
+| ~~0.001 -> 0.01 ramp~~ | ~~0.00590~~ | ~~0.7457~~ | ~~0.3325~~ | ~~13.3%~~ | ~~6.753~~ |
 | *offset 0 @ 0.001* | *0.00462* | *0.7201* | *0.0866* | *0.0%* | *6.989* |
 
 0.003 is the lowest flat coefficient with a 0.0% collapse duty cycle, at a loss
 matching the offset-0 baseline and 3.7x the mutual information of a flat 0.01.
 
-🔴 **The ramp is the worst arm ever run here** - 13.3% duty cycle against flat
-0.001's 1.9%, worst loss of all, and it starts collapsing at 35.2% of training
-rather than 80.2%. Collapse IS late under a flat coefficient, but it is not
-driven by the CONTEMPORANEOUS coefficient: at 35% the ramp already sits near
-0.0042, above the flat 0.003 that never collapses. What matters is whether the
-policy was allowed to sharpen EARLY, which a ramp specifically permits.
-`training/schedule.py::EntropySchedule` carries this correction.
+🔴 **THE RAMP ROW IS VOID - that run had no ramp.** It passed
+`--train-policy.cuda-graph`, and a captured policy step cannot see a changing
+coefficient: `algo.py:419-430` builds `GraphPolicyTrainer` ONCE with
+`loss_kwargs=dict(entropy_coef=...)` as a Python float, `policy_graph._region`
+bakes that float into the capture, and `rl/update/policy.py:100-103` routes
+graphed updates to `_update_policy_epochs_graphed`, which never re-reads
+`algo.entropy_coef`. `entropy_coef` is logged nowhere, so nothing showed it.
+
+Confirmed by the run's own behaviour, not only by reading: over its LAST TENTH
+of training, where a live ramp would sit at ~0.01, it spent **37.7%** of updates
+below 1.0 bits and had median `policy_entropy` 1.245 - while flat 0.01 gives
+**0.0%** and 1.983. The ramp was pinned at 0.001 throughout; the arm is a second
+flat-0.001 run at seed 2.
+
+**So whether a rising coefficient helps is UNMEASURED.** An earlier version of
+this document reported it as refuted; that was wrong. The combination is now
+rejected in `TrainPolicyCfg.__post_init__`, and `slurm/action_offset_ab.sh`
+drops the policy graph when a ramp is requested, so the next ramp arm will be
+real.
+
+One thing the void arm does establish, since it is configurationally identical
+to `mila-off1-e0.001-s2`: **two runs at the same seed and the same config
+diverged**, 13.3% duty cycle against 1.9% and loss 0.00590 against 0.00553. The
+collapse duty cycle is therefore not reproducible at fixed seed under this
+stack, and should be read as a sample, never as a property of a configuration.
 
 ## 2. The noise floor: five seeds, one configuration
 
@@ -90,4 +108,5 @@ Two things worth fixing before spending cluster time on multi-room:
    eval's 5.81 s, so exhaustive coverage over the L-room's 172 cells x 4
    directions costs about 4.6 s more per analysis event.
 
+`main_train.py parity` now defaults to `entropy_coef=0.003` for this reason.
 Reproduce any arm with `sbatch slurm/action_offset_ab.sh 1 0.003 <seed>`.

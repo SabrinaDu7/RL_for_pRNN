@@ -566,6 +566,23 @@ class TrainPolicyCfg:
             raise ValueError(f"total_grad_steps must be >= 1, got {self.total_grad_steps}")
         if self.ppo_epochs < 1:
             raise ValueError(f"ppo_epochs must be >= 1, got {self.ppo_epochs}")
+        if self.entropy_coef_final is not None and self.cuda_graph:
+            # A CAPTURED policy step cannot see a changing coefficient.
+            # `algo.py` builds GraphPolicyTrainer ONCE with
+            # loss_kwargs=dict(entropy_coef=self.entropy_coef) as a Python
+            # float; `policy_graph._region` bakes that float into the capture;
+            # and `rl/update/policy.py` routes graphed updates to
+            # `_update_policy_epochs_graphed`, which never re-reads
+            # `algo.entropy_coef`. So the ramp is silently pinned at its start
+            # value - and `entropy_coef` is not logged, so nothing shows it.
+            # One run (`mila-off1-e0.001to0.01-s2`) was wasted this way before
+            # the combination was made unrepresentable.
+            raise ValueError(
+                "entropy_coef_final ramps the coefficient per update, but "
+                "cuda_graph bakes it into the captured step, so the ramp would "
+                "silently never happen. Choose one: drop the ramp, or set "
+                "--train-policy.no-cuda-graph and pay the throughput."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -864,8 +881,12 @@ def _parity() -> Config:
         main_train.py parity --arch-prnn.action-offset 1     # the new circuit
         main_train.py parity --train-policy.entropy-coef 0.005
 
-    `entropy_coef` is the exception: 0.001 is what the reference ran, so it is
-    set here rather than left at Config()'s 0.0, which would reproduce nothing.
+    `entropy_coef` is 0.003: the MEASURED knee, not the 0.001 the original
+    reference ran. It is the lowest value whose policy-collapse duty cycle is
+    0.0% - in 5 of 5 seeds - at a prediction loss matching the offset-0 baseline
+    and 3.7x the mutual information of a flat 0.01. See
+    `docs/entropy-sweep-and-noise-floor-2026-08-29.md`. To reproduce the older
+    runs exactly, pass `--train-policy.entropy-coef 0.001`.
 
     NOT a replacement for `reference`, which names the SERIAL baseline and is
     what older runs and `tests/test_configs.py` mean by the word.
@@ -884,7 +905,7 @@ def _parity() -> Config:
         ),
         train_policy=replace(
             base.train_policy, total_grad_steps=175_744, cuda_graph=True,
-            entropy_coef=0.001,
+            entropy_coef=0.003,
         ),
         eval=replace(
             base.eval, analysis_every_steps=3_333_328, plot_every_steps=7_499_989

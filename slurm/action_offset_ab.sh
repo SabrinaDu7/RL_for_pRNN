@@ -94,6 +94,17 @@ NAME="mila-off${OFFSET}-e${ENT}${ENT_FINAL:+to$ENT_FINAL}-s${SEED}"
 # Empty expands to NOTHING (unquoted, deliberately) so a constant-coefficient
 # run passes no flag at all and `entropy_coef_final` keeps its None default.
 RAMP=${ENT_FINAL:+--train-policy.entropy-coef-final $ENT_FINAL}
+# A captured policy step bakes entropy_coef in, so a ramp under
+# --train-policy.cuda-graph is silently pinned at its start value - which is
+# exactly how job mila-off1-e0.001to0.01-s2 was wasted. configs.py now REFUSES
+# the combination, so drop the graph rather than let sbatch fail 20 minutes in.
+POLICY_GRAPH=--train-policy.cuda-graph
+if [ -n "$ENT_FINAL" ]; then
+  POLICY_GRAPH=
+  echo "[entropy ramp] policy CUDA graph DISABLED - a captured step cannot see"
+  echo "[entropy ramp] a changing coefficient. This arm is NOT throughput-"
+  echo "[entropy ramp] comparable to the graphed ones; compare on gradient steps."
+fi
 # `mila-parity-e0.001_curious_26-08-27-14-32-32` verbatim, plus the two knobs
 # under test. The gradient-step counts are the ground truth the arms are matched
 # on: 43,936 world-model and 175,744 policy steps, 89,980,928 environment steps.
@@ -104,7 +115,7 @@ uv run python main_train.py reference \
     --train-prnn.episodes-per-grad-step 8 --train-prnn.compile LAYER \
     --train-prnn.cuda-graph --train-prnn.no-curiosity-cuda-graph \
     --train-prnn.total-grad-steps 43936 \
-    --train-policy.total-grad-steps 175744 --train-policy.cuda-graph \
+    --train-policy.total-grad-steps 175744 $POLICY_GRAPH \
     --train-policy.entropy-coef "$ENT" $RAMP \
     --arch-prnn.action-offset "$OFFSET" \
     --run.wandb \
