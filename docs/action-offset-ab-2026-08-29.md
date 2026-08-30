@@ -119,9 +119,11 @@ still needs rewriting either way.
 | `sRSA_onPolicy` | 0.74958 | 0.75084 | 0.66390 | 0.84640 | **means equal (0.750 vs 0.755); offset 1's SPREAD is 0.18 against offset 0's 0.001** |
 | `mean SI_onPolicy` | 0.98633 | 1.26356 | 0.96966 | 0.88127 | lower 2/2, but confounded by coverage |
 | `SI_units_zeroed` | 5 | 6 | 14 | 5 | |
-| `SWdist_onPolicy` | 0.09720 | 0.10939 | 0.04752 | 0.08152 | **lower 2/2, mean 37% better** |
+| `SWdist_onPolicy` | 0.09720 | 0.10939 | 0.04752 | 0.08152 | final points; on last-10 means (0.1033, 0.1175, 0.0843, 0.1724) it is 1/2, not 2/2 |
 | `policy_entropy` MIN | 1.4490 | 1.5135 | **0.4910** | **0.3912** | **collapse reproduces 2/2** |
 | `loc_entropy` MIN | 4.9425 | 4.8581 | **2.8448** | **2.7754** | **collapse reproduces 2/2** |
+| % updates `policy_entropy` < 1.0 | 0.0% | 0.0% | **19.2%** | **21.1%** | the collapse is a TRANSIENT with a duty cycle, not an end state |
+| MEDIAN `policy_entropy` | 1.746 | 1.752 | 1.657 | 1.583 | medians barely separate - which is why end-of-run metrics look normal |
 
 All four runs: 25.0-25.1 min, 43,936 pRNN and 175,744 policy gradient steps.
 
@@ -135,6 +137,12 @@ the variance has a cause.
 **The collapse is the most reproducible thing here** - `policy_entropy` falls to 0.49/0.39
 bits (uniform over four actions is 2.000) and spatial coverage to 2.84/2.78 bits (~7 cells)
 in BOTH offset-1 seeds, and in NEITHER offset-0 seed.
+
+It is a TRANSIENT, not an end state, and that distinction is load-bearing: offset 1 spends
+19.2% / 21.1% of logged updates below 1.0 bits locally and 1.9% on the cluster, while every
+offset-0 run spends 0.0%. The agent dips and recovers. Median `policy_entropy` is 1.58-1.72
+against offset 0's 1.75, and median `loc_entropy` 6.63-6.78 against 6.99-7.06 - barely
+separated. Reading the MIN as the state of the run overstates it.
 
 Ruled out as causes, by measurement:
 
@@ -180,24 +188,49 @@ better; it is shown to be more informative to the policy, which is a different c
 Four jobs, one commit, one GPU type, run in parallel; 27.3-27.9 min each, all at
 43,936 pRNN and 175,744 policy gradient steps.
 
+🔴 **Read the TAIL MEAN, never the final point.** `sRSA_onPolicy` is logged 26 times per
+run and its own adjacent-sample spread is 0.068-0.114; `pRNN loss` is logged 10,000 times.
+A single endpoint is inside the noise of both, and reading endpoints produced three wrong
+conclusions in the first version of this document (recorded under "Corrections" below).
+`check/wandb_compare` already bands its comparisons for this reason. Both tables follow.
+
+FINAL LOGGED POINT (what wandb's summary shows - kept because it is what the run object
+reports, NOT because it is the estimator to use):
+
 | metric | off0 e0.001 | off0 e0.01 | off1 e0.001 | off1 e0.01 |
 |---|---|---|---|---|
-| `pRNN loss` | 0.00425 | 0.00468 | 0.00479 | **0.00387** |
+| `pRNN loss` | 0.00425 | 0.00468 | 0.00479 | 0.00387 |
 | `sRSA_onPolicy` | 0.67249 | 0.54028 | 0.67051 | 0.60696 |
 | `mean SI_onPolicy` | 0.97888 | 1.02642 | 0.83239 | 0.96492 |
 | `SI_mean_active_only` | 0.99077 | 1.05382 | 0.85637 | 0.97664 |
 | `SI_units_zeroed` | 6 | 13 | 14 | 6 |
-| `SWdist_onPolicy` | 0.09164 | 0.07019 | **0.03957** | 0.05442 |
-| `policy_entropy` MIN | 1.5305 | 1.8187 | **0.7386** | **1.8270** |
-| `loc_entropy` MIN | 4.7155 | 6.1124 | **3.2205** | **5.9425** |
-| `MI_policy` MAX | 0.2111 | 0.0406 | **0.5306** | 0.0520 |
+| `SWdist_onPolicy` | 0.09164 | 0.07019 | 0.03957 | 0.05442 |
+| `policy_entropy` MIN | 1.5305 | 1.8187 | 0.7386 | 1.8270 |
+| `loc_entropy` MIN | 4.7155 | 6.1124 | 3.2205 | 5.9425 |
+| `MI_policy` MAX | 0.2111 | 0.0406 | 0.5306 | 0.0520 |
+
+TAIL MEAN - **this is the table to read.** sRSA/SI/SWdist over the last 10 analysis points,
+`pRNN loss` over the last 500 gradient steps, `MI_policy` over the last 200 updates:
+
+| metric | off0 e0.001 | off0 e0.01 | off1 e0.001 | off1 e0.01 |
+|---|---|---|---|---|
+| `sRSA_onPolicy` | 0.7201 | 0.6974 | 0.7216 | 0.6780 |
+| &nbsp;&nbsp;its own adjacent-sample band | 0.080 | 0.068 | 0.114 | 0.080 |
+| `pRNN loss` | 0.00462 | 0.00431 | 0.00553 | 0.00429 |
+| `mean SI_onPolicy` | 0.9899 | 1.0697 | 0.8717 | 0.9672 |
+| `SI_mean_active_only` | 1.0043 | 1.0881 | 0.9065 | 0.9848 |
+| `SI_units_zeroed` | 7.3 | 8.4 | 20.7 | 9.0 |
+| `SWdist_onPolicy` | 0.0897 | 0.0674 | 0.0620 | 0.0708 |
+| `MI_policy` | 0.0866 | 0.0121 | **0.2075** | 0.0144 |
+| **% updates with `policy_entropy` < 1.0** | 0.0% | 0.0% | **1.9%** | 0.0% |
 
 ## Confirmed: the loss cost was exploration, not the circuit
 
-**offset 1 at entropy 0.01 has the LOWEST prediction loss of all four arms** -
-0.00387, better than either offset-0 arm. At 0.001 it was the worst (0.00479).
-Nothing about the circuit changed between those two cells; only the entropy
-bonus did.
+On the last 500 gradient steps, **offset 1 at entropy 0.01 TIES offset 0 at the
+same entropy** - 0.00429 against 0.00431. At 0.001 offset 1 is genuinely worse:
+0.00553 against 0.00462, a real ~20% gap that holds over any tail window from
+500 to 2000 steps. Nothing about the circuit changed between those two cells;
+only the entropy bonus did, and it closed the gap completely.
 
 The collapse goes with it: `policy_entropy` MIN rises 0.7386 -> 1.8270 and
 `loc_entropy` MIN 3.2205 -> 5.9425, both from worst-of-four to best-of-four.
@@ -206,8 +239,11 @@ most of the loss gap" - is confirmed, and the original intuition that pairing
 obs[t] with the action that produced it should HELP prediction is vindicated
 once the policy is not starving the world model of data.
 
-`SWdist_onPolicy` favours offset 1 in every comparison run so far: both local
-seeds at 0.001, and both cluster entropies. That is 4/4.
+`SWdist_onPolicy` does NOT hold up as a consistent win. On last-10 means it
+favours offset 1 in 2 of 4 comparisons - cluster e0.001 (0.0620 vs 0.0897) and
+local seed 2 (0.0843 vs 0.1033) - and offset 0 in the other two: local seed 3
+(0.1724 vs 0.1175) and cluster e0.01 (0.0708 vs 0.0674). The earlier "4/4" was
+counted on final points.
 
 ## But 0.01 over-corrects
 
@@ -217,23 +253,70 @@ against a 2.000 ceiling is very nearly a uniform random walker. That matches
 what `slurm/train_fast.sh` already records: at 0.01 the entropy bonus is 0.0198
 against an advantage scale of 0.0369, over half the learning signal.
 
-And sRSA falls for BOTH arms when entropy is raised: off0 0.672 -> 0.540,
-off1 0.671 -> 0.607. So 0.01 buys coverage and prediction at the cost of the
-curiosity-driven behaviour the representation is supposed to come from. At
-matched entropy offset 1 is ahead on sRSA at 0.01 (0.607 vs 0.540) and tied at
-0.001 (0.671 vs 0.672) - but every cell is n = 1 and sRSA's own band is ~0.10,
-so none of those differences is resolvable.
+sRSA, however, does NOT fall when entropy is raised - that reading was an
+endpoint artifact. On last-10 means the four cells are 0.7201, 0.6974, 0.7216
+and 0.6780, spanning 0.044 against per-run bands of 0.068-0.114. **No cell is
+distinguishable from any other**, and the apparent off0 collapse to 0.540 was
+one noisy final sample from a run whose last-10 mean is 0.6974. sRSA has not
+separated these conditions at any point in this experiment.
 
 ⚠️ The cluster sRSA values (0.54-0.67) sit below the local ones (0.66-0.85) at
 the same configuration. Treat sRSA comparisons ACROSS machines as meaningless
 here; only within-batch comparisons count.
 
+## Corrections to the first version of this document
+
+All three came from reading a single final logged point as if it were the run's value. The
+underlying wandb data never changed; only the estimator did. Recomputed 2026-08-29 from
+`wandb.Api()` history, 1,373 update points and 26 analysis points per run.
+
+| claim as first written | what the tail mean says |
+|---|---|
+| "offset 1 at 0.01 has the LOWEST loss of all four arms (0.00387)" | **Tie.** 0.00429 vs off0's 0.00431 over the last 500 gradient steps. The direction survives - at 0.001 offset 1 really is ~20% worse and entropy closes it - but not the ranking. |
+| "sRSA falls for BOTH arms when entropy is raised, off0 0.672 -> 0.540" | **No.** Last-10 means are 0.7201 / 0.6974 / 0.7216 / 0.6780, all inside bands of 0.068-0.114. The 0.540 was one noisy sample. |
+| "`SWdist` favours offset 1 in 4/4 comparisons" | **2/4** on last-10 means. |
+
+The reproducible offset-1 signature is therefore NOT any representation metric. It is the
+transient exploration collapse at `entropy_coef=0.001` (1.9-21% duty cycle, versus 0.0% for
+every offset-0 run) and the higher `MI_policy` that comes with it (0.2075 vs 0.0866 tail
+mean, 0.53 vs 0.21 max).
+
+## 🔴 Why sRSA has no resolving power here: the in-training probe is UNSEEDED
+
+`evaluate_spatial_representation` takes a `probe_seed` that seeds torch, numpy AND
+`env.env.reset(seed=...)`, and its own comment says why: without it "the eval [is]
+unreproducible: identical action sequences, different trajectories ... Seeding the env too
+makes this a FIXED probe, i.e. checkpoints become comparable to each other rather than each
+carrying its own rollout noise."
+
+**Nothing in `curious_george/` passes it.** `grep -rn probe_seed --include=*.py
+curious_george/` matches only the definition and its own body; `training/loop.py`'s call
+site passes `sleepstd`, `wandb_nameext`, `n_trajs`, `traj_timesteps`, `trainDecoder` and
+`legacy_timesteps`, and `EvalCfg` has no field for it. So every point on every
+`sRSA_onPolicy` curve in this document is a fresh unseeded rollout: new start position, new
+sampled actions, and new injected pRNN noise (`trainNoiseMeanStd` is deliberately KEPT
+through `eval_mode`, per the same function's comment).
+
+That is the mechanism behind the 0.068-0.114 adjacent-sample band, and it is a defect, not
+a property of the representation. Until it is fixed, no sRSA difference in this project
+smaller than ~0.11 means anything.
+
 ## Next
 
-`train_policy.entropy_coef_final` already exists and ramps the coefficient
-LINEARLY in environment steps, and `train_fast.sh` documents exactly why:
-"Collapse is a LATE phenomenon ... so a RISING coefficient puts the resistance
-where the drift is." A ramp 0.001 -> 0.01 keeps the early curiosity-driven
-learning that 0.01 flattens, and adds resistance where the collapse actually
-happens. That is the next arm, and it needs n = 3 on sRSA to say anything about
-the representation at all.
+Three things, in this order:
+
+1. **Fix the probe.** Give `EvalCfg` a `probe_seed` and pass it, so the curve measures the
+   representation instead of the rollout. Everything below is under-powered until this lands.
+2. **Lower the entropy without losing the metrics.** The axis with real separation is
+   `MI_policy` (0.0121 to 0.2075, a 17x range) and the collapse duty cycle (0.0% to 21%) -
+   NOT sRSA. Sweep `entropy_coef` between 0.001 and 0.01 at offset 1 and find the largest
+   value that keeps the duty cycle at 0% while holding MI near its 0.001 level.
+3. **Look at the hidden states directly.** If the place code is what changed, a 2-D Isomap
+   of the theta-mean hidden activity should recover the L-room's shape; that is a claim
+   about the representation that does not route through sRSA at all.
+
+`train_policy.entropy_coef_final` ramps the coefficient LINEARLY in environment steps and
+`train_fast.sh` argues for it ("Collapse is a LATE phenomenon ... so a RISING coefficient
+puts the resistance where the drift is"). It remains a candidate for step 2, but it is now
+a WEAKER one than it looked: a flat 0.01 already drives the duty cycle to 0%, so a ramp is
+only worth it if an intermediate flat value cannot hold both MI and coverage.
