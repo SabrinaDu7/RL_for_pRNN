@@ -39,7 +39,7 @@ def build(compile_cell):
                        trainNoiseMeanStd=(0.0, 0.05), dropp=0.1, learningRate=3e-3,
                        weight_decay=3e-3, bptttrunc=int(1e8), wandb_log=False)
     pN.pRNN.to(dev); pN.pRNN.train()
-    ad = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True, compile_cell=compile_cell)
+    ad = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True, compile_cell=compile_cell)
     rows_o, rows_a = [], []
     for k in range(GROUP):
         torch.manual_seed(SEED + 1 + k); np.random.seed(SEED + 1 + k)

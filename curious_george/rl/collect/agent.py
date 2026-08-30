@@ -14,11 +14,12 @@ class ActorCriticAgent:
     call in `curious_george.models.device.on_device`.
     """
 
-    def __init__(self, action_space, acmodel, prnn, device, argmax: bool, pastSR=True):
+    def __init__(self, action_space, acmodel, prnn, device, argmax: bool,
+                 action_offset: int = 0):
         self.action_space = action_space
         self.acmodel = acmodel
         self.prnn = prnn
-        self.pastSR = pastSR
+        self.action_offset = action_offset
         self.argmax = argmax
         self.name = "ActorCritic Agent"
 
@@ -116,7 +117,7 @@ class ActorCriticAgent:
             )
             state["agent_dir"] = np.append(state["agent_dir"], env.get_agent_dir())
 
-            if self.pastSR:
+            if self.action_offset == 0:
                 SR = self.next_SR(obs=obs[t], act=act[t]) # obs that lead to the action
             else:
                 SR = self.next_SR(obs=obs[t + 1], act=act[t])

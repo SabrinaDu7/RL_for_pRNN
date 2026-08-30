@@ -82,6 +82,23 @@ DEVICE = torch.device("cpu")
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "tests" / "golden" / "golden_eval_v1.pt"
 
+#: The circuits this fixture is captured for. `action_offset` is the whole
+#: circuit (configs.py::ArchPrnnCfg): 0 pairs obs[t] with the action chosen
+#: AFTER it, 1 with the action that PRODUCED it.
+#:
+#: 🔴 The offset-1 row is a gate on the CODE PATH, not a scientific result. The
+#: reference weights were trained at offset 0, so its sRSA and SWdist describe
+#: offset-0 weights driven through offset-1 plumbing. They are a number that
+#: must not move, and nothing more. Without it the offset-1 path - which is what
+#: the Circuit refactor churns - had no pinned values at all: tests/
+#: test_action_offset.py pins EQUIVALENCES there (device == table, batched ==
+#: serial) but never a value.
+CIRCUIT_FIXTURES = {0: OUT, 1: REPO / "tests" / "golden" / "golden_eval_offset1_v1.pt"}
+
+
+def fixture_path(action_offset: int) -> Path:
+    return CIRCUIT_FIXTURES[action_offset]
+
 #: Reference weights. Pinned, not the ambient CUR_CKPT_DIR, so the oracle does
 #: not move when you switch working checkpoints.
 CKPT_DIR = Path(
@@ -92,8 +109,12 @@ CKPT_DIR = Path(
 )
 
 
-def build_fixture() -> dict:
-    """Load reference weights, run ONE collect in eval mode, compute the five."""
+def build_fixture(action_offset: int = 0) -> dict:
+    """Load reference weights, run ONE collect in eval mode, compute the five.
+
+    `action_offset=0` is the historical path and MUST stay bitwise against
+    `golden_eval_v1.pt`; the default preserves it exactly.
+    """
     RLutils.seed(SEED)
 
     env = RLutils.make_env(
@@ -127,7 +148,17 @@ def build_fixture() -> dict:
         num_frames=FRAMES, discount=0.98, lr=3e-4, gae_lambda=0.95, entropy_coef=0.0,
         value_loss_coef=1, max_grad_norm=0.5, adam_eps=1e-8, clip_eps=0.2, epochs=4,
         batch_size=256, preprocess_obss=preprocess_obss, train_pN=True, noise_mu=0,
-        noise_std=0.05, prnn_seqdur=SEQDUR, intrinsic=False, k_int=1, pastSR=True,
+        noise_std=0.05, prnn_seqdur=SEQDUR, intrinsic=False, k_int=1,
+        action_offset=action_offset,
+        # ⚠️ THE TWO ROWS DIFFER IN TWO THINGS, DELIBERATELY. Offset 0 keeps
+        # `PredictivePPOAlgo`'s own default of "legacy", which is what the
+        # historical fixture was captured under and what keeps it bitwise (note
+        # the CONFIG default is "next_obs" - algo.py:119 and configs.py differ).
+        # Offset 1 has no such choice: at that circuit row t's error is caused
+        # by the action row t encodes, so the reward for a[i] is row i+1, and
+        # `reward_pass_inputs` asserts it. Each row therefore gates its OWN
+        # path; never read one against the other.
+        **({"reward_alignment": "next_obs"} if action_offset else {}),
         curious_agent=True, k_curious=1,
     )
 
@@ -169,6 +200,8 @@ def build_fixture() -> dict:
     return {
         "meta": {
             "seed": SEED, "frames": FRAMES, "seqdur": SEQDUR,
+            "action_offset": action_offset,
+            "reward_alignment": "next_obs" if action_offset else "legacy",
             "ckpt": CKPT_DIR.name, "torch": torch.__version__,
         },
         "metrics": {

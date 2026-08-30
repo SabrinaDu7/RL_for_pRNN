@@ -182,7 +182,7 @@ def get_agent(
     device: torch.device | None = None,
     ac_model: ACModel | None = None,
     argmax=False,
-    pastSR=True,
+    action_offset: int = 0,
 ) -> ActorCriticAgent | RandomActionAgent:
     if agent_Type == AgentType.RANDOM:
         agent = RandomActionAgent(env.action_space, rand_act_prob)
@@ -197,7 +197,7 @@ def get_agent(
             prnn=prnn,
             device=device,
             argmax=argmax,
-            pastSR=pastSR,
+            action_offset=action_offset,
         )
 
     return agent

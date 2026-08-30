@@ -31,7 +31,7 @@ def setup():
     )
     pN = PredictiveNet(env, hidden_size=16, pRNNtype="thRNN_5win",
                        trainNoiseMeanStd=(0, 0), wandb_log=False)
-    adapter = PRNNAdapter(pN, torch.device("cpu"), pastSR=True)
+    adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=0)
     assert adapter.fast_speedhd
 
     rng = np.random.default_rng(SEED)

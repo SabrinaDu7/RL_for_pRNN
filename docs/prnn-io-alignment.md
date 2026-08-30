@@ -1,6 +1,46 @@
 2026-08-28 · branch `sdu/predict-next-obs`
+**Superseded 2026-08-30. The survey below is kept as the record of what was found
+before the change; four of its load-bearing claims are now void. Read this header
+first.**
 
 # What the pRNN and the policy actually receive, and what they are asked for
+
+## 🔴 What actually happened, and which claims here are void
+
+The change was made, as `arch_prnn.action_offset` (`configs.py::ArchPrnnCfg`), and it
+took NONE of the three routes below. It is one integer, and the rows are built in
+`PRNNAdapter.action_rows`:
+
+    0  row t = (obs[t], a[t])    the action chosen AFTER obs[t];  policy acts on h[t-1]
+    1  row t = (obs[t], a[t-1])  the action that PRODUCED obs[t]; policy acts on h[t]
+
+Verified as one change: fingerprinting every tensor reaching `pN.predict` under both
+settings, 17 of 18 are identical - architecture, encoding, `predOffset`, upstream
+`actOffset`, `inMask`, weights, trajectory, observation input, target. Only the action
+input differs. The pinned `prnn` was not touched, forked, or re-pinned.
+
+| claim below | status |
+|---|---|
+| *"the action cannot inform the prediction it is paired with"* (§2) | **VOID at `action_offset=1`** - that is precisely what the offset fixes. It remains true at 0. |
+| *"the reward shift is a correction applied downstream of a misalignment that is still there"* (§2) | **VOID.** `reward_alignment` is circuit-INDEPENDENT: row t's error is caused by the action row t encodes, which is `a[t-1]` under both circuits. Both use `next_obs`. |
+| *"route B = `actOffset=1`"* (§3) | **NOT THE ROUTE TAKEN, and it would have been wrong.** Upstream `actOffset` is a `ConstantPad1d` front-pad plus a tail-drop: it loses `HD[0]` from row 0 AND discards each segment's last action. `action_rows` keeps both. `SpeedNextHD` exists only to pre-shift HD so that whole-vector shift cancels on the HD half, and is unnecessary once the rows are built directly. |
+| *"`masked_nextstep` is misnamed; `prnn_type` needs to become a real field"* (§5) | **VOID.** `prnn_type` stays a fixed property and `masked_nextstep` stays retired: the circuit needed neither. |
+
+What the change actually bought, and what it did not: the pending-action bit is gone
+from the hidden state (`fwd(a[t])` decodes from `h[t]` at 1.000 balanced accuracy under
+offset 0 and 0.496 - chance 0.500 - under offset 1), and no representation metric
+resolves a difference between the circuits. See
+`docs/action-offset-ab-2026-08-29.md` for the result and
+`docs/entropy-sweep-and-noise-floor-2026-08-29.md` for why "no difference" is the
+honest reading rather than a null result: sRSA at n=1 cannot resolve anything below
+0.13.
+
+`pastSR` no longer exists. It meant the same fact as `action_offset` seen from the
+rollout side, and two names for one fact are two things that can disagree.
+
+---
+
+## The survey as written on 2026-08-28, unedited below this line
 
 **Goal.** Before changing the world model's prediction target, establish exactly what
 each learner is given and what it is scored against, at which timestep, with the

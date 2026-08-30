@@ -59,7 +59,7 @@ class TrainingComponents:
     preprocess_obss: Callable
     obs_space: dict
     status: dict
-    pastSR: bool
+    action_offset: int
     random_agent: object
     ac_agent: object
 
@@ -233,12 +233,11 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
     # AFTER provenance had already recorded it.
     prnn_seqdur = cfg.collect.episode_steps if cfg.train_prnn.train else 0
 
-    # The circuit, from the config rather than from an architecture's name.
-    # `action_offset` and `pastSR` are one fact seen from two sides: which
-    # action shares a row with obs[t], and which observation the rollout
-    # tracker pairs with the action just taken. They cannot disagree.
-    pastSR = cfg.arch_prnn.action_offset == 0
-    print(f"action_offset: {cfg.arch_prnn.action_offset}  (pastSR: {pastSR})")
+    # The circuit, straight from the config. It used to be INFERRED from the
+    # architecture's name and then carried alongside a second name, `pastSR`,
+    # meaning the same fact from the rollout side. Both are gone: one fact, one
+    # name, and nothing left that can disagree with it.
+    print(f"action_offset: {cfg.arch_prnn.action_offset}")
 
     algo = PredictivePPOAlgo(
         envs if len(envs) > 1 else envs[0],
@@ -276,7 +275,7 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         rollout_cuda_graph=cfg.collect.rollout_cuda_graph,
         intrinsic=cfg.train_policy.intrinsic,
         k_int=cfg.train_policy.k_intrinsic,
-        pastSR=pastSR,
+        action_offset=cfg.arch_prnn.action_offset,
         curious_agent=cfg.train_policy.curious,
         k_curious=cfg.train_policy.k_curious,
         reward_alignment=cfg.train_policy.reward_alignment.value,
@@ -330,7 +329,7 @@ def setup_training(cfg) -> TrainingComponents:
     acmodel = setup_acmodel(cfg, env, obs_space, status)
     algo = setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status)
 
-    pastSR = algo.pastSR
+    action_offset = algo.action_offset
     random_agent = get_agent(env=env, rand_act_prob=RAND_ACT_PROBA, agent_Type=AgentType.RANDOM)
     ac_agent = get_agent(
         env=env,
@@ -338,7 +337,7 @@ def setup_training(cfg) -> TrainingComponents:
         prnn=predictiveNet,
         device=get_device(),
         ac_model=acmodel,
-        pastSR=pastSR,
+        action_offset=action_offset,
     )
 
     return TrainingComponents(
@@ -350,7 +349,7 @@ def setup_training(cfg) -> TrainingComponents:
         preprocess_obss=preprocess_obss,
         obs_space=obs_space,
         status=status,
-        pastSR=pastSR,
+        action_offset=action_offset,
         random_agent=random_agent,
         ac_agent=ac_agent,
     )

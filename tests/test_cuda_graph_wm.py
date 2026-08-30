@@ -81,7 +81,7 @@ def test_graphed_segment_bitwise_equals_eager_no_rng():
     pN_eager.pRNN.to(dev)
     pN_eager.pRNN.train()
     images, hd, act, last = _one_segment(pN_eager)
-    a_eager = PRNNAdapter(pN_eager, dev, pastSR=True, cuda_graph=False)
+    a_eager = PRNNAdapter(pN_eager, dev, action_offset=0, cuda_graph=False)
     w0 = _weights(pN_eager).clone()
     a_eager.train_on_episode(images, hd, act, last)
     w_eager = _weights(pN_eager)
@@ -90,7 +90,7 @@ def test_graphed_segment_bitwise_equals_eager_no_rng():
     pN_graph.pRNN.to(dev)
     pN_graph.pRNN.train()
     images, hd, act, last = _one_segment(pN_graph)
-    a_graph = PRNNAdapter(pN_graph, dev, pastSR=True, cuda_graph=True)
+    a_graph = PRNNAdapter(pN_graph, dev, action_offset=0, cuda_graph=True)
     assert a_graph.cuda_graph
     a_graph.train_on_episode(images, hd, act, last)
     w_graph = _weights(pN_graph)
@@ -120,7 +120,7 @@ def test_raw_to_roundtrip_invalidates_captured_graphs():
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     images, hd, act, last = _one_segment(pN)
 
     adapter.train_on_episode(images, hd, act, last)  # captures
@@ -168,7 +168,7 @@ def test_on_device_preserves_addresses_so_graphs_survive_the_spatial_eval():
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     images, hd, act, last = _one_segment(pN)
 
     adapter.train_on_episode(images, hd, act, last)  # captures
@@ -210,7 +210,7 @@ def test_recapture_preserves_optimizer_state():
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     images, hd, act, last = _one_segment(pN)
 
     for _ in range(8):  # accumulate real optimizer state
@@ -244,7 +244,7 @@ def test_graphed_segment_runs_with_rng():
     pN.pRNN.to(dev)
     pN.pRNN.train()
     images, hd, act, last = _one_segment(pN)
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     w0 = _weights(pN).clone()
     adapter.train_on_episode(images, hd, act, last)
     w1 = _weights(pN)
@@ -287,7 +287,7 @@ def _run_pooled(*, cuda_graph: bool, dropp: float, noise: tuple[float, float]):
     pN = _make_pN(dropp=dropp, noise=noise)
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=cuda_graph)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=cuda_graph)
     obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
     if cuda_graph:
         assert adapter._use_graph_wm(), "pooled graph path not engaged"
@@ -330,7 +330,7 @@ def test_pooled_graph_advances_weights_every_replay():
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
     trainer = _GraphWMTrainer(pN, dev)
 
@@ -352,7 +352,7 @@ def test_pooled_and_serial_graphs_do_not_collide():
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     obs_b, act_b = _pooled_batch(pN, adapter, 1)
     trainer = _GraphWMTrainer(pN, dev)
 
@@ -372,7 +372,7 @@ def test_ragged_final_group_gets_its_own_graph():
     pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
     pN.pRNN.to(dev)
     pN.pRNN.train()
-    adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=True)
+    adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=True)
     obs_b, act_b = _pooled_batch(pN, adapter, 3)
     trainer = _GraphWMTrainer(pN, dev)
 
@@ -415,7 +415,7 @@ def test_graphed_training_survives_repeated_spatial_evals(pooled):
         pN = _make_pN(dropp=0.0, noise=(0.0, 0.0))
         pN.pRNN.to(dev)
         pN.pRNN.train()
-        adapter = PRNNAdapter(pN, dev, pastSR=True, cuda_graph=graphed)
+        adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=graphed)
         segs = [_one_segment(pN, k) for k in range(3)]
         moved = []
         for k in range(3):

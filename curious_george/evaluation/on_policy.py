@@ -383,7 +383,7 @@ class OnPolicyAnalysis:
                 prnn_seqdur=PPOalgo.prnn_seqdur,
                 intrinsic=PPOalgo.intrinsic,
                 k_int=PPOalgo.k_int,
-                pastSR=PPOalgo.pastSR,
+                action_offset=PPOalgo.action_offset,
                 curious_agent=PPOalgo.curious_agent,
                 k_curious=PPOalgo.k_curious,
             )
@@ -399,7 +399,7 @@ class OnPolicyAnalysis:
                 "preprocess_obss",
                 "intrinsic",
                 "k_int",
-                "pastSR",
+                "action_offset",
                 "curious_agent",
                 "k_curious",
             ]

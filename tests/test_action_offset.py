@@ -69,7 +69,7 @@ def _rows(offset, segment):
     obss, acts, last = segment
     env = _env()
     pN = _net(env)
-    ad = PRNNAdapter(pN, torch.device("cpu"), pastSR=offset == 0)
+    ad = PRNNAdapter(pN, torch.device("cpu"), action_offset=offset)
     obs_f, act_f = ad.seq2pred(list(obss) + [last], acts)
     with torch.no_grad():
         x, target, _ = pN.pRNN.restructure_inputs(obs_in=obs_f, act=act_f)
@@ -145,7 +145,7 @@ def test_boundary_bootstrap_reads_the_new_episode(offset):
     ac = ACModelSR(obs_space, env.action_space, HIDDEN, False, True, True)
     algo = PredictivePPOAlgo(
         env, ac, pN, torch.device("cpu"), num_frames=2 * L, prnn_seqdur=L,
-        pastSR=offset == 0, curious_agent=True, reward_alignment="next_obs",
+        action_offset=offset, curious_agent=True, reward_alignment="next_obs",
         train_pN=False, epochs=1, batch_size=2 * L, preprocess_obss=pre, noise_std=0.0,
     )
     exps, _ = algo.collect_experiences()
@@ -188,7 +188,7 @@ def test_batched_tracker_matches_two_serial_streams(offset):
     B, T, CUT = 2, 8, 4
     envs = [_env(seed=SEED + i) for i in range(B)]
     pN = _net(envs[0])
-    ad = PRNNAdapter(pN, torch.device("cpu"), pastSR=offset == 0)
+    ad = PRNNAdapter(pN, torch.device("cpu"), action_offset=offset)
 
     rng = np.random.default_rng(SEED)
     obss = [[e.reset()] for e in envs]
