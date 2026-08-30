@@ -848,8 +848,56 @@ def _ultra() -> Config:
     )
 
 
+def _parity() -> Config:
+    """The accelerated single L-room the circuit A/B is defined against.
+
+    89,980,928 environment steps at 43,936 world-model and 175,744 policy
+    gradient steps - the shape every `*-parity` run in wandb holds, starting
+    from `mila-parity-e0.001_curious_26-08-27-14-32-32`. Everything here is a
+    knob the arms hold FIXED.
+
+    The two knobs UNDER TEST are deliberately left at their defaults so they
+    have to be typed to be changed, and the changed variable is therefore always
+    visible on the command line:
+
+        main_train.py parity                                # offset 0, the unchanged circuit
+        main_train.py parity --arch-prnn.action-offset 1     # the new circuit
+        main_train.py parity --train-policy.entropy-coef 0.005
+
+    `entropy_coef` is the exception: 0.001 is what the reference ran, so it is
+    set here rather than left at Config()'s 0.0, which would reproduce nothing.
+
+    NOT a replacement for `reference`, which names the SERIAL baseline and is
+    what older runs and `tests/test_configs.py` mean by the word.
+    """
+    base = Config()
+    return replace(
+        base,
+        collect=replace(
+            base.collect, backend=EnvBackend.DEVICE, num_envs=256,
+            episodes_per_env=1, episode_steps=256, rollout_cuda_graph=True,
+        ),
+        train_prnn=replace(
+            base.train_prnn, batched=True, batched_curiosity=True,
+            episodes_per_grad_step=8, compile=CompileMode.LAYER,
+            cuda_graph=True, total_grad_steps=43_936,
+        ),
+        train_policy=replace(
+            base.train_policy, total_grad_steps=175_744, cuda_graph=True,
+            entropy_coef=0.001,
+        ),
+        eval=replace(
+            base.eval, analysis_every_steps=3_333_328, plot_every_steps=7_499_989
+        ),
+        run=replace(
+            base.run, save_every_steps=8_388_608, archive_every_steps=8_388_608
+        ),
+    )
+
+
 PRESETS: dict[str, tuple[str, Config]] = {
     "reference": ("serial static L-room baseline", _reference()),
+    "parity": ("accelerated static L-room, 90.0M env steps (the A/B shape)", _parity()),
     "multienv": ("multi-room, pooled world model", _multienv()),
     "ultra": ("measured high-throughput static L-room", _ultra()),
 }
