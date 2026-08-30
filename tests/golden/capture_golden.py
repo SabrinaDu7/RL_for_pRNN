@@ -27,7 +27,8 @@ FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
     golden_v0.pt  pre-migration stack (SabrinaDu7 prnn). Kept for the legacy tree.
     golden_v1.pt  post-migration, valid up to and including `37aaa1b`.
     golden_v2.pt  from `d275149` on.
-    golden_v3.pt  from the UpdateLogs epoch-averaging fix on. <- current
+    golden_v3.pt  from the UpdateLogs epoch-averaging fix on.
+    golden_v4.pt  from the readout OUTPUT BIAS on (prnn 4ec775ed). <- current
 
 `d275149` ("rl: remove dead `recurrence`") removed a code path that silently
 dropped one transition on odd epochs, so the policy minibatches changed and
@@ -40,6 +41,16 @@ downstream of it moved.
 
 The bump went unnoticed for three days because nothing ran this file.
 `tests/golden/test_golden.py` now does.
+
+v3 -> v4: `prnn` gained a trainable bias on the observation readout
+(`Architectures.b_out`, its own `OutputBias` optimizer group). At INIT it is
+zero and RNG-neutral, so a fresh network is bit-identical to a v3 one - the
+construction deliberately attaches zeros rather than passing `bias=True`, which
+would have drawn `init.uniform_` and shifted every later RNG draw. It diverges
+only once it LEARNS: after the fixture's two updates it reaches max |b| = 4.5e-2,
+and because the pRNN's prediction error IS the curiosity reward, all 9 shared
+prnn tensors move (max 3.3e-3), 11 leaves of `rounds` and 8 of `acmodel_state`.
+So unlike v2, round 0's rollout is NOT bitwise here.
 
 v2 -> v3 is a REPORTING change, not a dynamics one, and the fixture proves it:
 hoisting the eager `UpdateLogs` accumulators out of the PPO epoch loop moved
@@ -68,7 +79,7 @@ FRAMES = 64
 SEQDUR = 32
 UPDATES = 2
 DEVICE = torch.device("cpu")
-OUT = "tests/golden/golden_v3.pt"  # see FIXTURE VERSIONS in the module docstring
+OUT = "tests/golden/golden_v4.pt"  # see FIXTURE VERSIONS in the module docstring
 
 
 def build_fixture() -> dict:

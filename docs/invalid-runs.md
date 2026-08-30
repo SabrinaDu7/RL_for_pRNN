@@ -15,6 +15,48 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `sdu/optim-pred` — the readout output bias · 2026-08-30
+
+**What changed.** `prnn` `4ec775ed`: the observation readout
+(`Architectures.outlayer`) gained a trainable bias, `b_out`, with its own
+`OutputBias` optimizer group (unscaled lr, `weight_decay=0`). Re-pinned here in
+the same change; golden fixture bumped `golden_v3.pt` -> `golden_v4.pt`.
+
+**Why.** The target's mean is ~0.40 and the readout had `bias=False`, so that
+constant had to be synthesized as `W_out . h` — from a vector that is 55% exactly
+zero and whose mean moves every timestep. Measured symptom on an 83.9M-step
+checkpoint, 100,352 target pixels: the network recovers only 69-85% of each
+object colour's spread (blue 0.559 against a 0.647 target), while the agent's own
+triangle — centre of every view, no inference required — is recovered at 101%.
+The shortfall tracks PREDICTABILITY, not pixel frequency.
+
+**What it invalidates, and what it does NOT.**
+
+A network at INIT is bit-identical across this line: the bias is zero and its
+construction is RNG-neutral (attached as zeros rather than via `bias=True`, which
+would draw `init.uniform_` and shift every later draw — verified, the next
+`torch.rand` moves 0.0373173952 -> 0.8484520912).
+
+It diverges once the bias LEARNS. After the golden's two updates, max |b_out| =
+4.5e-2, all 9 shared prnn tensors have moved (max 3.3e-3), and — because the
+pRNN's prediction error IS the curiosity reward — 11 leaves of `rounds` and 8 of
+`acmodel_state` move with them. **So any run crossing this line is not comparable
+to one before it on prediction loss, curiosity reward, or any policy metric.**
+
+**Checkpoints stay loadable and exact.** `load_pN` zero-fills a missing
+`outlayer.0.bias` and still raises on anything else missing or unexpected; a zero
+bias is the same function as no bias, so a pre-bias checkpoint loads unchanged
+rather than approximately so. `tests/golden/test_golden_eval.py`, which scores a
+tracked pre-bias checkpoint, stays bitwise green across the line.
+
+**A trap this nearly hit.** `predictiveNet` builds its optimizer from explicit
+named parameter groups, not `parameters()`, so a registered Parameter with no
+group is one no optimizer ever sees. The first version of this change had the
+bias sitting at zero forever — a completely silent no-op. It was caught only
+because the training golden showed the bias still exactly zero after two updates.
+
+---
+
 ## `d6ace4c` .. `edce59f` — the config cutover · 2026-08-26
 
 **What changed.** Hydra YAML was replaced by typed dataclasses
