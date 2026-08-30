@@ -1,11 +1,14 @@
 #!/bin/bash
 # Multi-room training on the 5 (or 10) selected rooms, either affordance.
 #
-#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch]
+#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps]
 #     impassable : "true" | "false"   (default false, i.e. the walkable arm)
 #     n          : rooms, 1..10       (default 5)
 #     seed       : run.seed           (default 2)
 #     branch     : default sdu/multienv
+#     wm_grad_steps : world-model gradient steps; policy is held at 4x. Empty
+#                     uses the preset's 43,936 (~43 min of training alone).
+#                     21968 halves it to ~21 min.
 #
 # WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
 # to be selected before its fields exist:
@@ -36,12 +39,21 @@
 
 set -eo pipefail
 IMP="${1:-false}"; N="${2:-5}"; SEED="${3:-2}"; BRANCH="${4:-sdu/multienv}"
+# World-model gradient steps; the policy's is held at 4x, which is the ratio the
+# parity shape fixes and what keeps ppo_batch_size at 2048. Empty = the preset's
+# own 43,936. Measured: multi-room runs at ~35,120 env steps/s against
+# single-room's ~54,300, so the full budget is ~43 min of training BEFORE the
+# analysis events - which is why a half budget exists. Per-room sRSA over the
+# walkable run went 0.617 -> 0.713 -> 0.786 -> 0.795 -> 0.804, so half the
+# budget buys nearly all of the quality.
+WM="${5:-}"
 case "$IMP" in
   true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
   false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
   *) echo "impassable must be true or false, got $IMP" >&2; exit 1 ;;
 esac
-NAME="mx-${TAG}-n${N}-s${SEED}"
+NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}"
+BUDGET=${WM:+--train-prnn.total-grad-steps $WM --train-policy.total-grad-steps $((WM*4))}
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)"
 echo "$NAME  ($TAG, n=$N, seed=$SEED, branch=$BRANCH)"
@@ -78,7 +90,7 @@ trap save EXIT
 # `tests/test_slurm_invocations.py` parses this exact line so the next reorder
 # fails at gate time instead of after a GPU allocation.
 uv run python main_train.py multienv-fast \
-    --run.seed "$SEED" --run.exp-name "$NAME" \
+    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET \
     env.source:selected --env.source.n "$N" "$FLAG" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback

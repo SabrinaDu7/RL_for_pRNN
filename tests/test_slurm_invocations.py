@@ -22,6 +22,9 @@ BINDINGS = {
     "SEED": "3", "NAME": "test-run", "N": "5",
     "FLAG": "--env.source.impassable", "ENT": "0.003", "OFFSET": "1",
     "POLICY_GRAPH": "", "RAMP": "",
+    # A budget override, so the flags it injects are parsed too. Its 1:4
+    # world-model:policy ratio is what keeps ppo_batch_size at 2048.
+    "BUDGET": "--train-prnn.total-grad-steps 21968 --train-policy.total-grad-steps 87872",
 }
 
 
