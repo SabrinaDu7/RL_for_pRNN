@@ -102,3 +102,32 @@ def test_random_actions_survive_the_rollout_cuda_graph():
     # forward-weighted, not uniform; loose because the sample is small
     assert acts.mean() > 0, "all-zero actions means the draw never ran"
     assert 0.35 < (acts == 2).mean() < 0.85, f"forward fraction {(acts == 2).mean()}"
+
+
+def test_the_random_baseline_trains_its_world_model():
+    """The bug that made the first baseline meaningless.
+
+    `update_params` gated the POLICY and the world model together, so passing
+    False to stop policy updates silently trained nothing - and the run scored
+    sRSA 0.06, which is the UNTRAINED score and looks like a finding.
+    """
+    from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
+
+    cfg = small_config(backend=EnvBackend.SERIAL_TABLE)
+    cfg = dataclasses.replace(
+        cfg, arch_policy=dataclasses.replace(cfg.arch_policy, agent=AgentType.RANDOM)
+    )
+    algo = setup_training(cfg).algo
+    before = [p.detach().clone() for p in algo.pN.pRNN.parameters()]
+    policy_before = [p.detach().clone() for p in algo.acmodel.parameters()]
+
+    exps, _ = algo.collect_experiences()
+    algo.update_parameters(exps=exps, update_params=False, update_world_model=True)
+
+    moved = any(not torch.equal(a, b)
+                for a, b in zip(before, algo.pN.pRNN.parameters()))
+    frozen = all(torch.equal(a, b)
+                 for a, b in zip(policy_before, algo.acmodel.parameters()))
+    assert moved, "the world model did not train - the baseline would be an untrained net"
+    assert frozen, "the policy trained; the baseline is supposed to hold it still"

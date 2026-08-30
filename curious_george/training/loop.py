@@ -239,6 +239,9 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                     not cfg.arch_policy.freeze_params
                     and cfg.arch_policy.agent is not AgentType.RANDOM
                 ),
+                # The BASELINE trains its world model on random-walk data - that
+                # is the whole measurement. Only the POLICY stands still.
+                update_world_model=not cfg.arch_policy.freeze_params,
             )
             logs = {**logs1, **logs2}
 

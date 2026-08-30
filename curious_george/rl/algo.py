@@ -411,7 +411,19 @@ class PredictivePPOAlgo:
 
         return result.exps, result.logs
 
-    def update_parameters(self, exps, update_params=True):
+    def update_parameters(self, exps, update_params=True, update_world_model=None):
+        """`update_params` gates the POLICY; `update_world_model` gates the pRNN.
+
+        They used to be one flag, and that conflation is a defect: a random-agent
+        BASELINE wants the world model trained on random-walk data while the
+        policy takes no steps, and there was no way to say so. Passing
+        update_params=False silently trained nothing, and the run scored sRSA
+        0.06 - the UNTRAINED score - which looks like a finding rather than a
+        bug.
+
+        `None` follows `update_params`, preserving every existing caller
+        including `arch_policy.freeze_params`.
+        """
         # below has to be done so that exps can be batched
         done_indices = exps.done_indices.copy()
         last_observations = exps.last_observations.copy()
@@ -454,7 +466,9 @@ class PredictivePPOAlgo:
             graph_trainer=self._policy_graph,
         )
 
-        if self.train_pN and update_params:
+        if update_world_model is None:
+            update_world_model = update_params
+        if self.train_pN and update_world_model:
             self.adapter.to(self.device)
             train_world_model_on_episodes(
                 self.adapter, exps, done_indices, last_observations,
