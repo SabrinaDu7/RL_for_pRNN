@@ -72,9 +72,14 @@ DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p "$DEST"
 save () { rsync -a outputs/ "$DEST/outputs/" 2>/dev/null || true; }
 trap save EXIT
 
+# ORDER IS LOAD-BEARING. tyro applies an option to the directly preceding
+# subcommand, so every preset-level flag must come BEFORE `env.source:selected`;
+# putting --run.seed after it makes it "unrecognized". This cost jobs 10563252-4.
+# `tests/test_slurm_invocations.py` parses this exact line so the next reorder
+# fails at gate time instead of after a GPU allocation.
 uv run python main_train.py multienv-fast \
-    env.source:selected --env.source.n "$N" "$FLAG" \
     --run.seed "$SEED" --run.exp-name "$NAME" \
+    env.source:selected --env.source.n "$N" "$FLAG" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback
 # because the tail showed the config dump instead of the error.
