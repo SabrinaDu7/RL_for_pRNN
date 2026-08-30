@@ -72,7 +72,7 @@ DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p "$DEST"
 save () { rsync -a outputs/ "$DEST/outputs/" 2>/dev/null || true; }
 trap save EXIT
 
-uv run python main_train.py multienv \
+uv run python main_train.py multienv-fast \
     env.source:selected --env.source.n "$N" "$FLAG" \
     --run.seed "$SEED" --run.exp-name "$NAME" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
