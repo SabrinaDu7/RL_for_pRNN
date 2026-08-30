@@ -27,6 +27,7 @@ BINDINGS = {
     "BUDGET": "--train-prnn.total-grad-steps 21968 --train-policy.total-grad-steps 87872",
     "AGENTFLAG": "--arch-policy.agent RANDOM",
     "NORMFLAG": "--train-policy.normalize-advantage",
+    "ENTFLAG": "--train-policy.entropy-coef 0.024",
 }
 
 

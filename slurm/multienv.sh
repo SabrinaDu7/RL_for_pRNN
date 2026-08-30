@@ -1,7 +1,7 @@
 #!/bin/bash
 # Multi-room training on the 5 (or 10) selected rooms, either affordance.
 #
-#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent] [norm]
+#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent] [norm] [entropy]
 #     impassable : "true" | "false"   (default false, i.e. the walkable arm)
 #     n          : rooms, 1..10       (default 5)
 #     seed       : run.seed           (default 2)
@@ -12,6 +12,7 @@
 #     agent      : "random" for the BASELINE (actions from RAND_ACT_PROBA, no
 #                  policy updates), empty for the learned policy.
 #     norm       : "norm" to whiten the advantage per minibatch, empty for raw.
+#     entropy    : train_policy.entropy_coef; empty uses the preset's 0.003.
 #
 # WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
 # to be selected before its fields exist:
@@ -57,12 +58,19 @@ AGENT="${6:-}"
 # to ~1, so entropy_coef means something ~8x weaker with it on and the measured
 # 0.003 knee does NOT carry over - re-sweep before trusting a comparison.
 NORM="${7:-}"
+# train_policy.entropy_coef. Empty uses the preset's 0.003.
+# ⚠️ 0.003 is the knee for RAW advantages. Whitening raises |adv| from ~0.12 to
+# ~1, so the ratio entropy_coef/|adv| falls 8x and 0.003 becomes far too WEAK -
+# measured, the whitened arms collapsed for 67-70% of updates. The ratio-matched
+# value under whitening is ~0.024.
+ENT="${8:-}"
 case "$IMP" in
   true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
   false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
   *) echo "impassable must be true or false, got $IMP" >&2; exit 1 ;;
 esac
-NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}${NORM:+-$NORM}"
+NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}${NORM:+-$NORM}${ENT:+-e$ENT}"
+ENTFLAG=${ENT:+--train-policy.entropy-coef $ENT}
 # tyro takes the enum MEMBER NAME, not its value: --arch-policy.agent RANDOM.
 case "$NORM" in
   ""|raw) NORMFLAG= ;;
@@ -111,7 +119,7 @@ trap save EXIT
 # `tests/test_slurm_invocations.py` parses this exact line so the next reorder
 # fails at gate time instead of after a GPU allocation.
 uv run python main_train.py multienv-fast \
-    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET $AGENTFLAG $NORMFLAG \
+    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET $AGENTFLAG $NORMFLAG $ENTFLAG \
     env.source:selected --env.source.n "$N" "$FLAG" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback
