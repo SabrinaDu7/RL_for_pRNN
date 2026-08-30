@@ -74,11 +74,21 @@ def _device_policy_obss(images, directions, acmodel):
 #: `training.setup.RAND_ACT_PROBA`, `circuit_diagnostics.PROBE_ACTION_P` and a
 #: bare literal in `checkpoint_series` - which is a defect, not a convention.
 #: Imported here rather than copied so this is not a fifth.
-def _random_actions(n: int, device: torch.device) -> torch.Tensor:
+def random_action_probs(n: int, device: torch.device) -> torch.Tensor:
+    """The (n, A) probability table to sample from. Built ONCE, outside any
+    CUDA-graph capture: `torch.as_tensor(..., device=...)` is a host-to-device
+    copy, and capture forbids those - it fails with "operation not permitted
+    when stream is capturing" rather than degrading. Two cluster jobs died on
+    it before this was hoisted."""
     from curious_george.log_and_store.storage import RAND_ACT_PROBA
 
     probs = torch.as_tensor(RAND_ACT_PROBA, dtype=torch.float32, device=device)
-    return torch.multinomial(probs.expand(n, -1), num_samples=1).squeeze(1)
+    return probs.expand(n, -1).contiguous()
+
+
+def _random_actions(probs: torch.Tensor) -> torch.Tensor:
+    """Capture-safe: only a multinomial draw on an existing device tensor."""
+    return torch.multinomial(probs, num_samples=1).squeeze(1)
 
 
 @dataclass
@@ -190,6 +200,11 @@ def collect_rollout(
 
     diagnostics_env = envs if pool is not None or device_pool is not None else envs[0]
     joint = new_joint_probabilities(diagnostics_env, getattr(acmodel, "act_dim"))
+
+    # Built once per rollout, never inside the timestep loop.
+    random_probs = (
+        random_action_probs(B, device) if cfg.random_actions else None
+    )
 
     obss = None if device_pool is not None else [[None] * T for _ in range(B)]
     locs = None if device_pool is not None else [[None] * T for _ in range(B)]
@@ -327,7 +342,7 @@ def collect_rollout(
                     dist, value = acmodel(preprocessed, SR=state.sr)
             with timer("collect/policy/sample"):
                 action = (
-                    _random_actions(dist.probs.shape[0], device)
+                    _random_actions(random_probs)
                     if cfg.random_actions
                     else dist.sample()  # based on SR from step t-1
                 )

@@ -40,10 +40,11 @@ def test_random_actions_follow_the_projects_distribution():
     so the baseline's behaviour matches what the eval machinery assumes.
     """
     from curious_george.log_and_store.storage import RAND_ACT_PROBA
-    from curious_george.rl.collect.collector import _random_actions
+    from curious_george.rl.collect.collector import _random_actions, random_action_probs
 
     torch.manual_seed(0)
-    draws = _random_actions(40_000, torch.device("cpu")).numpy()
+    probs = random_action_probs(40_000, torch.device("cpu"))
+    draws = _random_actions(probs).numpy()
     seen = np.bincount(draws, minlength=len(RAND_ACT_PROBA)) / len(draws)
     assert np.allclose(seen, RAND_ACT_PROBA, atol=0.01), f"{seen} vs {RAND_ACT_PROBA}"
 
@@ -71,3 +72,33 @@ def test_both_agents_collect_through_the_same_path(agent):
     # every action is a legal index, whichever agent produced it
     acts = np.asarray(exps.action.cpu()).reshape(-1)
     assert acts.min() >= 0 and acts.max() < 4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU to capture")
+def test_random_actions_survive_the_rollout_cuda_graph():
+    """The regression that cost two cluster jobs.
+
+    Building the probability table inside the captured region is a
+    host-to-device copy, and capture REFUSES those - "operation not permitted
+    when stream is capturing" - rather than degrading. The table is therefore
+    built in `GraphRolloutStepper.prepare`, before `_capture_all`.
+    """
+    from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
+
+    cfg = small_config(backend=EnvBackend.DEVICE)
+    cfg = dataclasses.replace(
+        cfg,
+        collect=dataclasses.replace(cfg.collect, rollout_cuda_graph=True),
+        arch_policy=dataclasses.replace(cfg.arch_policy, agent=AgentType.RANDOM),
+    )
+    algo = setup_training(cfg).algo
+    seen = []
+    for _ in range(2):  # capture on the first, replay on the second
+        exps, _ = algo.collect_experiences()
+        seen.append(np.asarray(exps.action.cpu()).reshape(-1))
+    acts = np.concatenate(seen)
+    assert acts.min() >= 0 and acts.max() < 4
+    # forward-weighted, not uniform; loose because the sample is small
+    assert acts.mean() > 0, "all-zero actions means the draw never ran"
+    assert 0.35 < (acts == 2).mean() < 0.85, f"forward fraction {(acts == 2).mean()}"

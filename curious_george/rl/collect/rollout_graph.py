@@ -135,6 +135,7 @@ class GraphRolloutStepper:
         random_actions: bool = False,
     ) -> None:
         self.random_actions = random_actions
+        self._rand_probs = None
         self.acmodel = acmodel
         self.shim = tracker
         self.sr_tracker = tracker.tracker
@@ -215,7 +216,7 @@ class GraphRolloutStepper:
         # torch RNG op drawing from the graph-safe generator, exactly as
         # `dist.sample()` already did.
         action = (
-            _random_actions(dist.probs.shape[0], dist.probs.device)
+            _random_actions(self._rand_probs)
             if self.random_actions else dist.sample()
         )
 
@@ -295,6 +296,14 @@ class GraphRolloutStepper:
     # --- per-rollout / per-timestep -----------------------------------------
     def prepare(self, *, sr: torch.Tensor) -> None:
         """Ready the graphs for one rollout. Call before its first timestep."""
+        # BEFORE `_capture_all`, deliberately: a host-to-device copy inside a
+        # captured region raises "operation not permitted when stream is
+        # capturing" rather than degrading, and two cluster jobs died on exactly
+        # that. `sr` carries the batch, so the table needs no pool attribute.
+        if self.random_actions and self._rand_probs is None:
+            from curious_george.rl.collect.collector import random_action_probs
+
+            self._rand_probs = random_action_probs(sr.shape[0], sr.device)
         if self.graphs and self._addresses_now() != self._addresses:
             self.graphs.clear()
         if not self.graphs:
