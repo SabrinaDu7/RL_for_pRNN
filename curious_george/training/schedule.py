@@ -172,12 +172,28 @@ class TrainingSchedule:
 class EntropySchedule:
     """`entropy_coef` as a function of progress through the run.
 
-    Exists because policy collapse is a LATE phenomenon and a constant is the
-    wrong shape for it. Measured at 0, policy entropy holds near 1.43 at 20M
+    Collapse IS a late phenomenon: at `action_offset=1` and a flat 0.001 the
+    first excursion below 1.0 bits of policy entropy lands at 80.2% of training
+    (75.7% at flat 0.002), and at a flat 0 policy entropy holds near 1.43 at 20M
     environment steps and falls to 0.59-1.18 by 60-80M with mutual information
-    spiking inversely - the agent stops exploring and the world model's input
-    distribution lurches. A coefficient that RISES with progress puts the
-    resistance where the drift is.
+    spiking inversely.
+
+    🔴 BUT THE RAMP DOES NOT FIX IT, AND MAKES IT WORSE. Measured
+    (`mila-off1-e0.001to0.01-s2`, against the flat arms at matched gradient
+    steps): a 0.001 -> 0.01 ramp spends **13.3%** of updates below 1.0 bits
+    against flat 0.001's 1.9% and flat 0.003's 0.0%, starts collapsing at 35.2%
+    of training rather than 80.2%, and has the WORST prediction loss of every
+    arm run (0.00590). The reasoning "a rising coefficient puts the resistance
+    where the drift is" assumed collapse is driven by the CONTEMPORANEOUS
+    coefficient. It is not: at 35% of training the ramp already sits near
+    0.0042, above the flat 0.003 that never collapses at all. What matters is
+    whether the policy was allowed to sharpen EARLY, which a ramp specifically
+    permits.
+
+    Prefer a flat coefficient. 0.003 is the measured knee at `action_offset=1`:
+    the lowest value with a 0.0% collapse duty cycle, at a prediction loss
+    (0.00458) matching the offset-0 baseline and 3.7x the mutual information of
+    a flat 0.01.
 
     Both endpoints are measured, the middle is not: 0.0 drifts to 0.79-1.12 over
     a long run; 0.01 pins entropy near its 1.98 maximum and crushes mutual
