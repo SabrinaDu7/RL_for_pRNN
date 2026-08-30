@@ -1,99 +1,84 @@
 #!/bin/bash
+# Multi-room training on the 5 (or 10) selected rooms, either affordance.
+#
+#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch]
+#     impassable : "true" | "false"   (default false, i.e. the walkable arm)
+#     n          : rooms, 1..10       (default 5)
+#     seed       : run.seed           (default 2)
+#     branch     : default sdu/multienv
+#
+# WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
+# to be selected before its fields exist:
+#
+#     main_train.py multienv env.source:selected --env.source.n 5 --env.source.impassable
+#
+# `--env.source.impassable False` is NOT that - it is an unrecognized option
+# followed by a stray positional, and it cost job 10563027. `impassable` is a
+# bool, so the flag form is `--env.source.impassable` / `--env.source.no-impassable`.
+# The walkable arm needs no override at all: the preset already carries
+# `Selected(n=5, impassable=False)`.
+#
+# THE ROOMS ARE THE SAME IN BOTH ARMS. `Selected` pins ANCHORS and applies the
+# affordance on top, because the walkable and impassable admissible pools are
+# different sequences and 0 of the 5 indices name the same room in both. See
+# `envs/layouts.py::Selected` and `tests/test_selected_rooms.py`.
+#
 #SBATCH --job-name=multienv
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
 #SBATCH --error=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.err
 #SBATCH --partition=long
-#SBATCH --time=4-12:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --gres=gpu:1
-#
-# Multi-room pRNN training. Usage:
-#   sbatch slurm/multienv.sh rooms                    # run 1, L-room
-#   sbatch slurm/multienv.sh pool                     # run 2, L-room
-#   sbatch slurm/multienv.sh rooms squareroom_multi   # run 1, SQUARE room
-#   sbatch slurm/multienv.sh pool  squareroom_multi   # run 2, SQUARE room
-#
-# GPU on `long`, against train_prnn.sh's CPU/sapphire choice. Two reasons, and
-# the second is the practical one:
-#
-#   1. That verdict (async_bench_10111153: CUDA 558 FPS with the GPU ~91% idle
-#      vs 674 FPS on 16 CPUs; sapphire ~1270 FPS) was measured for SERIAL
-#      world-model training, where the bill is op COUNT. Pooling cuts trainStep
-#      calls 8x per update, which is exactly the quantity that verdict rested
-#      on. Locally the pooled path runs at ~2400 FPS on an RTX 4060.
-#   2. The CPU partitions are unusable right now - checked 2026-08-13, every
-#      sapphire node is reserved, draining or allocated, so a 16-CPU job queues
-#      indefinitely. `long` has 108 nodes in mixed state with free GPUs.
-#
-# So this is the available choice, not a re-measured one. FPS is logged; read it
-# from the run rather than trusting either number above.
-#
-# 4-12:00:00 against long's 7-day limit: 240,000 pooled gradient steps is 491.5M
-# environment steps. The run is EXPECTED to be cut off by the wall clock, which
-# is why archive_every_steps exists - the step-tagged series under
-# <run>/checkpoints/ is the deliverable, not a finished run.
+#SBATCH --time=01:30:00
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=48G
+#SBATCH --gres=gpu:l40s:1
+# GPU TYPE IS LOAD-BEARING: the same configuration measures 52.45 grad/s on an
+# L40S against 30.88 on a Quadro RTX 8000.
 
-set -eo pipefail   # NOT -u: WANDB_API_KEY is optional, creds come from ~/.netrc
-LAYOUTS="${1:-rooms}"
-ENVCFG="${2:-lroom_multi}"     # lroom_multi | squareroom_multi
-echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')   layouts=$LAYOUTS env=$ENVCFG"
+set -eo pipefail
+IMP="${1:-false}"; N="${2:-5}"; SEED="${3:-2}"; BRANCH="${4:-sdu/multienv}"
+case "$IMP" in
+  true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
+  false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
+  *) echo "impassable must be true or false, got $IMP" >&2; exit 1 ;;
+esac
+NAME="mx-${TAG}-n${N}-s${SEED}"
 
-module --force purge
-module load python/3.10
-export PATH="$HOME/.local/bin:$PATH"
+echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)"
+echo "$NAME  ($TAG, n=$N, seed=$SEED, branch=$BRANCH)"
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-# Cap torch/BLAS threads to the allocation: without this torch spawns one
-# thread per PHYSICAL core while the cgroup grants fewer, and update times go
-# from 4s to 51s (async_bench_10110503).
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module --force purge && module load python/3.10
+export PATH="$HOME/.local/bin:$PATH" PYTHONUNBUFFERED=1 CG_DEVICE=cuda
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export JOB_ID="${SLURM_JOB_NAME}_${SLURM_JOB_ID}" UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
 
-export JOB_ID="${SLURM_JOB_NAME}_${ENVCFG%%_*}_${LAYOUTS}_${SLURM_JOB_ID}"
-export CG_DEVICE=cuda
-export RL_STORAGE=$SLURM_TMPDIR/outputs/$JOB_ID
-export UV_CACHE_DIR=$SLURM_TMPDIR/uv_cache
+SRC=$HOME/experiments/RL_for_pRNN
+mkdir -p "$SCRATCH/pRNN"
+flock "$SCRATCH/pRNN/.gitfetch.lock" git -C "$SRC" fetch -q origin \
+  || echo "[git] fetch failed (concurrent job?); using $SRC as-is"
+git clone -q --shared "$SRC" "$SLURM_TMPDIR/RL_for_pRNN"
+cd "$SLURM_TMPDIR/RL_for_pRNN"
+git fetch -q "$SRC" "refs/remotes/origin/$BRANCH"
+git checkout -q --detach FETCH_HEAD
+echo "training $(git rev-parse --short HEAD)"
+
+# .env is COMMITTED and points RL_STORAGE at /home/sabrina; load_dotenv defaults
+# to override=False, so exporting wins.
+export RL_STORAGE="$SLURM_TMPDIR/RL_for_pRNN/outputs"
 mkdir -p "$RL_STORAGE"
+rm -rf .venv && uv venv .venv && source .venv/bin/activate && uv sync
 
-cd $HOME/experiments
-cp -r RL_for_pRNN $SLURM_TMPDIR/
-cd $SLURM_TMPDIR/RL_for_pRNN
+DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p "$DEST"
+save () { rsync -a outputs/ "$DEST/outputs/" 2>/dev/null || true; }
+trap save EXIT
 
-rm -rf .venv
-uv venv .venv
-source .venv/bin/activate
-uv sync
-
-# ~/.netrc already carries the credentials; the env var is an optional override.
-wandb login "${WANDB_API_KEY:-}" >/dev/null 2>&1 || true
-
-# Checkpoints live in node-local $SLURM_TMPDIR, which is destroyed when the job
-# ends - including when it is killed or times out, which this job is expected
-# to be. Sync every 10 min, not 30: at archive_every_steps the series grows
-# faster than the old cadence preserved it.
-export DEST_DIR="$SCRATCH/pRNN/$JOB_ID"
-mkdir -p "$DEST_DIR"
-( while true; do sleep 600; rsync -a "$RL_STORAGE/" "$DEST_DIR/"; done ) &
-SYNC_PID=$!
-trap 'kill $SYNC_PID 2>/dev/null || true; rsync -a "$RL_STORAGE/" "$DEST_DIR/" || true' EXIT
-
-case "$ENVCFG" in
-  squareroom_multi) SHAPE="--env.shape.room MiniGrid-SquareRoom-v0" ;;
-  *)                SHAPE="" ;;
-esac
-case "$LAYOUTS" in
-  one)   SOURCE="env.source:frozen";  EXTRA="--env.indices 0" ;;
-  rooms) SOURCE="env.source:frozen";  EXTRA="" ;;
-  pool)  SOURCE="env.source:uniform"; EXTRA="" ;;
-  *)     echo "layouts must be one|rooms|pool, got $LAYOUTS" >&2; exit 1 ;;
-esac
-
-# The source subcommand goes LAST: tyro binds an option to the directly
-# preceding subcommand, so anything after it is unrecognized.
-uv run main_train.py multienv $SHAPE $EXTRA \
-    --run.exp-name "multienv-${ENVCFG%%_*}-$LAYOUTS" \
-    $SOURCE
-
-kill $SYNC_PID 2>/dev/null || true
-rsync -a "$RL_STORAGE/" "$DEST_DIR/"
-cp /home/mila/d/dus/scratch/pRNN/logs/$SLURM_JOB_NAME*$SLURM_JOB_ID* "$DEST_DIR/" || true
+uv run python main_train.py multienv \
+    env.source:selected --env.source.n "$N" "$FLAG" \
+    --run.seed "$SEED" --run.exp-name "$NAME" \
+    > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
+# Never pipe through `tail` alone: a job once died with no visible traceback
+# because the tail showed the config dump instead of the error.
+grep -vE '^Processing|^\s*$' "$DEST/train.log" | tail -30
+[ -n "${TRAIN_RC:-}" ] && { echo "TRAINING FAILED rc=$TRAIN_RC"; tail -40 "$DEST/train.log"; exit $TRAIN_RC; }
+save
+echo "results in $DEST"
