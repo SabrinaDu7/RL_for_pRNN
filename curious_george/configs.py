@@ -32,6 +32,7 @@ from curious_george.envs.layouts import (
     EnvContent,
     Frozen,
     EnvDefault,
+    Selected,
     EnvShape,
     LandmarkKind,
     RoomRules,
@@ -821,25 +822,47 @@ def _reference() -> Config:
 
 
 def _multienv() -> Config:
-    """Multi-room training, pooled world-model steps.
+    """Multi-room training on the `parity` shape: 5 rooms, WALKABLE landmarks.
+
+    Rebuilt 2026-08-30. The previous version described no run that had ever
+    happened - 491,520,000 environment steps at `num_envs=8` with
+    `entropy_coef=0.01` and `Frozen()` - while every real multi-room run used the
+    parity collection shape at 256 envs. It also predated the speed work, so a
+    preset-launched run was 3.4x slower than it needed to be (8,700 against
+    29,700 environment steps/s, `docs/claude_logs/compaction-2026-08-28.md`).
+
+    THE ROOM SET IS PINNED BY ANCHOR, and that is the whole design. `Selected`
+    carries the affordance, so one flag turns this into the impassable arm over
+    the SAME five rooms:
+
+        main_train.py multienv                              # walkable
+        main_train.py multienv --env.source.impassable True # impassable
+        main_train.py multienv --env.source.n 10 ...        # ten rooms
+
+    Selecting by INDEX cannot express that: impassable landmarks admit 9,074
+    placements against walkable's 19,820, so the two pools are different
+    sequences and 0 of the 5 indices name the same room in both. Measured, and
+    the reason `Selected` exists.
+
+    BEHAVIOUR is in `evals` because it is what logs `OPA_Occupancy_Map` - the
+    visitation heatmap that says whether the policy collapsed.
+
+    ⚠️ `rooms_max=5` and the analysis cadence, NOT the training loop, size this
+    run: `EvalCfg.rooms_max` puts one event (multi-room at 4 plus behaviour) at
+    ~88 s, and this scores five rooms. Six events is the budget that keeps the
+    whole run near 30 minutes; raise `analysis_every_steps` to trade curve
+    resolution for wall clock.
     """
-    base = Config()
+    base = _parity()
     return replace(
         base,
-        env=EnvCfg(source=Frozen()),
-        collect=replace(base.collect, backend=EnvBackend.DEVICE),
-        train_prnn=replace(
-            base.train_prnn, batched=True, episodes_per_grad_step=8,
-            batched_curiosity=True, total_grad_steps=240_000,
-        ),
-        train_policy=replace(base.train_policy, total_grad_steps=3_840_000, entropy_coef=0.01),
+        env=EnvCfg(source=Selected(n=5, impassable=False)),
         eval=replace(
             base.eval,
             evals=frozenset({EvalKind.SPATIAL_MULTIROOM, EvalKind.BEHAVIOUR}),
-            analysis_every_steps=4_194_304,
-            plot_every_steps=20_971_520,
+            rooms_max=5,
+            analysis_every_steps=15_000_000,
         ),
-        run=replace(base.run, save_every_steps=1_048_576, archive_every_steps=10_485_760),
     )
 
 

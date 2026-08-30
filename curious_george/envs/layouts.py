@@ -510,6 +510,78 @@ ROOMS_SQUARE: tuple = tuple(
     )
 )
 
+# The rooms Sabrina selected by hand from the Q3 pool, pinned by ANCHOR.
+#
+# Committed rather than re-derived, for the reason `Committed`'s docstring gives:
+# a generator change would silently make these refer to different rooms. But the
+# stronger reason is specific to this set - the anchors come from the IMPASSABLE
+# pool, and `admissible_placements` takes `content`, so impassable landmarks
+# admit 9,074 placements against walkable's 19,820. The two pools are DIFFERENT
+# SEQUENCES: measured, 0 of the 5 selected indices refer to the same room in
+# both. Selecting by index therefore cannot express "the same rooms, walkable" -
+# only an anchor-pinned set can, which is what makes the affordance contrast
+# single-variable.
+#
+# The affordance is applied by `Selected`, not baked here; these carry the
+# default `impassable=False` and are rebuilt per arm.
+#
+# Re-derive (all 10 keys must match the comment on each row):
+#     uv run python -c "
+#     from curious_george.envs.layouts import *
+#     r = resolve_rooms(shape=EnvShape('MiniGrid-LRoom-v0'),
+#         content=EnvContent(kinds=tuple(LandmarkKind(s, impassable=True)
+#                                        for s in ('x','plus','block3'))),
+#         source=Uniform(n=200, seed=7),
+#         set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})))
+#     print([(i, r[i].key) for i in (0,14,31,35,83,126,144,169,191,195)])"
+ROOMS_SELECTED: tuple[Layout, ...] = tuple(
+    Layout(tuple(Landmark(shape, color, anchor) for shape, color, anchor in spec))
+    for spec in (
+        # index   0, key 3066247d
+        (("x", "blue", (5, 3)), ("plus", "green", (3, 10)), ("block3", "red", (12, 5))),
+        # index  14, key c0520c0f
+        (("x", "blue", (9, 5)), ("plus", "green", (4, 12)), ("block3", "red", (3, 5))),
+        # index  31, key e5189419
+        (("x", "blue", (6, 4)), ("plus", "green", (12, 6)), ("block3", "red", (8, 12))),
+        # index  35, key 3ee49d95
+        (("x", "blue", (3, 11)), ("plus", "green", (6, 4)), ("block3", "red", (12, 4))),
+        # ⚠️ index 83 differs from index 0 ONLY in the x anchor, (6,3) against
+        # (5,3) - one cell. The first five rooms carry less configuration
+        # diversity than "five rooms" suggests; say so with any per-room result.
+        # index  83, key 6f5e993b
+        (("x", "blue", (6, 3)), ("plus", "green", (3, 10)), ("block3", "red", (12, 5))),
+        # index 126, key c7073822
+        (("x", "blue", (4, 12)), ("plus", "green", (11, 3)), ("block3", "red", (4, 6))),
+        # index 144, key 9380723c
+        (("x", "blue", (8, 11)), ("plus", "green", (10, 3)), ("block3", "red", (4, 3))),
+        # index 169, key ca2a3d9a
+        (("x", "blue", (6, 4)), ("plus", "green", (12, 3)), ("block3", "red", (4, 11))),
+        # index 191, key a31257da
+        (("x", "blue", (10, 4)), ("plus", "green", (7, 11)), ("block3", "red", (4, 5))),
+        # index 195, key 7165ad4e
+        (("x", "blue", (3, 3)), ("plus", "green", (6, 10)), ("block3", "red", (10, 4))),
+    )
+)
+
+
+def with_affordance(rooms: tuple[Layout, ...], *, impassable: bool) -> list[Layout]:
+    """The same rooms, at the other affordance.
+
+    Anchors, shapes and colours are the room's IDENTITY; whether the agent can
+    stand on a landmark is a property of the run. `Obstacle` and `Floor` render
+    identically at every tile size (`LandmarkKind.impassable`), so this changes
+    what the agent can DO and nothing about what it SEES - which is the whole
+    reason the walkable and impassable arms are comparable.
+    """
+    return [
+        Layout(tuple(
+            Landmark(lm.shape, lm.color, lm.anchor, impassable=impassable)
+            for lm in room.landmarks
+        ))
+        for room in rooms
+    ]
+
+
 #: The `-Multi-v0` variants accept a `landmarks=` argument; the plain ids ship
 #: their own landmarks and do not. Which one a run builds follows from whether
 #: it specifies a room set at all.
@@ -834,6 +906,35 @@ class Curated:
 
 
 @dataclass(frozen=True)
+class Selected:
+    """The first `n` of `ROOMS_SELECTED`, at the affordance this run wants.
+
+    A HAND-CHOSEN subset, which is what distinguishes it from its neighbours:
+    `Curated` picks algorithmically under `RoomSetRules`, `Frozen` names the one
+    committed set per shape, and `Committed` takes literal rooms but holds struct
+    types tyro will not build a parser for. This is CLI-reachable - an int and a
+    bool - which is what lets one flag flip the affordance and nothing else.
+
+        --env.source:selected --env.source.n 5 --env.source.impassable True
+
+    `impassable` lives HERE and not on `EnvContent.kinds` on purpose. Putting it
+    on the content would feed it to `admissible_placements`, which is what makes
+    the walkable and impassable pools different sequences in the first place;
+    pinning the anchors and applying the affordance afterwards is what keeps the
+    two arms the same rooms.
+    """
+
+    n: int = 5
+    impassable: bool = True
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.n <= len(ROOMS_SELECTED):
+            raise ValueError(
+                f"Selected.n must be 1..{len(ROOMS_SELECTED)}, got {self.n}"
+            )
+
+
+@dataclass(frozen=True)
 class Uniform:
     """`n` rooms drawn uniformly from the admissible set. No design criteria -
     a broad sample, where degeneracy between any two rooms does not matter."""
@@ -842,7 +943,7 @@ class Uniform:
     seed: int = 20260813
 
 
-RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform]
+RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform, Selected]
 
 #: A placement: one anchor per landmark, in `EnvContent.kinds` order.
 AnchorSet = tuple[tuple[int, int], ...]
@@ -1085,6 +1186,12 @@ def resolve_rooms(
     elif isinstance(source, Frozen):
         rooms = list(
             ROOMS_SQUARE if shape.room == SQUARE_ROOM_ID else ROOMS_RUN1
+        )
+    elif isinstance(source, Selected):
+        # `content` is deliberately NOT consulted: the anchors are pinned and the
+        # affordance is the source's own field. See `Selected`.
+        rooms = with_affordance(
+            ROOMS_SELECTED[: source.n], impassable=source.impassable
         )
     else:
         placements = admissible_placements(shape, content, room_rules)
