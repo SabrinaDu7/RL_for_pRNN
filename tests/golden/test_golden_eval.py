@@ -8,6 +8,13 @@ failure modes a cosmetic refactor can cause:
     test_golden_eval  "same weights => same metrics"  - catches a metric whose
                       MEANING changed, with training reproducibility irrelevant
 
+Run for BOTH circuits (`arch_prnn.action_offset` 0 and 1), because the offset-1
+path had no pinned values before: `tests/test_action_offset.py` pins
+EQUIVALENCES there - device == table, batched == serial - and an equivalence
+survives a refactor that moves both sides together. Each circuit gates its own
+path and the two are NOT comparable to each other; `capture_golden_eval.py`
+says why.
+
 `capture_golden_eval.py` owns the fixture and the reference weights; see its
 docstring for how to re-pin against a different checkpoint.
 
@@ -19,7 +26,9 @@ import pytest
 import torch
 
 from tests.golden.capture_golden import compare_fixtures
-from tests.golden.capture_golden_eval import CKPT_DIR, OUT, build_fixture
+from tests.golden.capture_golden_eval import (
+    CIRCUIT_FIXTURES, CKPT_DIR, build_fixture, fixture_path,
+)
 
 #: Every metric the fixture pins, so a failure names which one moved rather
 #: than reporting "the fixture differs".
@@ -35,17 +44,28 @@ METRICS = (
 )
 
 
-@pytest.fixture(scope="module")
-def reference_and_fresh():
+@pytest.fixture(scope="module", params=sorted(CIRCUIT_FIXTURES))
+def reference_and_fresh(request):
+    """(pinned fixture, freshly computed one) for one circuit."""
+    action_offset = request.param
     assert CKPT_DIR.is_dir(), (
         f"reference weights missing at {CKPT_DIR}. They are TRACKED in this repo; "
         "a clean clone should have them."
     )
-    assert OUT.exists(), (
-        f"missing {OUT}. Capture it from a tree whose behaviour is reviewed:\n"
+    path = fixture_path(action_offset)
+    assert path.exists(), (
+        f"missing {path}. Capture it from a tree whose behaviour is reviewed:\n"
         f"  uv run python tests/golden/capture_golden_eval.py --recapture"
     )
-    return torch.load(OUT, weights_only=False), build_fixture()
+    return torch.load(path, weights_only=False), build_fixture(action_offset)
+
+
+def test_the_fixture_is_the_circuit_it_claims(reference_and_fresh):
+    """A fixture captured at the other circuit would report every metric as a
+    regression. Name the mismatch instead."""
+    reference, fresh = reference_and_fresh
+    assert reference["meta"]["action_offset"] == fresh["meta"]["action_offset"]
+    assert reference["meta"]["reward_alignment"] == fresh["meta"]["reward_alignment"]
 
 
 @pytest.mark.parametrize("metric", METRICS)
