@@ -298,8 +298,34 @@ sampled actions, and new injected pRNN noise (`trainNoiseMeanStd` is deliberatel
 through `eval_mode`, per the same function's comment).
 
 That is the mechanism behind the 0.068-0.114 adjacent-sample band, and it is a defect, not
-a property of the representation. Until it is fixed, no sRSA difference in this project
-smaller than ~0.11 means anything.
+a property of the representation.
+
+**Measured.** ONE fixed checkpoint (`offset0-parity` @ 83,886,080 steps), scored repeatedly
+through the same call `training/loop.py` makes, with a random agent so coverage cannot move
+either:
+
+| | repeats | mean | sd | range |
+|---|---|---|---|---|
+| `sRSA` as the loop calls it (no `probe_seed`) | 6 | 0.6537 | 0.0181 | **0.0596** |
+| `SWdist` as the loop calls it | 6 | 0.1470 | 0.0363 | **0.1174** |
+| `sRSA` WITH `probe_seed=20260829` | 4 | 0.6660 | **0.0000** | **0.0000** |
+
+The weights never changed. The fix exists, is exact, and is wired to nothing.
+
+🔴 **This retroactively voids the SWdist comparisons in this document.** Its estimator
+range on a frozen checkpoint is 0.117, and the largest between-arm SWdist difference
+reported anywhere above is 0.090 - 0.062 = 0.028. SWdist as currently measured has no
+resolving power at all, in either direction.
+
+And for completeness on "is the policy in eval mode": `evaluate_spatial_representation`
+appends `agent.acmodel` to the modules it calls `.eval()` on, but `ACModelSR` contains only
+`Linear` and `ReLU` (the conv stack exists only at `with_CV=True`, which these runs do not
+use), so that `.eval()` is a NO-OP for the forward pass - the module is in the list for the
+CPU device move, which `tests/test_cuda_graph_policy.py:177` states. `eval_mode` also takes
+an `agent` argument whose job is to force `agent.argmax = True`, and the call does not pass
+it, so actions are `dist.sample()`. For an ON-policy metric that is arguably right - argmax
+would score a greedy policy that never ran - but it is undocumented and it is a third
+unpinned source on top of the start position and the noise draw.
 
 ## Next
 

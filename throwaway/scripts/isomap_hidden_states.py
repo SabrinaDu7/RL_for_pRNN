@@ -65,6 +65,11 @@ import torch
 #: cells and would say nothing about spatial structure.
 from curious_george.evaluation.circuit_diagnostics import PROBE_ACTION_P, PROBE_SEED
 
+#: Mutable so `--probe-seed` can re-roll the TRAJECTORY. Isomap itself has no
+#: seed - it is an eigendecomposition of a fixed neighbourhood graph - so the
+#: only stochastic input to this whole script is which cells the walker visited.
+PROBE = {"seed": PROBE_SEED}
+
 ONSET = 20  # matches evaluation/checkpoint_series.ONSET: drop the startup transient
 
 
@@ -134,7 +139,7 @@ def make_probe_env(hidden_size: int):
         env_key=MinigridEnvNames.LRoom,
         input_type=AgentInputType.H_PO.value,
         act_enc=ActionEncodingsEnum.SpeedHD.value,
-        seed=PROBE_SEED,
+        seed=PROBE['seed'],
     )
 
 
@@ -147,9 +152,9 @@ def collect_probe(*, env, n_segments: int, steps: int):
     there: the encoding is the thing that differs between arms, so it happens
     later, per arm.
     """
-    rng = np.random.default_rng(PROBE_SEED)
-    torch.manual_seed(PROBE_SEED)
-    env.env.reset(seed=PROBE_SEED)
+    rng = np.random.default_rng(PROBE['seed'])
+    torch.manual_seed(PROBE['seed'])
+    env.env.reset(seed=PROBE['seed'])
     segments = []
     for _ in range(n_segments):
         obs = env.reset()
@@ -188,7 +193,7 @@ def hidden_activity(*, pN, adapter, segments):
             # zero state, so every arm sees one realisation of the injected
             # noise rather than its own draw. The noise itself stays on: it is
             # the model's dynamics, not an artefact (evaluation/spatial.py).
-            torch.manual_seed(PROBE_SEED)
+            torch.manual_seed(PROBE['seed'])
             _, _, h = pN.predict(
                 obs_f, act_f,
                 state=torch.zeros((1, 1, pN.hidden_size), device=obs_f.device),
@@ -295,10 +300,14 @@ def main() -> None:
                     help="RGA.defaultMetric, and what SWdist already scores h with")
     ap.add_argument("--max-points", type=int, default=900,
                     help="points subsampled for the pairwise-distance statistics")
+    ap.add_argument("--probe-seed", type=int, default=PROBE_SEED,
+                    help="re-rolls the TRAJECTORY, the script's only stochastic "
+                         "input; Isomap itself is deterministic given the points")
     ap.add_argument("--out", type=Path,
                     default=Path("outputs/figures/isomap_hidden_states.png"))
     a = ap.parse_args()
 
+    PROBE["seed"] = a.probe_seed
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -425,7 +434,7 @@ def main() -> None:
     fig.savefig(a.out, dpi=150)
     payload = {
         "probe": {"n_segments": a.n_segments, "steps": a.steps, "onset": ONSET,
-                  "seed": PROBE_SEED, "action_p": list(PROBE_ACTION_P),
+                  "seed": a.probe_seed, "action_p": list(PROBE_ACTION_P),
                   "agent": "random (coverage identical across arms)"},
         "isomap": {"n_neighbors": a.n_neighbors, "n_components": a.n_components,
                    "metric": a.metric, "max_points": a.max_points,
