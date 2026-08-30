@@ -20,12 +20,19 @@ conflates firing-RATE magnitude with firing PATTERN. `n_components=3` is what
 RING for both circuits - a 2-D sheet curved in 3-D cannot be flattened without
 one, which is an artefact of the component count and not a fact about the map.
 
-WHY A RANDOM AGENT, NOT THE TRAINED POLICY. `action_offset=1` collapses the
-policy transiently (1.9-21% of updates below 1.0 bits, against 0.0% for every
-offset-0 run), so an on-policy probe confounds "the map changed" with "the
-agent stopped visiting the room". A seeded random walker has IDENTICAL coverage
-in every arm, which makes this a measurement of the representation alone. Same
-argument `throwaway/ported/trace/srsa_repeats.py` makes for its own default.
+THE AGENT. `--agent policy` (the default) runs the run's OWN trained policy with
+everything in eval: `acmodel.eval()`, `pN.eval()` - which is what disables the
+0.15 input dropout - and `argmax=True`, so actions are the distribution's peak
+rather than a sample. That is the policy bare, with no stochasticity of its own.
+`with_CV` is untouched by any of this: it is a CONSTRUCTOR argument read from
+`arch_policy.with_obs` (False in these runs), not a mode flag.
+
+`--agent random` is kept as the CONTROL, and reading both matters. A trained
+policy's coverage differs between arms - `action_offset=1` collapses transiently
+- so an on-policy embedding confounds "the map changed" with "the agent stopped
+visiting the room". The random walker's coverage is identical in every arm. The
+script therefore reports DISTINCT CELLS VISITED for whatever agent it ran, so
+the confound is a number on the page rather than an assumption.
 
 ONE trajectory, replayed through every checkpoint. Observations depend on the
 room and the actions, never on the network, so a single collection is valid for
@@ -37,9 +44,13 @@ because `action_offset` changes which action shares a row with `obs[t]`.
 CONTROLS, both computed from the same pipeline as the measurement:
   negative  positions shuffled  -> distance correlation must fall to ~0. If it
             does not, the statistic is reading something other than space.
-  positive  the true (x, y) themselves pushed through the identical Isomap and
-            scoring path -> the ceiling this estimator can reach on this many
-            points. The measurement is read as a fraction of that, not of 1.0.
+  positive  the ROOM'S OWN walkable cells pushed through the identical Isomap
+            and scoring path -> the ceiling this estimator can reach on this
+            geometry. Computed on the room rather than on the trajectory's
+            positions, because a low-coverage trajectory repeats a few cells
+            thousands of times and Isomap on duplicated points degenerates -
+            which produced a "ceiling" BELOW the measurement it was supposed to
+            bound. The measurement is read as a fraction of this, not of 1.0.
 
     uv run python throwaway/scripts/isomap_hidden_states.py \\
         outputs/offset0-parity_curious_26-08-29-02-10-39 \\
@@ -71,6 +82,12 @@ from curious_george.evaluation.circuit_diagnostics import PROBE_ACTION_P, PROBE_
 PROBE = {"seed": PROBE_SEED}
 
 ONSET = 20  # matches evaluation/checkpoint_series.ONSET: drop the startup transient
+
+
+def _nullcontext():
+    from contextlib import nullcontext
+
+    return nullcontext()
 
 
 @dataclass(frozen=True)
@@ -129,6 +146,34 @@ def latest_checkpoint(run_dir: Path, step: int | None) -> tuple[int, Path]:
     return match[0]
 
 
+def build_agent(*, kind: str, run_dir: Path, step: int, pN, cfg, env):
+    """The run's own policy in full eval, or the seeded random control."""
+    import torch as _torch
+
+    from curious_george.evaluation.checkpoint_series import archived_policies
+    from curious_george.log_and_store.storage import get_SR_acmodel, get_agent
+    from curious_george.rl.collect.format import get_obss_preprocessor
+    from curious_george.utils.enums import AgentType
+
+    if kind == "random":
+        return get_agent(env=env, agent_Type=AgentType.RANDOM,
+                         rand_act_prob=np.array(PROBE_ACTION_P)), None
+    policies = archived_policies(run_dir)
+    if step not in policies:
+        raise SystemExit(
+            f"{run_dir.name} has no archived policy at step {step:,} - runs "
+            f"finished before 2026-08-28 kept only a rolling policy.pt. "
+            f"Available: {sorted(policies)}"
+        )
+    obs_space, _ = get_obss_preprocessor(env.observation_space)
+    acmodel = get_SR_acmodel(cfg, env.action_space, obs_space,
+                             _torch.device("cpu"), str(policies[step]))
+    agent = get_agent(env=env, agent_Type=AgentType.AC, prnn=pN,
+                      device=_torch.device("cpu"), ac_model=acmodel,
+                      argmax=True, pastSR=cfg.arch_prnn.action_offset == 0)
+    return agent, acmodel
+
+
 def make_probe_env(hidden_size: int):
     """The default L-room, exactly as the A/B arms trained in it."""
     from prnn.utils import ActionEncodingsEnum, MinigridEnvNames
@@ -143,7 +188,7 @@ def make_probe_env(hidden_size: int):
     )
 
 
-def collect_probe(*, env, n_segments: int, steps: int):
+def collect_probe(*, env, agent, extra_eval, n_segments: int, steps: int):
     """Raw (observations, actions, final observation, positions) per segment.
 
     Mirrors `circuit_diagnostics.collect_segments`, which cannot be called
@@ -152,23 +197,22 @@ def collect_probe(*, env, n_segments: int, steps: int):
     there: the encoding is the thing that differs between arms, so it happens
     later, per arm.
     """
-    rng = np.random.default_rng(PROBE['seed'])
-    torch.manual_seed(PROBE['seed'])
-    env.env.reset(seed=PROBE['seed'])
+    from curious_george.models.device import eval_mode
+
+    torch.manual_seed(PROBE["seed"])
+    np.random.seed(PROBE["seed"])
+    env.env.reset(seed=PROBE["seed"])
     segments = []
-    for _ in range(n_segments):
-        obs = env.reset()
-        obss, acts = [], []
-        pos = [np.array(env.get_agent_pos(), dtype=float)]
-        hd = [int(env.get_agent_dir())]
-        for _ in range(steps):
-            a = int(rng.choice(len(PROBE_ACTION_P), p=PROBE_ACTION_P))
-            obss.append(obs)
-            acts.append(a)
-            obs = env.step(np.array([a]))[0]
-            pos.append(np.array(env.get_agent_pos(), dtype=float))
-            hd.append(int(env.get_agent_dir()))
-        segments.append((obss, np.array(acts), obs, np.stack(pos), np.array(hd)))
+    modules = [agent.prnn] if hasattr(agent, "prnn") else []
+    modules += [extra_eval] if extra_eval is not None else []
+    with eval_mode(modules) if modules else _nullcontext():
+        for _ in range(n_segments):
+            obs, act, state, _ = agent.getObservations(env, steps)
+            segments.append((
+                obs[:-1], np.asarray(act).reshape(-1), obs[-1],
+                np.asarray(state["agent_pos"], dtype=float),
+                np.asarray(state["agent_dir"]).reshape(-1).astype(int),
+            ))
     return segments
 
 
@@ -223,11 +267,18 @@ def _distance_spearman(a, b, *, rng, max_points: int, metric_a: str = "euclidean
 
 
 def _head_direction_decodable(h, hd, *, seed: int) -> tuple[float, float]:
-    """Held-out balanced accuracy of a linear head-direction readout from `h`."""
+    """Held-out balanced accuracy of a linear head-direction readout from `h`.
+
+    NaN when only one head direction is present - which is the case for the
+    positive control, whose points are room CELLS and carry no head direction.
+    A one-class fit is not a chance-level result, so it is not reported as one.
+    """
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import balanced_accuracy_score
     from sklearn.model_selection import train_test_split
 
+    if len(np.unique(hd)) < 2:
+        return (float("nan"), float("nan"))
     X_tr, X_te, y_tr, y_te = train_test_split(
         h, hd, test_size=0.3, random_state=seed, stratify=hd)
     clf = LogisticRegression(max_iter=2000).fit(X_tr, y_tr)
@@ -300,6 +351,10 @@ def main() -> None:
                     help="RGA.defaultMetric, and what SWdist already scores h with")
     ap.add_argument("--max-points", type=int, default=900,
                     help="points subsampled for the pairwise-distance statistics")
+    ap.add_argument("--agent", default="policy", choices=("policy", "random"),
+                    help="policy = the run's own network, fully in eval "
+                         "(acmodel.eval, pN.eval, argmax); random = the "
+                         "coverage-matched control")
     ap.add_argument("--probe-seed", type=int, default=PROBE_SEED,
                     help="re-rolls the TRAJECTORY, the script's only stochastic "
                          "input; Isomap itself is deterministic given the points")
@@ -339,13 +394,19 @@ def main() -> None:
         adapter = PRNNAdapter(pN, torch.device("cpu"), pastSR=offset == 0)
         assert adapter.action_offset == offset, "adapter and run disagree on the circuit"
 
-        segments = collect_probe(env=env, n_segments=a.n_segments, steps=a.steps)
+        agent, acmodel = build_agent(kind=a.agent, run_dir=run_dir, step=step,
+                                     pN=pN, cfg=cfg, env=env)
+        segments = collect_probe(env=env, agent=agent, extra_eval=acmodel,
+                                 n_segments=a.n_segments, steps=a.steps)
         h, pos, hd = hidden_activity(pN=pN, adapter=adapter, segments=segments)
         emb, fid = measure(h=h, pos=pos, hd=hd, n_neighbors=a.n_neighbors,
                            n_components=a.n_components, metric=a.metric,
                            max_points=a.max_points)
+        cells = len({tuple(p) for p in pos})
         label = f"action_offset={offset}  {run_dir.name}"
         print(f"\n{label}  @ {step:,} env steps  ({fid.n_points} rows)")
+        print(f"   distinct cells visited      {cells}/{len(walkable)}"
+              f"   <- coverage; NOT matched across arms when --agent policy")
         print(f"   embedding vs space          {fid.embedding_vs_space:+.4f}")
         print(f"   ... WITHIN head direction   "
               f"{fid.embedding_vs_space_within_head_direction:+.4f}   <- the place code")
@@ -355,18 +416,19 @@ def main() -> None:
         print(f"   head direction from h       {fid.head_direction_accuracy:.4f} "
               f"(chance {fid.head_direction_chance:.4f})")
         results.append({"run": run_dir.name, "step": step, "action_offset": offset,
-                        **asdict(fid)})
+                        "agent": a.agent, "distinct_cells": cells,
+                        "walkable_cells": len(walkable), **asdict(fid)})
         embeddings.append((label, emb, pos, hd))
 
     # POSITIVE CONTROL: the true positions through the identical pipeline. The
     # ceiling the estimator can reach on this many points - the measurements
     # above are read as a fraction of THIS, never of 1.0.
-    pos_ref, hd_ref = embeddings[0][2], embeddings[0][3]
-    ctrl_emb, ctrl = measure(h=pos_ref, pos=pos_ref, hd=hd_ref,
-                             n_neighbors=a.n_neighbors, n_components=2,
-                             metric="euclidean", max_points=a.max_points)
-    print(f"\npositive control (true positions through the same pipeline): "
-          f"embedding vs space {ctrl.embedding_vs_space:+.4f}")
+    ctrl_emb, ctrl = measure(
+        h=walkable, pos=walkable, hd=np.zeros(len(walkable), dtype=int),
+        n_neighbors=min(a.n_neighbors, len(walkable) // 4), n_components=2,
+        metric="euclidean", max_points=a.max_points)
+    print(f"\npositive control (the room's {len(walkable)} walkable cells through "
+          f"the same pipeline): embedding vs space {ctrl.embedding_vs_space:+.4f}")
 
     # TWO rows, because the position panel alone cannot tell a place code from a
     # HEAD-DIRECTION code. HD is fed into every input row, it is cyclic with four
@@ -379,8 +441,11 @@ def main() -> None:
     fig.suptitle(
         "What does the pRNN's hidden state embed: the room, or the head direction?\n"
         f"Isomap n_components={a.n_components}, metric={a.metric}, "
-        f"n_neighbors={a.n_neighbors} (prnn repo conventions) - identical "
-        "embedding in both rows, only the COLOUR VARIABLE changes", fontsize=12)
+        f"n_neighbors={a.n_neighbors} (prnn repo conventions); agent={a.agent}"
+        + (" in FULL EVAL (acmodel.eval, pN.eval, argmax)"
+           if a.agent == "policy" else " (coverage matched across arms)")
+        + " - identical embedding in both rows, only the COLOUR VARIABLE changes",
+        fontsize=11)
 
     ax = fig.add_subplot(2, ncol, 1)
     ax.scatter(walkable[:, 0], walkable[:, 1],
@@ -417,6 +482,7 @@ def main() -> None:
         fid = results[i]
         scatter3(i + 2, emb, position_colors(pos, lo=lo, hi=hi),
                  f"{label}\ncoloured by POSITION\n"
+                 f"{fid['distinct_cells']}/{fid['walkable_cells']} cells visited\n"
                  f"embedding vs space {fid['embedding_vs_space']:+.3f}   "
                  f"within head direction "
                  f"{fid['embedding_vs_space_within_head_direction']:+.3f}\n"
@@ -435,7 +501,7 @@ def main() -> None:
     payload = {
         "probe": {"n_segments": a.n_segments, "steps": a.steps, "onset": ONSET,
                   "seed": a.probe_seed, "action_p": list(PROBE_ACTION_P),
-                  "agent": "random (coverage identical across arms)"},
+                  "agent": a.agent},
         "isomap": {"n_neighbors": a.n_neighbors, "n_components": a.n_components,
                    "metric": a.metric, "max_points": a.max_points,
                    "settings_from": "prnn: RGA.defaultMetric='cosine', "
