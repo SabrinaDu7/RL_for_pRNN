@@ -25,6 +25,7 @@ BINDINGS = {
     # A budget override, so the flags it injects are parsed too. Its 1:4
     # world-model:policy ratio is what keeps ppo_batch_size at 2048.
     "BUDGET": "--train-prnn.total-grad-steps 21968 --train-policy.total-grad-steps 87872",
+    "AGENTFLAG": "--arch-policy.agent RANDOM",
 }
 
 

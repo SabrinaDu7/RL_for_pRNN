@@ -132,7 +132,9 @@ class GraphRolloutStepper:
         pool,  # DeviceTableShellPool
         num_steps: int,
         device: torch.device,
+        random_actions: bool = False,
     ) -> None:
+        self.random_actions = random_actions
         self.acmodel = acmodel
         self.shim = tracker
         self.sr_tracker = tracker.tracker
@@ -200,7 +202,7 @@ class GraphRolloutStepper:
     def _region(self) -> None:
         """One timestep, in the order collect_rollout runs it: policy forward,
         record, environment step, pRNN step."""
-        from curious_george.rl.collect.collector import _device_policy_obss
+        from curious_george.rl.collect.collector import _random_actions, _device_policy_obss
 
         b, t, pool = self.buffers, self.t_idx, self.pool
         images, directions = pool.observation_device()
@@ -208,7 +210,14 @@ class GraphRolloutStepper:
             dist, value = self.acmodel(
                 _device_policy_obss(images, directions, self.acmodel), SR=self._sr()
             )
-        action = dist.sample()
+        # `random_actions` is a Python constant for the run, so the branch is
+        # resolved at CAPTURE time - no graph-level branching. Both arms are a
+        # torch RNG op drawing from the graph-safe generator, exactly as
+        # `dist.sample()` already did.
+        action = (
+            _random_actions(dist.probs.shape[0], dist.probs.device)
+            if self.random_actions else dist.sample()
+        )
 
         b.masks.index_copy_(0, t, self.mask_row)
         b.srs.index_copy_(0, t, self._sr().unsqueeze(0))

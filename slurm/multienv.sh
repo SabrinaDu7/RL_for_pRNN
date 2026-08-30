@@ -1,7 +1,7 @@
 #!/bin/bash
 # Multi-room training on the 5 (or 10) selected rooms, either affordance.
 #
-#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps]
+#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent]
 #     impassable : "true" | "false"   (default false, i.e. the walkable arm)
 #     n          : rooms, 1..10       (default 5)
 #     seed       : run.seed           (default 2)
@@ -9,6 +9,8 @@
 #     wm_grad_steps : world-model gradient steps; policy is held at 4x. Empty
 #                     uses the preset's 43,936 (~43 min of training alone).
 #                     21968 halves it to ~21 min.
+#     agent      : "random" for the BASELINE (actions from RAND_ACT_PROBA, no
+#                  policy updates), empty for the learned policy.
 #
 # WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
 # to be selected before its fields exist:
@@ -47,12 +49,21 @@ IMP="${1:-false}"; N="${2:-5}"; SEED="${3:-2}"; BRANCH="${4:-sdu/multienv}"
 # walkable run went 0.617 -> 0.713 -> 0.786 -> 0.795 -> 0.804, so half the
 # budget buys nearly all of the quality.
 WM="${5:-}"
+# "random" makes actions come from RAND_ACT_PROBA instead of the policy, through
+# the SAME collector - the baseline the learned policy is measured against.
+AGENT="${6:-}"
 case "$IMP" in
   true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
   false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
   *) echo "impassable must be true or false, got $IMP" >&2; exit 1 ;;
 esac
-NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}"
+NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}"
+# tyro takes the enum MEMBER NAME, not its value: --arch-policy.agent RANDOM.
+case "$AGENT" in
+  ""|policy) AGENTFLAG= ;;
+  random|RANDOM) AGENTFLAG="--arch-policy.agent RANDOM" ;;
+  *) echo "agent must be random or empty, got $AGENT" >&2; exit 1 ;;
+esac
 BUDGET=${WM:+--train-prnn.total-grad-steps $WM --train-policy.total-grad-steps $((WM*4))}
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)"
@@ -90,7 +101,7 @@ trap save EXIT
 # `tests/test_slurm_invocations.py` parses this exact line so the next reorder
 # fails at gate time instead of after a GPU allocation.
 uv run python main_train.py multienv-fast \
-    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET \
+    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET $AGENTFLAG \
     env.source:selected --env.source.n "$N" "$FLAG" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback

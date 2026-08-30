@@ -225,14 +225,22 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             # (rl/algo.py), so a schedule needs no plumbing beyond this.
             algo.entropy_coef = entropy.at(num_frames)
 
-            if cfg.arch_policy.agent is AgentType.RANDOM:
-                logs = algo.randomAgent_collect_exp_and_update(comps.random_agent)
-            else:
-                exps, logs1 = algo.collect_experiences()
-                logs2 = algo.update_parameters(
-                    exps=exps, update_params=(not cfg.arch_policy.freeze_params)
-                )
-                logs = {**logs1, **logs2}
+            # ONE collection path for both agents. A random agent is the
+            # policy's BASELINE, so it has to differ from it in exactly one
+            # thing - action selection - and share the backend, the batch, the
+            # rooms and the world-model training. The retired
+            # `randomAgent_collect_exp_and_update` was a separate serial routine
+            # that forced `num_envs == 1`; that constraint was about the routine,
+            # never about random actions.
+            exps, logs1 = algo.collect_experiences()
+            logs2 = algo.update_parameters(
+                exps=exps,
+                update_params=(
+                    not cfg.arch_policy.freeze_params
+                    and cfg.arch_policy.agent is not AgentType.RANDOM
+                ),
+            )
+            logs = {**logs1, **logs2}
 
             update_duration = time.time() - update_start
             num_frames += logs["num_frames"]

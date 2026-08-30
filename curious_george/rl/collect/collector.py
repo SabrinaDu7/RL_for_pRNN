@@ -68,12 +68,35 @@ def _device_policy_obss(images, directions, acmodel):
     return DictList(data)
 
 
+#: The project's random-action distribution over (left, right, forward, pickup).
+#: Forward-weighted: a uniform walker mostly spins on the spot and covers little.
+#: ⚠️ This constant has FOUR spellings in the tree - `storage.RAND_ACT_PROBA`,
+#: `training.setup.RAND_ACT_PROBA`, `circuit_diagnostics.PROBE_ACTION_P` and a
+#: bare literal in `checkpoint_series` - which is a defect, not a convention.
+#: Imported here rather than copied so this is not a fifth.
+def _random_actions(n: int, device: torch.device) -> torch.Tensor:
+    from curious_george.log_and_store.storage import RAND_ACT_PROBA
+
+    probs = torch.as_tensor(RAND_ACT_PROBA, dtype=torch.float32, device=device)
+    return torch.multinomial(probs.expand(n, -1), num_samples=1).squeeze(1)
+
+
 @dataclass
 class RolloutConfig:
     num_frames: int
     device: torch.device
     prnn_seqdur: int = 0
     action_offset: int = 0
+    random_actions: bool = False
+    """Draw actions from `RANDOM_ACTION_PROBS` instead of the policy.
+
+    The BASELINE, and it goes through this same function on purpose: the point
+    of "how would a random walker do" is that everything except action selection
+    is held fixed - same backend, same batch, same rooms, same world-model
+    training. A separate serial routine (the retired
+    `randomAgent_collect_exp_and_update`) answered a different question and
+    forced `num_envs == 1` for reasons that were about that routine, not about
+    random actions."""
     curious_agent: bool = False
     reward_alignment: str = "legacy"
     intrinsic: bool = False
@@ -303,7 +326,11 @@ def collect_rollout(
                 with torch.no_grad():
                     dist, value = acmodel(preprocessed, SR=state.sr)
             with timer("collect/policy/sample"):
-                action = dist.sample()  # based on SR from step t-1
+                action = (
+                    _random_actions(dist.probs.shape[0], device)
+                    if cfg.random_actions
+                    else dist.sample()  # based on SR from step t-1
+                )
             with timer("collect/policy/action_to_host"):
                 # The device table consumes the sampled tensor directly.
                 # CPU/async environments still require this synchronizing D2H.

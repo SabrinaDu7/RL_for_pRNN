@@ -682,13 +682,12 @@ class Config:
     CROSS-SECTION PRECONDITIONS live here and nowhere else, because everything
     expressible inside one section is already a type error. What survives:
 
-      1. a RANDOM agent needs num_envs == 1
-      2. intrinsic rewards need num_envs == 1
-      3. early_stop needs a backend that measures return
-      4. episodes_per_grad_step divides episodes_per_rollout
-      5. SPATIAL_MULTIROOM iff the environment is multi-room
-      6. the derived ppo_batch_size is a positive integer dividing the rollout
-      7. a multi-room environment needs the DEVICE backend
+      1. intrinsic rewards need num_envs == 1
+      2. early_stop needs a backend that measures return
+      3. episodes_per_grad_step divides episodes_per_rollout
+      4. SPATIAL_MULTIROOM iff the environment is multi-room
+      5. the derived ppo_batch_size is a positive integer dividing the rollout
+      6. a multi-room environment needs the DEVICE backend
 
     Typed away, so absent: device implies table; device needs more than one
     instance; rollout graphs need device; the base room matching the environment
@@ -746,11 +745,6 @@ class Config:
     def __post_init__(self) -> None:
         has_rooms = self.env.has_room_set
 
-        if self.arch_policy.agent is AgentType.RANDOM and self.collect.num_envs != 1:
-            raise ValueError(
-                f"a RANDOM agent pre-generates one action stream; it needs "
-                f"num_envs == 1, got {self.collect.num_envs}"
-            )
         if self.train_policy.intrinsic and self.collect.num_envs != 1:
             raise ValueError(
                 f"intrinsic rewards are only implemented for one instance; got "

@@ -116,6 +116,7 @@ class PredictivePPOAlgo:
         # NOT 0: preserved verbatim from the `pastSR=False` this replaced.
         # Only direct constructions see it; setup_algo always passes one.
         action_offset: int = 1,
+        random_actions: bool = False,
         curious_agent=False,
         k_curious=1,
         reward_alignment="legacy",
@@ -178,6 +179,7 @@ class PredictivePPOAlgo:
         self._rollout_graph = None
         self.cuda_graph = cuda_graph
         self.action_offset = action_offset
+        self.random_actions = random_actions
         self.curious_agent = curious_agent
         self.k_curious = k_curious
         self.reward_alignment = reward_alignment
@@ -242,6 +244,7 @@ class PredictivePPOAlgo:
                 pool=self.envs,
                 num_steps=self.num_frames // self.num_envs,
                 device=self.device,
+                random_actions=self.random_actions,
             )
         self.state = CollectorState(
             obs_b=self._first_obs,
@@ -374,6 +377,7 @@ class PredictivePPOAlgo:
                 device=self.device,
                 prnn_seqdur=self.prnn_seqdur,
                 action_offset=self.action_offset,
+                random_actions=self.random_actions,
                 curious_agent=self.curious_agent,
                 reward_alignment=self.reward_alignment,
                 intrinsic=self.intrinsic,

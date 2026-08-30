@@ -90,8 +90,13 @@ def test_rollout_size_does_not_change_the_training_budget():
 @pytest.mark.parametrize(
     "label,build",
     [
-        ("random agent needs one instance",
-         lambda: Config(arch_policy=ArchPolicyCfg(agent=AgentType.RANDOM))),
+        # REMOVED 2026-08-30: "a random agent needs num_envs == 1". That was a
+        # property of `randomAgent_collect_exp_and_update`, a separate serial
+        # routine, and never of random action selection - and it combined with
+        # "a room set needs DEVICE" and "DEVICE needs num_envs > 1" to make a
+        # random-agent multi-room BASELINE unrepresentable. Random actions now
+        # go through `collect_rollout` like any other; see
+        # tests/test_random_agent_baseline.py.
         ("intrinsic needs one instance",
          lambda: Config(train_policy=TrainPolicyCfg(intrinsic=True))),
         ("early_stop needs measurable return",
