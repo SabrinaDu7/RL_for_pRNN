@@ -42,7 +42,7 @@ flat-0.001 run at seed 2.
 
 **So whether a rising coefficient helps is UNMEASURED.** An earlier version of
 this document reported it as refuted; that was wrong. The combination is now
-rejected in `TrainPolicyCfg.__post_init__`, and `slurm/action_offset_ab.sh`
+rejected in `TrainPolicyCfg.__post_init__`, and `slurm/parity.sh`
 drops the policy graph when a ramp is requested, so the next ramp arm will be
 real.
 
@@ -109,4 +109,8 @@ Two things worth fixing before spending cluster time on multi-room:
    directions costs about 4.6 s more per analysis event.
 
 `main_train.py parity` now defaults to `entropy_coef=0.003` for this reason.
-Reproduce any arm with `sbatch slurm/action_offset_ab.sh 1 0.003 <seed>`.
+Reproduce any arm with `sbatch slurm/parity.sh 1 0.003 <seed>`. Every argument
+is optional and an omitted one passes NO flag, so bare `sbatch slurm/parity.sh`
+runs the shipped defaults - which is what makes it a refactor check. The launcher
+no longer repeats the configuration; it runs the `parity` preset, which is its
+one home.

@@ -1,35 +1,31 @@
 #!/bin/bash
-# The action_offset A/B, at the mila-parity configuration, one arm per job.
+# The `parity` preset on the cluster, with optional overrides.
 #
-#   sbatch slurm/action_offset_ab.sh [offset] [entropy] [seed] [branch] [ent_final]
-#     offset    : 0 | 1 (arch_prnn.action_offset - which action shares a row
-#                        with obs[t]; see docs/action-offset-ab-2026-08-29.md)
-#     entropy   : train_policy.entropy_coef        (default 0.01)
-#     seed      : run.seed                         (default 2)
-#     branch    : branch to check out              (default sdu/predict-next-obs)
-#     ent_final : train_policy.entropy_coef_final; omit or "" for a CONSTANT
-#                 coefficient. Set it to ramp LINEARLY in environment steps
-#                 from `entropy` to this value (training/schedule.py's
-#                 EntropySchedule).
+#   sbatch slurm/parity.sh [offset] [entropy] [seed] [branch] [ent_final]
+#     every argument is OPTIONAL; omit one and the PRESET's own default is used
+#     and no flag is passed at all. `sbatch slurm/parity.sh` alone is therefore
+#     a test of the shipped defaults, which is what makes it useful as a
+#     "did the refactor break training" check.
 #
-# WHY THIS EXISTS RATHER THAN A train_fast.sh FLAG. train_fast.sh owns the 2-hour
-# multi-room production preset: its own budget, its own regime knobs, its own
-# `single` path that is NOT this configuration. This runs the configuration the
-# A/B is defined against - `mila-parity-e0.001_curious_26-08-27-14-32-32`,
-# verbatim - so the arms stay comparable to a run that already exists. Adding a
-# fifteenth positional argument to train_fast.sh would have made two experiments
-# share one budget and one set of defaults.
+#     offset    : arch_prnn.action_offset (0 | 1) - which action shares a row
+#                 with obs[t]; see docs/prnn-io-alignment.md
+#     entropy   : train_policy.entropy_coef. The preset's 0.003 is the MEASURED
+#                 knee (docs/entropy-sweep-and-noise-floor-2026-08-29.md).
+#     seed      : run.seed
+#     branch    : branch to check out (default main)
+#     ent_final : train_policy.entropy_coef_final; ramps LINEARLY in environment
+#                 steps. Setting it DISABLES the policy CUDA graph below - a
+#                 captured step bakes the coefficient in, so the ramp would
+#                 silently never happen, which is how job
+#                 mila-off1-e0.001to0.01-s2 was wasted. configs.py refuses the
+#                 combination outright.
 #
-# WHAT IT IS TESTING. At entropy_coef=0.001 the offset-1 policy collapses in both
-# local seeds: policy_entropy to 0.49/0.39 bits against offset 0's 1.45/1.51, and
-# spatial coverage to 2.84/2.78 bits against a flat ~7. Prediction loss is
-# IDENTICAL before the first collapse (ratio 0.998 and 1.050) and only diverges
-# as coverage falls, so the loss gap looks downstream of exploration rather than
-# intrinsic to the circuit. h[t] is a better basis for action selection than
-# h[t-1], so the same entropy bonus buys less resistance. Run the 2x2 -
-# {offset 0, offset 1} x {0.001, 0.01} - and the prediction is that offset 1 at
-# 0.01 holds coverage and closes most of the loss gap. If the gap SURVIVES stable
-# coverage, the explanation is wrong and the cost is intrinsic.
+# WHY THE CONFIG IS NOT REPEATED HERE. It used to be: this file carried the
+# whole `mila-parity` flag list while configs.py::_parity carried the same
+# numbers as a preset, and nothing checked that the two agreed. One fact, one
+# home - the preset. The gradient-step counts it fixes (43,936 world-model and
+# 175,744 policy over 89,980,928 environment steps) are printed by
+# TrainingSchedule.summary() at startup; read them there, not from a comment.
 #
 #SBATCH --job-name=offset_ab
 #SBATCH --output=/home/mila/d/dus/scratch/pRNN/logs/%x_%j.out
@@ -44,12 +40,13 @@
 # can land on a Turing node and be incomparable to its partner.
 
 set -eo pipefail
-OFFSET="${1:-1}"; ENT="${2:-0.01}"; SEED="${3:-2}"; BRANCH="${4:-sdu/predict-next-obs}"
-ENT_FINAL="${5:-}"
-case "$OFFSET" in 0|1) ;; *) echo "offset must be 0 or 1, got $OFFSET" >&2; exit 1 ;; esac
+# EMPTY means "do not pass the flag", so the preset's own default stands and
+# `sbatch slurm/parity.sh` tests exactly what ships.
+OFFSET="${1:-}"; ENT="${2:-}"; SEED="${3:-}"; BRANCH="${4:-main}"; ENT_FINAL="${5:-}"
+case "${OFFSET:-0}" in 0|1) ;; *) echo "offset must be 0 or 1, got $OFFSET" >&2; exit 1 ;; esac
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)"
-echo "action_offset=$OFFSET entropy_coef=$ENT${ENT_FINAL:+ -> $ENT_FINAL} seed=$SEED branch=$BRANCH"
+echo "overrides: offset=${OFFSET:-<preset>} entropy=${ENT:-<preset>}${ENT_FINAL:+ -> $ENT_FINAL} seed=${SEED:-<preset>} branch=$BRANCH"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 module --force purge && module load python/3.10
@@ -90,7 +87,8 @@ DEST="$SCRATCH/pRNN/$JOB_ID"; mkdir -p "$DEST"
 save () { rsync -a outputs/ "$DEST/outputs/" 2>/dev/null || true; }
 trap save EXIT
 
-NAME="mila-off${OFFSET}-e${ENT}${ENT_FINAL:+to$ENT_FINAL}-s${SEED}"
+NAME="parity${OFFSET:+-off$OFFSET}${ENT:+-e$ENT}${ENT_FINAL:+to$ENT_FINAL}${SEED:+-s$SEED}"
+[ "$NAME" = "parity" ] && NAME="parity-defaults"
 # Empty expands to NOTHING (unquoted, deliberately) so a constant-coefficient
 # run passes no flag at all and `entropy_coef_final` keeps its None default.
 RAMP=${ENT_FINAL:+--train-policy.entropy-coef-final $ENT_FINAL}
@@ -98,9 +96,11 @@ RAMP=${ENT_FINAL:+--train-policy.entropy-coef-final $ENT_FINAL}
 # --train-policy.cuda-graph is silently pinned at its start value - which is
 # exactly how job mila-off1-e0.001to0.01-s2 was wasted. configs.py now REFUSES
 # the combination, so drop the graph rather than let sbatch fail 20 minutes in.
-POLICY_GRAPH=--train-policy.cuda-graph
+# The PRESET already enables the policy graph, so the default override is
+# nothing; a ramp has to turn it OFF explicitly.
+POLICY_GRAPH=
 if [ -n "$ENT_FINAL" ]; then
-  POLICY_GRAPH=
+  POLICY_GRAPH=--train-policy.no-cuda-graph
   echo "[entropy ramp] policy CUDA graph DISABLED - a captured step cannot see"
   echo "[entropy ramp] a changing coefficient. This arm is NOT throughput-"
   echo "[entropy ramp] comparable to the graphed ones; compare on gradient steps."
@@ -108,20 +108,11 @@ fi
 # `mila-parity-e0.001_curious_26-08-27-14-32-32` verbatim, plus the two knobs
 # under test. The gradient-step counts are the ground truth the arms are matched
 # on: 43,936 world-model and 175,744 policy steps, 89,980,928 environment steps.
-uv run python main_train.py reference \
-    --collect.backend DEVICE --collect.num-envs 256 --collect.episodes-per-env 1 \
-    --collect.episode-steps 256 --collect.rollout-cuda-graph \
-    --train-prnn.batched --train-prnn.batched-curiosity \
-    --train-prnn.episodes-per-grad-step 8 --train-prnn.compile LAYER \
-    --train-prnn.cuda-graph --train-prnn.no-curiosity-cuda-graph \
-    --train-prnn.total-grad-steps 43936 \
-    --train-policy.total-grad-steps 175744 $POLICY_GRAPH \
-    --train-policy.entropy-coef "$ENT" $RAMP \
-    --arch-prnn.action-offset "$OFFSET" \
-    --run.wandb \
-    --eval.analysis-every-steps 3333328 --eval.plot-every-steps 7499989 \
-    --run.seed "$SEED" \
-    --run.save-every-steps 8388608 --run.archive-every-steps 8388608 \
+uv run python main_train.py parity \
+    ${OFFSET:+--arch-prnn.action-offset $OFFSET} \
+    ${ENT:+--train-policy.entropy-coef $ENT} \
+    ${SEED:+--run.seed $SEED} \
+    $POLICY_GRAPH $RAMP \
     --run.exp-name "$NAME" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe training output through `tail`: job 10444214 died with exit 1 and no

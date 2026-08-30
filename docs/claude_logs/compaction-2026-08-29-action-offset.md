@@ -169,7 +169,7 @@ docs/action-offset-ab-2026-08-29.md    the full result, all three stages
 outputs/figures/circuit-{current,desired}.png   the circuit, one timestep per column
 curious_george/evaluation/prediction_figures.py   trace_circuit / plot_circuit
 curious_george/evaluation/circuit_diagnostics.py  the three mechanism statistics
-slurm/action_offset_ab.sh              sbatch [offset] [entropy] [seed] [branch]
+slurm/parity.sh              sbatch [offset] [entropy] [seed] [branch]
 wandb blake-richards/curious-george    offset{0,1}-parity{,-s3}_*   (local, e=0.001)
                                        mila-off{0,1}-e{0.001,0.01}-s2_*  (the 2x2)
 ```
