@@ -26,6 +26,7 @@ BINDINGS = {
     # world-model:policy ratio is what keeps ppo_batch_size at 2048.
     "BUDGET": "--train-prnn.total-grad-steps 21968 --train-policy.total-grad-steps 87872",
     "AGENTFLAG": "--arch-policy.agent RANDOM",
+    "NORMFLAG": "--train-policy.normalize-advantage",
 }
 
 
@@ -45,7 +46,12 @@ def _invocation(script: Path) -> list[str]:
         return text if BINDINGS.get(var) else ""
 
     body = re.sub(r"\$\{(\w+):\+([^}]*)\}", conditional, body)
-    for name, value in BINDINGS.items():
+    # LONGEST NAME FIRST. `$N` is a prefix of `$NORMFLAG`, so substituting in
+    # dict order rewrote `$NORMFLAG` to `5ORMFLAG` - a silently corrupted flag
+    # that tyro then rejected. Any variable whose name prefixes another has this
+    # bug; sorting removes the whole class.
+    for name in sorted(BINDINGS, key=len, reverse=True):
+        value = BINDINGS[name]
         body = body.replace(f'"${name}"', value).replace(f"${name}", value)
     assert "$" not in body, f"unbound shell variable in {script.name}: {body}"
     return shlex.split(body)

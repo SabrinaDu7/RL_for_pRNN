@@ -1,7 +1,7 @@
 #!/bin/bash
 # Multi-room training on the 5 (or 10) selected rooms, either affordance.
 #
-#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent]
+#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent] [norm]
 #     impassable : "true" | "false"   (default false, i.e. the walkable arm)
 #     n          : rooms, 1..10       (default 5)
 #     seed       : run.seed           (default 2)
@@ -11,6 +11,7 @@
 #                     21968 halves it to ~21 min.
 #     agent      : "random" for the BASELINE (actions from RAND_ACT_PROBA, no
 #                  policy updates), empty for the learned policy.
+#     norm       : "norm" to whiten the advantage per minibatch, empty for raw.
 #
 # WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
 # to be selected before its fields exist:
@@ -52,13 +53,22 @@ WM="${5:-}"
 # "random" makes actions come from RAND_ACT_PROBA instead of the policy, through
 # the SAME collector - the baseline the learned policy is measured against.
 AGENT="${6:-}"
+# "norm" whitens the advantage per PPO minibatch. ⚠️ It rescales |adv| from ~0.12
+# to ~1, so entropy_coef means something ~8x weaker with it on and the measured
+# 0.003 knee does NOT carry over - re-sweep before trusting a comparison.
+NORM="${7:-}"
 case "$IMP" in
   true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
   false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
   *) echo "impassable must be true or false, got $IMP" >&2; exit 1 ;;
 esac
-NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}"
+NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}${NORM:+-$NORM}"
 # tyro takes the enum MEMBER NAME, not its value: --arch-policy.agent RANDOM.
+case "$NORM" in
+  ""|raw) NORMFLAG= ;;
+  norm)   NORMFLAG="--train-policy.normalize-advantage" ;;
+  *) echo "norm must be 'norm' or empty, got $NORM" >&2; exit 1 ;;
+esac
 case "$AGENT" in
   ""|policy) AGENTFLAG= ;;
   random|RANDOM) AGENTFLAG="--arch-policy.agent RANDOM" ;;
@@ -101,7 +111,7 @@ trap save EXIT
 # `tests/test_slurm_invocations.py` parses this exact line so the next reorder
 # fails at gate time instead of after a GPU allocation.
 uv run python main_train.py multienv-fast \
-    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET $AGENTFLAG \
+    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET $AGENTFLAG $NORMFLAG \
     env.source:selected --env.source.n "$N" "$FLAG" \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback
