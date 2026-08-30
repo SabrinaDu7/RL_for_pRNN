@@ -538,6 +538,26 @@ class TrainPolicyCfg:
     which no live config did. NEXT_OBS is the corrected indexing and is now the
     single default."""
 
+    normalize_advantage: bool = False
+    """Whiten the advantage per PPO minibatch to mean 0, std 1.
+
+    The policy gradient scales with |advantage| while `entropy_coef` is a fixed
+    ADDITIVE term, so what governs exploration is the ratio
+    `entropy_coef / |advantage|` - and that denominator moves: measured, |adv|
+    falls from 0.525 to 0.120 within 30 rollouts, making a "constant" coefficient
+    ~4x stronger by the end. Whitening pins the denominator at 1, so the
+    coefficient means one fixed thing and transfers across circuits and seeds
+    instead of being re-found for each.
+
+    NOT equivalent to a learning-rate change: Adam is invariant to a global
+    gradient rescale, so what this moves is the policy term's weight RELATIVE to
+    the entropy and value terms - which is also why the effect should be small
+    at entropy_coef=0 and large at 0.01.
+
+    ⚠️ It rescales |adv| from ~0.12 to ~1, so every tuned `entropy_coef` here
+    means something ~8x weaker with it on. The measured 0.003 knee does NOT
+    carry over."""
+
     cuda_graph: bool = False
     """(SPEED) The minibatch step is almost pure dispatch on a small network."""
 

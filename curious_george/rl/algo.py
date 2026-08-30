@@ -117,6 +117,7 @@ class PredictivePPOAlgo:
         # Only direct constructions see it; setup_algo always passes one.
         action_offset: int = 1,
         random_actions: bool = False,
+        normalize_advantage: bool = False,
         curious_agent=False,
         k_curious=1,
         reward_alignment="legacy",
@@ -180,6 +181,7 @@ class PredictivePPOAlgo:
         self.cuda_graph = cuda_graph
         self.action_offset = action_offset
         self.random_actions = random_actions
+        self.normalize_advantage = normalize_advantage
         self.curious_agent = curious_agent
         self.k_curious = k_curious
         self.reward_alignment = reward_alignment
@@ -442,6 +444,7 @@ class PredictivePPOAlgo:
                     clip_eps=self.clip_eps,
                     entropy_coef=self.entropy_coef,
                     value_loss_coef=self.value_loss_coef,
+                    normalize_advantage=self.normalize_advantage,
                 ),
                 max_grad_norm=self.max_grad_norm,
             )
@@ -457,6 +460,7 @@ class PredictivePPOAlgo:
                 clip_eps=self.clip_eps,
                 entropy_coef=self.entropy_coef,
                 value_loss_coef=self.value_loss_coef,
+                normalize_advantage=self.normalize_advantage,
             ),
             epochs=self.epochs,
             batch_size=self.batch_size,
