@@ -4,7 +4,7 @@
 
 Executing `docs/claude_logs/plan-ce-multienv-overnight-2026-08-31.md` Phase 2.
 Project: **`curious-george-multienv`** (new; every run in it is bright-era,
-whitened, seeded-probe). STATUS: IN PROGRESS.
+whitened, seeded-probe). STATUS: COMPLETE (wave 3 closed ~11:00).
 
 ## The room set
 
@@ -150,6 +150,31 @@ pooled 0.491; mse8full s3 0.589, MI 0.065, pooled 0.347, remap +0.242. The
 s3-vs-s3 room-sRSA gap narrows to +0.04 (a strong MSE seed), but the
 structural contrast holds: CE pooled sRSA 0.44-0.49 vs MSE 0.33-0.35, and
 CE gains representation WHILE committing 3-4x harder on MI.
+
+**mse8full s2 (local) FINISHED, exit 0** — closing the series. The
+consolidated FULL-BUDGET picture, room sRSA (pooled sRSA), n=2 seeds where
+shown:
+
+| arm | s2 | s3 | mean room sRSA | MI |
+|---|---|---|---|---|
+| **CE curious** | 0.668 (0.472) | 0.628 (0.491) | **0.648** | 0.157 / 0.282 |
+| CE count | 0.637 (0.467) | — | 0.637 | 0.014 |
+| MSE curious | 0.608 (0.373) | 0.589 (0.347) | 0.599 | 0.076 / 0.065 |
+
+**Verdict.** At full budget, on 8 impassable rooms with seeded probes:
+CE-curious > CE-count > MSE-curious on room sRSA, and CE's pooled sRSA leads
+by ~+0.12. The two headline claims both replicate across seeds: **CE beats
+MSE at matched budget** (+0.05 room, +0.12 pooled), and **the committed
+policy is no longer the enemy of the representation** - CE's MI runs 2-4x
+MSE's while its sRSA leads. Budget helps both losses (MSE half->full
+0.510->0.599; CE 0.584->0.648) and flips curious above count, so the
+curiosity signal specifically pays off with training time. Left honest:
+SWdist is inconclusive at this n (CE 0.088/0.114 vs MSE 0.111/0.056 -
+inside its known noise), and MSE's larger remapping index rides on its much
+LOWER pooled sRSA (remap = room - pooled), so it is not a win for MSE.
+Landmark prediction recall remains partial with the sRSA curve still rising
+at budget's end - MORE budget stays the ranked lever; focal remains
+un-triggered.
 
 Local runs carry `-local` in the name; comparisons stay on the gradient-step
 axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster
