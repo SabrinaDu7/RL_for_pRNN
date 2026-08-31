@@ -181,6 +181,25 @@ axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster
 curves). Cluster tree reset to `7db61dd` BEFORE sbatch (the wave-1 lesson).
 Mila auth recovered key-only (~morning); the OTP path was never needed again.
 
+## Speedup (afternoon 2026-08-31, commit 4b0aa96): 2.96x, bitwise-gated
+
+CG_TIMING profiling attributed 1,307 ms of the 2,083 ms rollout (63%) to
+`prepare_resets` - B full MiniGrid resets per rollout, each regenerating a
+deterministic grid just to draw a spawn. Fix: `DeviceTableShellPool` caches
+one pristine Grid per layout and resets by installing it + the same
+`place_agent` call (the reset path's only RNG consumer); impassable-only by
+design (the walkable arm's paint-after-place order would move its RNG), plus
+a worker thread hiding what remains. Gates: a 3-rollout STATE_SHA A/B is
+BYTE-IDENTICAL before/after (71ae67ac...), suite 591 passed, and the
+`mx-impassable-n8-s2-ce8-fastreset-check` run reproduces the pre-speedup
+trajectory BITWISE at run scale: its half-budget finals equal the
+pre-speedup local full-budget run's halfway analysis event digit-for-digit
+(per-room sRSA [0.607 0.572 0.640 0.696 0.580], mean 0.6190) - same seed,
+same GPU, 45M steps - and sit within noise of the L40S wave-2b run (0.619
+vs 0.625 room sRSA). Runtime 10.2 min against wave-2b's ~33. Measured: 31,456 -> 93,117 steps/s on the 4060; a
+full-budget multienv run drops ~55 -> ~20 min. The world model is now the
+bottleneck (444 ms/rollout, 63%).
+
 ## Operational notes
 
 - ~03:10: the Mila SSH control master died and reconnection now prompts for
