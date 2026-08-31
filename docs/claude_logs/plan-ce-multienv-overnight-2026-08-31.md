@@ -273,3 +273,31 @@ L40S across 2026-08-30 runs, and the parity single-room full budget 27.6 min.
 GPU type is load-bearing (L40S vs Quadro measured 52.45 vs 30.88 grad/s);
 `slurm/multienv.sh` / `train_fast.sh` headers carry the launch reasoning.
 Cluster babysitting per the hpc skill; local 4060 for curve-gating only.
+
+
+---
+
+## Appendix: how the night actually went (written 03:45, at `3453c44`)
+
+Every morning deliverable exists; the two results docs carry the numbers,
+figures and verdicts. The deltas from the plan as written:
+
+1. Golden v6 was never needed - the defaults flip landed at preset level
+   (dataclass defaults untouched), so train/eval fixtures stayed bitwise.
+2. The fork needed one unplanned fix (output_size double-pass TypeError).
+3. 🔴 The first launch wave was mislaunched through a stale cluster working
+   tree (labels + EXTRA flags silently dropped); cancelled, junk runs tagged
+   `mislaunched-drop`, resubmitted. Lesson recorded: reset the Mila shared
+   checkout to the launch branch BEFORE sbatch - the runbook said so and the
+   preflight checked the wrong thing (origin ref, not working tree).
+4. CE arms run `--train-policy.normalize-reward` as a measured necessity
+   (critic 200x behind raw-surprisal returns), not a maybe; ceRaw is the
+   recorded ablation.
+5. Phase 1 exceeded its gate (sRSA 0.871 committed-policy vs 0.682 own
+   random baseline - the anticorrelation broke in Phase 1 already); Phase 2
+   met the deliverable (CE > MSE on room sRSA everywhere) with two honest
+   negatives: CE-curious has not separated from CE-count, and SWdist favours
+   MSE at n=2. Full-budget ce8 is the ranked next step, blocked ~03:10 on a
+   first-ever Mila email-OTP prompt (never retried; user notified).
+6. The seed-3 replications of ce8/mse8 ran; Phase-1 arms are n=1 (seed 2)
+   by design - the scan + 2x2 spent that budget instead.
