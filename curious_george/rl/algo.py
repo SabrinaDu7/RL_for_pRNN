@@ -34,6 +34,7 @@ from curious_george.rl.update.losses import LOSSES
 from curious_george.rl.update.policy import update_policy
 from curious_george.rl.update.world_model import train_world_model_on_episodes
 from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
+from curious_george.utils.timing import timer
 
 
 def compare_trajs(traj1, traj2):
@@ -117,9 +118,11 @@ class PredictivePPOAlgo:
         # Only direct constructions see it; setup_algo always passes one.
         action_offset: int = 1,
         random_actions: bool = False,
+        random_action_probs: tuple[float, ...] | None = None,
         normalize_advantage: bool = False,
         curious_agent=False,
         k_curious=1,
+        k_count=0.0,
         reward_alignment="legacy",
         loss="ppo_clip",
         batched_wm=False,
@@ -181,6 +184,11 @@ class PredictivePPOAlgo:
         self.cuda_graph = cuda_graph
         self.action_offset = action_offset
         self.random_actions = random_actions
+        # None = the project default (configs.RAND_ACT_PROBA); resolved by
+        # `random_action_probs` at the two sampling sites.
+        self.random_action_probs = (
+            tuple(random_action_probs) if random_action_probs is not None else None
+        )
         self.normalize_advantage = normalize_advantage
         self.curious_agent = curious_agent
         self.k_curious = k_curious
@@ -247,6 +255,7 @@ class PredictivePPOAlgo:
                 num_steps=self.num_frames // self.num_envs,
                 device=self.device,
                 random_actions=self.random_actions,
+                random_action_probs=self.random_action_probs,
             )
         self.state = CollectorState(
             obs_b=self._first_obs,
@@ -258,6 +267,22 @@ class PredictivePPOAlgo:
             ep_frames=[0] * self.num_envs,
         )
         self.loc_stats = LocationStats(self.loc_mask, tuple(grid_shape(self.env)))
+        self.room_supports, self.room_walkable_counts = self._room_geometry()
+
+        self.k_count = float(k_count)
+        self.count_bonus = None
+        if self.k_count > 0:
+            if not self.is_device_env:
+                raise ValueError(
+                    "train_policy.k_count reads the device positions/directions "
+                    "buffers; it requires the DEVICE backend"
+                )
+            from curious_george.rl.update.rewards import CountBonus
+
+            W, H = grid_shape(self.env)
+            self.count_bonus = CountBonus.create(
+                n_layouts=self.envs.n_layouts, width=W, height=H, device=self.device
+            )
 
         self.intrinsic_ref = (
             IntrinsicReference(self, self.state.sr.shape[-1]) if intrinsic else None
@@ -283,6 +308,8 @@ class PredictivePPOAlgo:
         self.locs: list = []
         self.subroom_ids: list = []
         self.last_joint_dist = None
+        self.segment_layouts = None
+        self.positions_episodes = None
 
     def _location_mask(self) -> list:
         """The cells `loc_entropy` is normalised over: everywhere the agent
@@ -330,31 +357,54 @@ class PredictivePPOAlgo:
 
         # The mask is flat with cell (x, y) at index y*width + x, which is the
         # order `LocationStats` masks its Fortran-flattened visit grid in.
-        from curious_george.envs.access import base_env
-
-        grid = base_env(env).grid
-        walls = {
-            (x, y)
-            for y in range(env.height)
-            for x in range(env.width)
-            if getattr(grid.get(x, y), "type", None) == "wall"
-        }
-        base = frozenset(
-            (x, y)
-            for y in range(env.height)
-            for x in range(env.width)
-            if (x, y) not in walls
-        )
         # The union rule lives in layouts.py, so this and EnvCfg.reachable_cells
         # cannot drift into two different answers.
         from curious_george.envs.layouts import pooled_walkable
 
-        reachable = pooled_walkable(base, layouts)
+        reachable = pooled_walkable(self._cells_without_walls(env), layouts)
         return [
             (x, y) in reachable
             for y in range(env.height)
             for x in range(env.width)
         ]
+
+    @staticmethod
+    def _cells_without_walls(env) -> frozenset[tuple[int, int]]:
+        """What the walls leave open - the `base` every Layout.walkable takes."""
+        from curious_george.envs.access import base_env
+
+        grid = base_env(env).grid
+        return frozenset(
+            (x, y)
+            for y in range(env.height)
+            for x in range(env.width)
+            if getattr(grid.get(x, y), "type", None) != "wall"
+        )
+
+    def _room_geometry(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Per-room walkable supports `(R, W, H)` bool and their cell counts.
+
+        Room r's support is `layouts[r].walkable(base)` - the denominator the
+        per-episode exploration metrics normalize by. The POOLED support
+        (`loc_mask`) cannot replace these: on the committed room set its
+        ceiling is identical across the affordance arms (see
+        docs/exploration-evals-2026-08-30.md). With no room set there is one
+        room and its support IS the pooled mask.
+        """
+        W, H = grid_shape(self.env)
+        layouts = getattr(self.envs, "layouts", None)
+        if layouts:
+            base = self._cells_without_walls(self.env)
+            supports = torch.zeros((len(layouts), W, H), dtype=torch.bool)
+            for r, layout in enumerate(layouts):
+                for x, y in layout.walkable(base):
+                    supports[r, x, y] = True
+        else:
+            # loc_mask is Fortran-flat, index y*W + x -> [y, x] -> transpose.
+            supports = torch.as_tensor(
+                np.asarray(self.loc_mask, dtype=bool).reshape(H, W).T.copy()
+            ).unsqueeze(0)
+        return supports.to(self.device), supports.long().sum(dim=(1, 2)).to(self.device)
 
     @staticmethod
     def _pos(env):
@@ -380,6 +430,7 @@ class PredictivePPOAlgo:
                 prnn_seqdur=self.prnn_seqdur,
                 action_offset=self.action_offset,
                 random_actions=self.random_actions,
+                random_action_probs=self.random_action_probs,
                 curious_agent=self.curious_agent,
                 reward_alignment=self.reward_alignment,
                 intrinsic=self.intrinsic,
@@ -387,11 +438,13 @@ class PredictivePPOAlgo:
                 gae_lambda=self.gae_lambda,
                 k_int=self.k_int,
                 k_curious=self.k_curious,
+                k_count=self.k_count,
             ),
             loc_stats=self.loc_stats,
             subroom_size_=self._subroom_size,
             intrinsic_ref=self.intrinsic_ref,
             rollout_graph=self._rollout_graph,
+            count_bonus=self.count_bonus,
         )
 
         # expose the rollout on the algo for analysis/tasks that read attributes
@@ -410,6 +463,33 @@ class PredictivePPOAlgo:
         self.done_indices = result.done_indices
         self.last_observations = result.last_observations
         self.last_joint_dist = result.joint_dist
+        self.segment_layouts = result.segment_layouts
+        self.positions_episodes = result.positions_episodes
+
+        # Exploration metrics from the rollout's episode view (device backend
+        # only). Pure reads of already-collected tensors - no RNG, nothing
+        # mutated - so the golden gate's pinned stream is untouched.
+        if result.positions_episodes is not None:
+            from curious_george.evaluation.exploration import (  # local import: avoids cycle
+                rollout_summary,
+            )
+
+            with timer("collect/exploration"):
+                layout_ids = torch.as_tensor(
+                    result.segment_layouts.reshape(-1),
+                    device=result.positions_episodes.device,
+                )
+                result.logs.update(rollout_summary(
+                    positions=result.positions_episodes,
+                    layout_ids=layout_ids,
+                    supports=self.room_supports,
+                    denominators=self.room_walkable_counts,
+                ))
+        support_cells = int(np.sum(self.loc_mask))
+        if support_cells > 1:
+            result.logs["loc_entropy_norm"] = (
+                result.logs["loc_entropy"] / math.log2(support_cells)
+            )
 
         return result.exps, result.logs
 

@@ -18,6 +18,9 @@ class StatusCkptKeys(str, Enum):
     UPDATE = 'update'
     MODEL_STATE = 'model_state'
     OPTIMIZER_STATE = 'optimizer_state'
+    #: Lifetime visit counts of the count-bonus agent (train_policy.k_count).
+    #: Training state: without it a resumed run restarts novelty from zero.
+    COUNT_VISITS = 'count_visits'
     PRNN_OPTIMIZER_STATE = 'prnn_optimizer_state'
 
 def status_optimizer_matches(receiver, state: dict) -> bool:

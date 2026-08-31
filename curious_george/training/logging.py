@@ -80,6 +80,13 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
         "FPS": stats.fps,
         "duration": stats.duration,
     }
+    # Exploration metrics are logged for EVERY agent - the random baselines
+    # exist to be compared on exactly these series. Keys are produced by
+    # evaluation/exploration.rollout_summary on the device backend; on other
+    # backends they are absent, not zero.
+    out.update({k: v for k, v in logs.items() if k.startswith("exploration/")})
+    if "loc_entropy_norm" in logs:
+        out["loc_entropy_norm"] = logs["loc_entropy_norm"]
     if not stats.random_agent:
         out.update(
             _prefixed("cur_reward", synthesize(logs["curious_rewards"], abs=True))
@@ -89,6 +96,8 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
         out["policy_loss"] = logs["policy_loss"]
         out["value_loss"] = logs["value_loss"]
         out["grad_norm"] = logs["grad_norm"]
+        if "count_bonus_mean" in logs:
+            out["count_bonus_mean"] = logs["count_bonus_mean"]
         if mi_policy is not None:
             out["MI_policy"] = mi_policy
         # previously computed but never forwarded to wandb:
@@ -100,6 +109,17 @@ def build_update_log(logs: dict, stats: UpdateStats, mi_policy: float | None) ->
             }
         )
     return out
+
+
+def log_run_constants(cfg) -> None:
+    """Properties of the WORLD, into the run summary rather than a series.
+
+    `cfg.to_dict()` walks dataclass fields only, so derived properties never
+    reach the wandb config - and the entropy ceiling was print-only, leaving
+    no machine-readable normalizer beside the series it normalizes.
+    """
+    wandb.run.summary["reachable_cells"] = len(cfg.env.reachable_cells)
+    wandb.run.summary["loc_entropy_ceiling"] = cfg.env.loc_entropy_ceiling
 
 
 def log_update(logs: dict, stats: UpdateStats, mi_policy: float | None) -> None:

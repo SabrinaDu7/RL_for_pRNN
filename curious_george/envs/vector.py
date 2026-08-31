@@ -287,6 +287,10 @@ class DeviceTableShellPool:
             np.stack(banks), dtype=torch.uint8, device=self.device
         )
         self.stream_layout = torch.zeros(self.B, dtype=torch.long, device=self.device)
+        # Host mirror of `stream_layout`, updated wherever it is - so reading
+        # "which room is stream b in" never costs a device sync, and
+        # `prepare_resets` can report a rollout's whole room schedule.
+        self.stream_layout_host = np.zeros(self.B, dtype=np.int64)
         # Episodes each layout has been trained on. A layout with few episodes is
         # UNTESTED rather than negative, so this has to be reported with any
         # per-layout result.
@@ -405,15 +409,26 @@ class DeviceTableShellPool:
         self.positions.copy_(torch.as_tensor(positions, device=self.device))
         self.directions.copy_(torch.as_tensor(directions, device=self.device))
         self.stream_layout.copy_(torch.as_tensor(chosen, device=self.device))
+        self.stream_layout_host = chosen.copy()
         np.add.at(self.layout_episodes, chosen, 1)
         # BatchedSRTracker only needs the stream count; policy/pRNN inputs come
         # directly from observation_device().
         return [None] * self.B, positions
 
-    def prepare_resets(self, *, count: int) -> None:
-        """Precompute and upload the finite reset schedule before rollout."""
+    def prepare_resets(self, *, count: int) -> np.ndarray:
+        """Precompute and upload the finite reset schedule before rollout.
+
+        Returns the rollout's ROOM SCHEDULE, `(count, B)` int64: row `s` is the
+        layout each stream's s-th episode runs in. Row 0 is the assignment the
+        rollout ENTERS with (the previous rollout's final reset); prepared
+        reset `i` is applied at the END of segment `i`, so it names segment
+        `i+1`'s room and the last one carries into the next rollout. Without
+        this, `stream_layout`'s in-place overwrites make a recorded
+        `(t, b) -> (x, y)` unattributable to a room after the fact.
+        """
         if count <= 0:
             raise ValueError("prepared reset count must be positive")
+        entry = self.stream_layout_host.copy()
         layout_rows, position_rows, directions_rows = [], [], []
         for _ in range(count):
             chosen, positions, directions = self._reset_streams()
@@ -431,6 +446,7 @@ class DeviceTableShellPool:
             np.stack(layout_rows), device=self.device
         )
         self._prepared_layouts_host = np.stack(layout_rows)
+        return np.vstack([entry[None], *layout_rows[: count - 1]])
 
     def apply_prepared_reset(self, *, index: int) -> None:
         """Select an already resident reset row without any host transfer."""
@@ -443,6 +459,7 @@ class DeviceTableShellPool:
         self.positions.copy_(self._prepared_positions[index])
         self.directions.copy_(self._prepared_directions[index])
         self.stream_layout.copy_(self._prepared_layouts[index])
+        self.stream_layout_host = self._prepared_layouts_host[index].copy()
         np.add.at(self.layout_episodes, self._prepared_layouts_host[index], 1)
 
     def step_device(

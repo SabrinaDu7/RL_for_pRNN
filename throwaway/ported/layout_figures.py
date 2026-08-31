@@ -415,9 +415,9 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     from curious_george.envs.layouts import (
-        BASE_ROOM_ID, MULTI_ENV_ID, SQUARE_ROOM_ID, base_walkable, d4_canonical)
+        BASE_ROOM_ID, MULTI_ROOM_ID, SQUARE_ROOM_ID, base_walkable, d4_canonical)
     room_id = SQUARE_ROOM_ID if a.room == "square" else BASE_ROOM_ID
-    env_id = MULTI_ENV_ID[room_id]
+    env_id = MULTI_ROOM_ID[room_id]
     walkable = base_walkable(room_id)
     print(f"room: {len(walkable)} walkable cells   shapes {SHAPES}   colours {LANDMARK_COLORS}")
 

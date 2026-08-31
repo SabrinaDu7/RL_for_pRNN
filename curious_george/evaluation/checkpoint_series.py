@@ -98,11 +98,13 @@ ROOMS: dict[str, str] = {"lroom": BASE_ROOM_ID, "squareroom": SQUARE_ROOM_ID}
 
 #: `--source` values -> how the room set is drawn, in the vocabulary
 #: `curious_george.configs` actually uses. These used to be `one/rooms/pool`,
-#: which named Hydra config groups that no longer exist.
-SOURCES: tuple[str, ...] = ("frozen", "one", "uniform")
+#: which named Hydra config groups that no longer exist. `selected` is the
+#: committed production set (`multienv-fast`); pair it with `--impassable`
+#: for that arm.
+SOURCES: tuple[str, ...] = ("frozen", "one", "uniform", "selected")
 
 
-def run_config(*, room: str, source: str, hiddensize: int):
+def run_config(*, room: str, source: str, hiddensize: int, impassable: bool = False):
     """The launched run's config - the single source of room and room set.
 
     Built once, so the room set is a function of the config rather than of when
@@ -118,6 +120,7 @@ def run_config(*, room: str, source: str, hiddensize: int):
         EvalCfg,
         EvalKind,
         Frozen,
+        Selected,
         Uniform,
     )
 
@@ -126,7 +129,11 @@ def run_config(*, room: str, source: str, hiddensize: int):
     # was silently wrong when this branched on the room id itself.
     env = EnvCfg(
         shape=EnvShape(ROOMS[room]),
-        source=Uniform() if source == "uniform" else Frozen(),
+        source=(
+            Uniform() if source == "uniform"
+            else Selected(n=5, impassable=impassable) if source == "selected"
+            else Frozen()
+        ),
         indices=(0,) if source == "one" else None,
     )
     base = Config(
@@ -216,19 +223,93 @@ def fixed_probe(*, pN, env, layout, n_trajs: int, steps: int):
     checkpoints comparable rather than each carrying its own rollout noise.
     """
     from curious_george.utils.enums import AgentType
-    from curious_george.log_and_store.storage import get_agent
+    from curious_george.log_and_store.storage import RAND_ACT_PROBA, get_agent
 
     env.env.unwrapped.landmarks = list(layout.landmarks)
     env.env.reset(seed=PROBE_SEED)
     torch.manual_seed(PROBE_SEED)
     np.random.seed(PROBE_SEED)
     agent = get_agent(env=env, agent_Type=AgentType.RANDOM,
-                      rand_act_prob=np.array([0.15, 0.15, 0.6, 0.1]))
+                      rand_act_prob=RAND_ACT_PROBA)
     rolls = []
     for _ in range(n_trajs):
         obs, act, state, _ = pN.collectObservationSequence(env, agent, steps, discretize=True)
         rolls.append((obs, act, state["agent_pos"]))
     return rolls
+
+
+def exploration_points(run_dir: Path) -> list[tuple[int, Path, Path]]:
+    """(step, pRNN checkpoint, policy checkpoint) where BOTH were archived.
+
+    The on-policy readout condition: pairing a step-N world model with any
+    other step's policy silently measures an agent that never existed
+    (`archived_policies` says why the two series can differ).
+    """
+    policies = archived_policies(run_dir)
+    return [(s, p, policies[s]) for s, p in archived(run_dir) if s in policies]
+
+
+def score_exploration_series(
+    *, cfg, run_dir: Path, collects_per_point: int = 2,
+    thresholds: tuple[float, ...] = (0.5, 0.9),
+) -> list[dict]:
+    """Exploration of the ARCHIVED policy, one row per archived (pRNN, policy) pair.
+
+    Reuses the run machinery end to end: each point rebuilds the full training
+    stack through `setup_training` with `run.prnn_ckpt` / `run.policy_ckpt`
+    pointed at the archives - the same loading path a resumed run uses - and
+    scores `collects_per_point` real DEVICE-backend rollouts with the same
+    `rollout_summary` the run logs online, so the offline series and the wandb
+    series are the same measurement.
+
+    Protocol, per the traps this module's own docstring documents: seeded by
+    `cfg.run.seed` at every point (`setup_training` seeds everything), so all
+    checkpoints see the SAME spawn/room schedule and rows differ by weights
+    alone; wrapped in `eval_mode` (dropout off - the wobble `score` still
+    carries); and the policy SAMPLES, because argmax is a different agent and
+    for an exploration metric that difference is the measurement.
+    """
+    from dataclasses import replace
+
+    from curious_george.evaluation.exploration import rollout_summary
+    from curious_george.models.device import eval_mode
+    from curious_george.training.setup import setup_training
+    from curious_george.utils.checkpoints import StatusCkptKeys
+
+    rows = []
+    for step, prnn_path, policy_path in exploration_points(run_dir):
+        status = torch.load(policy_path, map_location="cpu", weights_only=False)
+        if StatusCkptKeys.MODEL_STATE.value not in status:
+            raise ValueError(
+                f"{policy_path.name} holds no policy weights - a RANDOM-agent "
+                "run archives none. Its exploration is checkpoint-independent; "
+                "read it off the run's own exploration/* series or the walker "
+                "calibration (python -m curious_george.envs.action_graph)."
+            )
+        point_cfg = replace(cfg, run=replace(
+            cfg.run, prnn_ckpt=prnn_path, policy_ckpt=policy_path, wandb=False,
+        ))
+        comps = setup_training(point_cfg)
+        algo = comps.algo
+        positions, layout_ids = [], []
+        with eval_mode([comps.predictiveNet, comps.acmodel]):
+            for _ in range(collects_per_point):
+                algo.collect_experiences()
+                positions.append(algo.positions_episodes)
+                layout_ids.append(torch.as_tensor(
+                    algo.segment_layouts.reshape(-1),
+                    device=algo.positions_episodes.device,
+                ))
+        summary = rollout_summary(
+            positions=torch.cat(positions),
+            layout_ids=torch.cat(layout_ids),
+            supports=algo.room_supports,
+            denominators=algo.room_walkable_counts,
+            thresholds=thresholds,
+        )
+        rows.append({"step": step, "episodes": sum(len(p) for p in positions), **summary})
+        comps.envs.close()
+    return rows
 
 
 def score(*, pN, rolls, env) -> tuple[float, np.ndarray, np.ndarray]:
@@ -241,6 +322,56 @@ def score(*, pN, rolls, env) -> tuple[float, np.ndarray, np.ndarray]:
             h_rows.append(torch.mean(h, dim=0)[ONSET:].numpy())
             pos_rows.append(pos[ONSET:-1, :])
     return float(np.mean(losses)), np.concatenate(h_rows), np.concatenate(pos_rows).astype(float)
+
+
+def exploration_main(*, cfg, run_dir: Path, args) -> None:
+    """The --exploration branch: one row per archived (pRNN, policy) pair."""
+    from dataclasses import replace
+
+    pairs = exploration_points(run_dir)
+    if not pairs:
+        raise SystemExit(
+            f"no archived (pRNN, policy) PAIRS under {run_dir / 'checkpoints'} - "
+            "runs finished before 2026-08-28 archived only the pRNN "
+            "(see archived_policies)."
+        )
+    # The eval's own collection shape - a protocol choice, not the run's - and
+    # no curiosity pass: this is a readout, nothing consumes rewards.
+    cfg = replace(
+        cfg,
+        collect=replace(cfg.collect, num_envs=args.num_envs,
+                        episodes_per_env=1, episode_steps=args.steps),
+        train_policy=replace(cfg.train_policy, curious=False),
+        run=replace(cfg.run, seed=PROBE_SEED),
+    )
+    print(f"{len(pairs)} archived (pRNN, policy) pairs; "
+          f"{args.collects} x {args.num_envs} episodes x {args.steps} steps per point, "
+          f"seed {PROBE_SEED}, eval_mode, sampled actions")
+    rows = score_exploration_series(
+        cfg=cfg, run_dir=run_dir, collects_per_point=args.collects,
+    )
+    header = (f"{'step':>12} {'episodes':>9} {'coverage':>9} {'nAUC':>7} "
+              f"{'T50 reach':>10} {'T50 steps':>10} {'T90 reach':>10} {'T90 steps':>10} "
+              f"{'room entropy':>13}")
+    print(header)
+    for i, r in enumerate(rows):
+        line = (f"{r['step']:>12,} {r['episodes']:>9} "
+                f"{r['exploration/coverage']:>9.3f} {r['exploration/nauc']:>7.3f} "
+                f"{r['exploration/t50_reached']:>10.2%} "
+                f"{r.get('exploration/t50_steps', float('nan')):>10.1f} "
+                f"{r['exploration/t90_reached']:>10.2%} "
+                f"{r.get('exploration/t90_steps', float('nan')):>10.1f} "
+                f"{r['exploration/room_entropy_norm']:>13.3f}")
+        if i == len(rows) - 1:
+            line += "   (latest)"
+        print(line)
+    out = run_dir / "exploration_curve.json"
+    out.write_text(json.dumps({
+        "meta": {"run": run_dir.name, "source": repr(cfg.env.source),
+                 "collects": args.collects, "num_envs": args.num_envs,
+                 "steps": args.steps, "seed": PROBE_SEED},
+        "rows": rows}, indent=2, default=float))
+    print(f"wrote {out}")
 
 
 def main() -> None:
@@ -257,6 +388,16 @@ def main() -> None:
     ap.add_argument("--n-trajs", type=int, default=6)
     ap.add_argument("--steps", type=int, default=256)
     ap.add_argument("--spatial", action="store_true", help="also compute sRSA/SWdist (slower)")
+    ap.add_argument("--impassable", action="store_true",
+                    help="with --source selected: the impassable arm's room set")
+    ap.add_argument("--exploration", action="store_true",
+                    help="score the archived POLICY's exploration instead of the "
+                         "pRNN probe: seeded on-policy rollouts per checkpoint pair")
+    ap.add_argument("--collects", type=int, default=2,
+                    help="exploration mode: rollouts per checkpoint (episodes = "
+                         "collects x num-envs)")
+    ap.add_argument("--num-envs", type=int, default=64,
+                    help="exploration mode: parallel episode streams")
     a = ap.parse_args()
 
     run_dir = Path(a.run)
@@ -264,8 +405,12 @@ def main() -> None:
     if not points:
         raise SystemExit(f"no archived checkpoints under {run_dir / 'checkpoints'}")
 
-    cfg = run_config(room=a.room, source=a.source,
+    cfg = run_config(room=a.room, source=a.source, impassable=a.impassable,
                      hiddensize=checkpoint_hiddensize(points[0][1]))
+
+    if a.exploration:
+        exploration_main(cfg=cfg, run_dir=run_dir, args=a)
+        return
     try:
         ctx = SeriesContext.resolve(cfg, rooms_scored=a.rooms_scored)
     except ValueError as exc:

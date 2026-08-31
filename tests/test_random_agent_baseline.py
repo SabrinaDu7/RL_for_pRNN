@@ -49,6 +49,64 @@ def test_random_actions_follow_the_projects_distribution():
     assert np.allclose(seen, RAND_ACT_PROBA, atol=0.01), f"{seen} vs {RAND_ACT_PROBA}"
 
 
+def test_a_uniform_random_baseline_is_expressible():
+    """The OTHER random baseline. The two differ ~2x on coverage (nAUC 0.108
+    vs 0.224 - `python -m curious_george.envs.action_graph`), so "random"
+    without its distribution is ambiguous. The distribution is a config field
+    whose default is the ONE home, `configs.RAND_ACT_PROBA` - the four
+    independent spellings are gone."""
+    from curious_george.configs import RAND_ACT_PROBA
+    from curious_george.log_and_store.storage import RAND_ACT_PROBA as stored
+
+    base = PRESETS["multienv-fast"][1]
+    cfg = dataclasses.replace(
+        base,
+        arch_policy=dataclasses.replace(
+            base.arch_policy,
+            agent=AgentType.RANDOM,
+            random_action_probs=(0.25, 0.25, 0.25, 0.25),
+        ),
+    )
+    assert cfg.arch_policy.random_action_probs == (0.25,) * 4
+    assert base.arch_policy.random_action_probs == RAND_ACT_PROBA
+    assert tuple(stored) == RAND_ACT_PROBA, "storage's ndarray must derive from the one home"
+
+
+def test_the_collector_samples_the_configured_distribution():
+    """`arch_policy.random_action_probs` reaches the sampler: uniform in,
+    uniform out - not the forward-weighted default."""
+    from curious_george.rl.collect.collector import _random_actions, random_action_probs
+
+    torch.manual_seed(0)
+    probs = random_action_probs(40_000, torch.device("cpu"), probs=(0.25,) * 4)
+    seen = np.bincount(_random_actions(probs).numpy(), minlength=4) / 40_000
+    assert np.allclose(seen, 0.25, atol=0.01), f"{seen}"
+
+
+def test_a_uniform_run_walks_uniformly():
+    """End-to-end: the config field reaches the rollout's action stream."""
+    from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
+
+    cfg = small_config(backend=EnvBackend.SERIAL_TABLE)
+    cfg = dataclasses.replace(
+        cfg,
+        arch_policy=dataclasses.replace(
+            cfg.arch_policy,
+            agent=AgentType.RANDOM,
+            random_action_probs=(0.25, 0.25, 0.25, 0.25),
+        ),
+    )
+    algo = setup_training(cfg).algo
+    acts = np.concatenate([
+        np.asarray(algo.collect_experiences()[0].action.cpu()).reshape(-1)
+        for _ in range(4)
+    ])
+    seen = np.bincount(acts, minlength=4) / len(acts)
+    assert np.allclose(seen, 0.25, atol=0.07), f"{seen}"
+    assert (acts == 2).mean() < 0.4, "0.6 forward means the DEFAULT distribution leaked through"
+
+
 @pytest.mark.parametrize("agent", (AgentType.AC, AgentType.RANDOM))
 def test_both_agents_collect_through_the_same_path(agent):
     """The baseline runs the real collector, at num_envs > 1, and trains the pRNN.

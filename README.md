@@ -184,6 +184,11 @@ updates it.
   is local and untracked: rebuilding one bank is 0.49 s, so it saves half a second per
   distinct grid and nothing else.
 - `envs/layouts.py` — seeded pools of landmark layouts for multi-room training.
+- `envs/action_graph.py` — the transition table as a graph: shortest-path distance
+  in ACTIONS (a turn costs a step), and the reference walkers — uniform/categorical
+  random and the greedy sweeper positive control — that bound what any policy can
+  score on the exploration metrics. `uv run python -m curious_george.envs.action_graph`
+  prints the baseline calibration table those bounds come from.
 
 ### `curious_george/evaluation` — the online metrics
 
@@ -195,13 +200,20 @@ Called by `training/loop.py` on a cadence, but importable on their own.
   reports the coverage of the SI estimate alongside it.
 - `evaluation/on_policy.py` — `OnPolicyAnalysis`, `occupancy_counts`, `mutual_info_policy`:
   what the policy did, as arrays and as figures.
+- `evaluation/exploration.py` — how well the policy EXPLORED: coverage curves and
+  normalized AUC, time-to-cover with censoring reported first, per-room visitation
+  entropy (the arm-comparable form), and coverage binned by BFS distance from spawn.
+  Pure functions from positions; `tests/test_exploration_evals.py` gates them against
+  agents with known answers.
 - `evaluation/probe.py` — the one way to turn a checkpoint into (hidden state, position),
   with a fixed seed and fixed actions so repeated scoring of a checkpoint agrees.
 - `evaluation/task.py` — reusable machinery for evaluations that train further from a
   checkpoint (`setup_task`, `train_phase`, `collect_eval_rollouts`).
-- `evaluation/checkpoint_series.py` — the only module here with a CLI: scores a run's
-  step-tagged checkpoint archive offline, one row per checkpoint. `slurm/train_fast.sh`
-  calls it because the in-run spatial eval is skipped under CUDA graphs.
+- `evaluation/checkpoint_series.py` — scores a run's step-tagged checkpoint archive
+  offline, one row per checkpoint. `slurm/train_fast.sh` calls it because the
+  multi-room scorer is its own code path and in-window scoring does not fit the
+  time budget (the old reason — spatial eval skipped under CUDA graphs — died
+  2026-08-23 with `_skip_model_move_diag`).
   `uv run python -m curious_george.evaluation.checkpoint_series --run <run> --env lroom_multi`
 
 ### `curious_george/training` — assembly and the loop

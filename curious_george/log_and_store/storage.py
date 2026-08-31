@@ -23,7 +23,11 @@ from curious_george.utils.common import get_device
 from curious_george.utils.dev_env import PRNN_CKPT_FILENAME, get_env_var
 from curious_george.utils.enums import AgentType
 
-RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
+# The value's ONE home is `configs.RAND_ACT_PROBA`; this is the same constant
+# as the ndarray `get_agent` consumes, not a second spelling.
+from curious_george.configs import RAND_ACT_PROBA as _RAND_ACT_PROBA_CFG
+
+RAND_ACT_PROBA = np.asarray(_RAND_ACT_PROBA_CFG)
 
 
 def create_folders_if_necessary(path: str):

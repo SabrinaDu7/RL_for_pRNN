@@ -112,11 +112,12 @@ LR warmup (which is 🔴 absent in BOTH repos and would be silently dead under
   5-vs-10-room difference (0.618 vs 0.635) is not.
 - **SWdist has a 28.3% CV** and its estimator noise on a frozen checkpoint (0.117) exceeds
   every difference here. Do not read it.
-- **The random-agent baseline is MISSING, and currently unrepresentable.** `AgentType.RANDOM`
-  requires `num_envs == 1`, a room set requires the `DEVICE` backend, and `DEVICE` requires
-  `num_envs >= 2` - three `Config` constraints that conflict pairwise. So "how well does a
-  random agent do here" cannot be answered by a training run today. It needs either an
-  offline readout on the final checkpoint or a config-space change.
+- **The random-agent baseline runs are still MISSING** (no multi-room random run has been
+  scored). The config-space blocker described here originally - three pairwise-conflicting
+  `Config` constraints making it unrepresentable - was removed after this doc's commit:
+  `22e7c0d` routed random actions through the one collection path, and
+  `tests/test_random_agent_baseline.py::test_a_random_agent_multi_room_config_is_now_expressible`
+  pins that `multienv-fast` + `--arch-policy.agent RANDOM` builds. What remains is running it.
 - **`remapping_index` is deliberately ignored**, per instruction.
 - The spatial probe is still **unseeded** (`probe_seed` accepted, passed by nothing), so
   every sRSA point carries its own rollout noise on top of the seed noise.

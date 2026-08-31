@@ -294,9 +294,9 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # limitation: as of 2026-08-23 _GraphWMTrainer serves the pooled path too
 # (train_on_episodes_batched), measured 4.19x on the pooled step on top of
 # compile_cell and ~1.35x end-to-end at 20 updates. It stays off until a
-# cluster run gates its sRSA/SWdist curve, because a graphed run logs NEITHER
-# in-run (loop.py::_skip_model_move_diag disables the model-moving
-# diagnostics), and this preset's whole job is producing those curves.
+# cluster run gates its sRSA/SWdist curve, which is this preset's whole job.
+# (A graphed run used to log neither in-run; that skip was deleted 2026-08-23
+# when on_device learned to restore into the original storages.)
 # compile_cell=layer applies either way - it compiles pRNN.rnn.forward, which
 # both paths use. Cost: 28,560 -> 16,029 env steps/s locally, still inside 2 h.
 # rl.episodes_total IS the world-model gradient-step budget under serial
@@ -370,9 +370,10 @@ grep -vE '^Processing|^\s*$' "$DEST/train.log" | tail -25
 [ -n "${TRAIN_RC:-}" ] && { echo "TRAINING FAILED rc=$TRAIN_RC"; tail -40 "$DEST/train.log"; exit $TRAIN_RC; }
 save
 
-# Spatial curves are skipped in-run under cuda_graph (the eval moves the model
-# and would invalidate captured graphs), so score the archives offline here -
-# same numbers, computed after rather than during.
+# Score the archives offline: the multi-room scorer is its own code path
+# (it takes --layouts), and scoring during training does not fit the window
+# (the archive cadence is part of the time budget). The old reason - spatial
+# eval skipped under cuda_graph - died 2026-08-23 with _skip_model_move_diag.
 RUN=$(ls -dt outputs/fast-${LAYOUTS}-e${ENT}${ENT_FINAL:+to${ENT_FINAL}}-g${POOL_GROUP}-p${PPO_BATCH}-s${SEED}${GRAPH_TAG}_* 2>/dev/null | head -1)
 # checkpoint_curve.py is the multi-room scorer and takes --layouts; skip it
 # for the single-room shape, where sRSA/SWdist are logged live to wandb by

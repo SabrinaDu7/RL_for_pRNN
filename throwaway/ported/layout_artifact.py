@@ -197,10 +197,10 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     from curious_george.envs.layouts import (
-        BASE_ROOM_ID, MULTI_ENV_ID, SQUARE_ROOM_ID, base_walkable)
+        BASE_ROOM_ID, MULTI_ROOM_ID, SQUARE_ROOM_ID, base_walkable)
     square = a.room == "square"
     base_id = SQUARE_ROOM_ID if square else BASE_ROOM_ID
-    env_id = MULTI_ENV_ID[base_id]
+    env_id = MULTI_ROOM_ID[base_id]
     walkable = base_walkable(base_id)
     kw = dict(min_cell_gap=a.min_cell_gap, min_anchor_separation=a.min_anchor_separation,
               min_wall_distance=a.min_wall_distance,

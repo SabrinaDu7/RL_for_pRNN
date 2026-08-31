@@ -68,22 +68,23 @@ def _device_policy_obss(images, directions, acmodel):
     return DictList(data)
 
 
-#: The project's random-action distribution over (left, right, forward, pickup).
-#: Forward-weighted: a uniform walker mostly spins on the spot and covers little.
-#: ⚠️ This constant has FOUR spellings in the tree - `storage.RAND_ACT_PROBA`,
-#: `training.setup.RAND_ACT_PROBA`, `circuit_diagnostics.PROBE_ACTION_P` and a
-#: bare literal in `checkpoint_series` - which is a defect, not a convention.
-#: Imported here rather than copied so this is not a fifth.
-def random_action_probs(n: int, device: torch.device) -> torch.Tensor:
+def random_action_probs(
+    n: int, device: torch.device, *, probs=None
+) -> torch.Tensor:
     """The (n, A) probability table to sample from. Built ONCE, outside any
     CUDA-graph capture: `torch.as_tensor(..., device=...)` is a host-to-device
     copy, and capture forbids those - it fails with "operation not permitted
     when stream is capturing" rather than degrading. Two cluster jobs died on
-    it before this was hoisted."""
-    from curious_george.log_and_store.storage import RAND_ACT_PROBA
+    it before this was hoisted.
 
-    probs = torch.as_tensor(RAND_ACT_PROBA, dtype=torch.float32, device=device)
-    return probs.expand(n, -1).contiguous()
+    `probs` is `arch_policy.random_action_probs` over (left, right, forward,
+    pickup); None means the project default, whose one home is
+    `configs.RAND_ACT_PROBA`."""
+    if probs is None:
+        from curious_george.configs import RAND_ACT_PROBA as probs
+
+    table = torch.as_tensor(probs, dtype=torch.float32, device=device)
+    return table.expand(n, -1).contiguous()
 
 
 def _random_actions(probs: torch.Tensor) -> torch.Tensor:
@@ -107,6 +108,9 @@ class RolloutConfig:
     `randomAgent_collect_exp_and_update`) answered a different question and
     forced `num_envs == 1` for reasons that were about that routine, not about
     random actions."""
+    random_action_probs: tuple[float, float, float, float] | None = None
+    """The distribution `random_actions` samples; None = the project default
+    (`configs.RAND_ACT_PROBA`). Uniform makes the OTHER random baseline."""
     curious_agent: bool = False
     reward_alignment: str = "legacy"
     intrinsic: bool = False
@@ -114,6 +118,7 @@ class RolloutConfig:
     gae_lambda: float = 0.95
     k_int: float = 1.0
     k_curious: float = 1.0
+    k_count: float = 0.0
 
 
 @dataclass
@@ -154,6 +159,13 @@ class CollectResult:
     done_indices: list
     last_observations: list
     joint_dist: np.ndarray
+    # The EPISODE view of the rollout, device backend only (None elsewhere).
+    # Episode e = segment s * B + stream b; `segment_layouts[s, b]` is the room
+    # that episode ran in, and `positions_episodes[e, t]` its pre-action
+    # (x, y). Copied out of the (possibly graph-reused) buffers, so holding
+    # them across rollouts is safe.
+    segment_layouts: np.ndarray | None = None  # (n_segments, B) int64
+    positions_episodes: torch.Tensor | None = None  # (E, seg_steps, 2) int64
 
 
 def collect_rollout(
@@ -169,6 +181,7 @@ def collect_rollout(
     subroom_size_: int | None,
     intrinsic_ref=None,  # IntrinsicReference (B=1 only) or None
     rollout_graph=None,  # GraphRolloutStepper (exp.rollout_cuda_graph) or None
+    count_bonus=None,  # rewards.CountBonus (train_policy.k_count > 0) or None
 ) -> CollectResult:
     pool = envs if isinstance(envs, AsyncShellPool) else None
     device_pool = envs if isinstance(envs, DeviceTableShellPool) else None
@@ -203,7 +216,9 @@ def collect_rollout(
 
     # Built once per rollout, never inside the timestep loop.
     random_probs = (
-        random_action_probs(B, device) if cfg.random_actions else None
+        random_action_probs(B, device, probs=cfg.random_action_probs)
+        if cfg.random_actions
+        else None
     )
 
     obss = None if device_pool is not None else [[None] * T for _ in range(B)]
@@ -244,7 +259,8 @@ def collect_rollout(
         device_positions = buffers.positions
         device_obs = device_pool.observation_device()
         device_reset_index = 0
-        device_pool.prepare_resets(count=T // cfg.prnn_seqdur)
+        # (n_segments, B): which room each stream's s-th episode runs in.
+        segment_layouts = device_pool.prepare_resets(count=T // cfg.prnn_seqdur)
         # Each item is (post image, post direction, post position, initial
         # position) for one synchronized segment, all still on-device.
         device_last_batches: list[tuple[torch.Tensor, ...]] = []
@@ -549,6 +565,16 @@ def collect_rollout(
         state.sr = rollout_graph.current_sr()
 
     if device_pool is not None:
+        # The episode view of the positions buffer, copied because a graphed
+        # rollout reuses its buffers in place. Pre-action, so row 0 of each
+        # episode is its spawn. e = s * B + b, matching segment_layouts.
+        n_segments = T // cfg.prnn_seqdur
+        positions_episodes = (
+            device_positions.view(n_segments, cfg.prnn_seqdur, B, 2)
+            .permute(0, 2, 1, 3)
+            .reshape(n_segments * B, cfg.prnn_seqdur, 2)
+            .clone()
+        )
         # Only directions and positions are needed by CPU diagnostics. Images
         # and terminal observations stay on-device for PPO/world-model work.
         meta_tb = torch.cat(
@@ -673,6 +699,24 @@ def collect_rollout(
     if actions_np is None:
         actions_np = f_actions.cpu().numpy()
 
+    # --- count-based novelty bonus (curiosity's model-free control) ---------
+    count_rewards_tb = None
+    if count_bonus is not None:
+        if device_pool is None:
+            raise ValueError(
+                "train_policy.k_count reads the device positions/directions "
+                "buffers; it requires the DEVICE backend"
+            )
+        with timer("collect/count_bonus"):
+            layouts_tb = torch.as_tensor(
+                segment_layouts, device=device
+            ).repeat_interleave(cfg.prnn_seqdur, dim=0)  # (T, B)
+            count_rewards_tb = count_bonus.rewards(
+                layouts_tb=layouts_tb,
+                positions_tb=device_positions,
+                directions_tb=device_directions,
+            )
+
     # --- intrinsic tail (B=1 only, historical code path) --------------------
     if intrinsic_ref is not None:
         int_rewards = intrinsic_ref.tail(state, f_SRs, last_post_obs)
@@ -699,6 +743,8 @@ def collect_rollout(
             gae_lambda=cfg.gae_lambda,
             k_int=cfg.k_int,
             k_curious=cfg.k_curious,
+            count_rewards=count_rewards_tb,
+            k_count=cfg.k_count,
         )
     advantages = flat(advantages_tb)
 
@@ -747,6 +793,10 @@ def collect_rollout(
         if device_pool is None:
             logs["return_per_episode"] = list(state.finished_returns)
             logs["reshaped_return_per_episode"] = list(state.finished_reshaped)
+        if count_rewards_tb is not None:
+            # The SCALED bonus, so the series reads in reward units and its
+            # decay toward zero is the novelty being consumed.
+            logs["count_bonus_mean"] = float(count_rewards_tb.mean()) * cfg.k_count
         logs.update({
             "num_frames_per_episode": list(state.finished_frames),
             "num_frames": B * T,
@@ -788,4 +838,6 @@ def collect_rollout(
         done_indices=done_indices,
         last_observations=last_observations,
         joint_dist=joint,
+        segment_layouts=segment_layouts if device_pool is not None else None,
+        positions_episodes=positions_episodes if device_pool is not None else None,
     )

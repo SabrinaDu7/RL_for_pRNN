@@ -133,8 +133,15 @@ class GraphRolloutStepper:
         num_steps: int,
         device: torch.device,
         random_actions: bool = False,
+        random_action_probs: tuple[float, ...] | None = None,
     ) -> None:
         self.random_actions = random_actions
+        #: `arch_policy.random_action_probs`; None = project default. The
+        #: capture path builds its own device table in `prepare`, so the
+        #: distribution has to be threaded HERE too, not only through
+        #: `RolloutConfig` - this is the switch that actually runs when the
+        #: rollout is graphed.
+        self.random_action_probs = random_action_probs
         self._rand_probs = None
         self.acmodel = acmodel
         self.shim = tracker
@@ -303,7 +310,9 @@ class GraphRolloutStepper:
         if self.random_actions and self._rand_probs is None:
             from curious_george.rl.collect.collector import random_action_probs
 
-            self._rand_probs = random_action_probs(sr.shape[0], sr.device)
+            self._rand_probs = random_action_probs(
+                sr.shape[0], sr.device, probs=self.random_action_probs
+            )
         if self.graphs and self._addresses_now() != self._addresses:
             self.graphs.clear()
         if not self.graphs:

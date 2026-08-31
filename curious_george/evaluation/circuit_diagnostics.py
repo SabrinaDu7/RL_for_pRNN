@@ -36,8 +36,9 @@ from jaxtyping import Float
 
 #: Matches `checkpoint_series.fixed_probe`, so the trajectory is the one the
 #: rest of the evaluation code measures on. Forward-weighted: a rollout of pure
-#: turns says nothing about how the forward bit is carried.
-PROBE_ACTION_P = (0.15, 0.15, 0.6, 0.1)
+#: turns says nothing about how the forward bit is carried. The value's one
+#: home is `configs.RAND_ACT_PROBA`; this name survives for its importers.
+from curious_george.configs import RAND_ACT_PROBA as PROBE_ACTION_P
 PROBE_SEED = 20260829
 
 

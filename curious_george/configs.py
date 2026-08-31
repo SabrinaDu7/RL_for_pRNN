@@ -44,6 +44,14 @@ from curious_george.envs.layouts import (
 )
 from curious_george.utils.enums import AgentInputType, AgentType
 
+#: The project's random-action distribution over (left, right, forward, pickup).
+#: Forward-weighted: a uniform walker mostly spins on the spot and covers little
+#: (measured: nAUC 0.108 vs 0.224 - `python -m curious_george.envs.action_graph`).
+#: THE one home - `ArchPolicyCfg.random_action_probs` defaults to it, and every
+#: other consumer (the collector, `get_agent`, the diagnostics probes) imports
+#: it. It had four independent spellings until 2026-08-30.
+RAND_ACT_PROBA: tuple[float, float, float, float] = (0.15, 0.15, 0.6, 0.1)
+
 # ---------------------------------------------------------------------------
 # Enums
 
@@ -406,6 +414,13 @@ class ArchPolicyCfg:
     with both `curious_agent` and `random_action_agent` set was NAMED curious
     and BEHAVED random. One field decides both."""
 
+    random_action_probs: tuple[float, float, float, float] = RAND_ACT_PROBA
+    """The distribution `agent=RANDOM` samples over (left, right, forward,
+    pickup). The default is the project's forward-weighted walker; a UNIFORM
+    baseline is `--arch-policy.random-action-probs 0.25 0.25 0.25 0.25`. The
+    two random baselines differ ~2x on coverage, so which one a run used must
+    be in its config, not in prose. Inert unless `agent` is RANDOM."""
+
     freeze_params: bool = False
     """Never update parameters (random-init control). Orthogonal to `agent`: an
     actor-critic that takes no gradient steps is a different control from a
@@ -532,6 +547,16 @@ class TrainPolicyCfg:
     k_curious: float = 1.0
     intrinsic: bool = False
     k_intrinsic: float = 1.0
+    k_count: float = 0.0
+    """Count-based novelty bonus: the m-th visit a stream makes to state
+    (room, x, y, head direction) in a rollout earns k_count/sqrt(N + m), with N
+    the LIFETIME visit count at rollout start (rl/update/rewards.py::CountBonus
+    - the within-rollout term is what gives a fresh table a gradient at all).
+    The curiosity CONTROL: the same novelty drive with the world model removed,
+    so curious-vs-count isolates what prediction error adds over visitation
+    statistics. 0 disables (the default; the agent stays AC). Requires the
+    DEVICE backend; counts ride the policy checkpoint so a resume continues
+    them. Scale it under normalize_advantage per the noise-floor protocol."""
     reward_alignment: RewardAlignment = RewardAlignment.NEXT_OBS
     """Composition made NEXT_OBS the effective default while the code fell back
     to LEGACY - a fallback reachable only from a config that omitted the key,

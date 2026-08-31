@@ -156,6 +156,8 @@ def save_checkpoint(
     if cfg.arch_policy.agent is not AgentType.RANDOM:
         policy_save[StatusCkptKeys.MODEL_STATE.value] = comps.acmodel.state_dict()
         policy_save[StatusCkptKeys.OPTIMIZER_STATE.value] = comps.algo.optimizer.state_dict()
+    if getattr(comps.algo, "count_bonus", None) is not None:
+        policy_save[StatusCkptKeys.COUNT_VISITS.value] = comps.algo.count_bonus.state_dict()
 
     save_policy(policy_save, run_ctx.model_dir)
 
@@ -199,6 +201,8 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
         f"  reachable cells: {len(reachable)} "
         f"-> loc_entropy ceiling {cfg.env.loc_entropy_ceiling:.4f} bits"
     )
+    if run_ctx.wandb_log:
+        train_log.log_run_constants(cfg)
     if num_frames:
         remaining = schedule.total_env_steps - num_frames
         if remaining <= 0:

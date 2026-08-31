@@ -17,6 +17,8 @@ def compute_gae(
     gae_lambda: float,
     k_int: float,
     k_curious: float,
+    count_rewards: torch.Tensor | None = None,
+    k_count: float = 0.0,
 ) -> torch.Tensor:
     """Return GAE for rollout tensors shaped ``(T, ...)``.
 
@@ -45,6 +47,10 @@ def compute_gae(
     next_masks = torch.cat((masks[1:], final_mask_tensor.unsqueeze(0)), dim=0)
 
     reward = rewards + k_int * int_rewards + k_curious * curious_rewards
+    if count_rewards is not None:
+        # Branched, not a zero tensor: the default path must stay bitwise
+        # identical for the golden gate.
+        reward = reward + k_count * count_rewards
     deltas = reward + discount * next_values * next_masks - values
 
     decay = discount * gae_lambda * next_masks

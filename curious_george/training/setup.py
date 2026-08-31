@@ -36,8 +36,6 @@ from curious_george.utils.checkpoints import (
 from curious_george.utils.enums import AgentType
 from curious_george.training.schedule import TrainingSchedule
 
-RAND_ACT_PROBA = np.array([0.15, 0.15, 0.6, 0.1])
-
 
 @dataclass
 class RunContext:
@@ -277,9 +275,11 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         k_int=cfg.train_policy.k_intrinsic,
         action_offset=cfg.arch_prnn.action_offset,
         random_actions=cfg.arch_policy.agent is AgentType.RANDOM,
+        random_action_probs=cfg.arch_policy.random_action_probs,
         normalize_advantage=cfg.train_policy.normalize_advantage,
         curious_agent=cfg.train_policy.curious,
         k_curious=cfg.train_policy.k_curious,
+        k_count=cfg.train_policy.k_count,
         reward_alignment=cfg.train_policy.reward_alignment.value,
         loss="ppo_clip",
         adam_betas=list(cfg.train_policy.optim_betas),
@@ -307,6 +307,10 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         )
         print("Optimizer loaded")
 
+    if algo.count_bonus is not None and StatusCkptKeys.COUNT_VISITS.value in status:
+        algo.count_bonus.load_state_dict(status[StatusCkptKeys.COUNT_VISITS.value])
+        print("Count-bonus visit table loaded")
+
     return algo
 
 
@@ -332,7 +336,11 @@ def setup_training(cfg) -> TrainingComponents:
     algo = setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status)
 
     action_offset = algo.action_offset
-    random_agent = get_agent(env=env, rand_act_prob=RAND_ACT_PROBA, agent_Type=AgentType.RANDOM)
+    random_agent = get_agent(
+        env=env,
+        rand_act_prob=np.asarray(cfg.arch_policy.random_action_probs),
+        agent_Type=AgentType.RANDOM,
+    )
     ac_agent = get_agent(
         env=env,
         agent_Type=AgentType.AC,
