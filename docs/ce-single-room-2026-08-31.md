@@ -104,6 +104,13 @@ Supporting readings:
 - SWdist is elevated across ALL bright-era arms relative to the pale anchor
   (0.09-0.22 vs 0.049); within-era, C-e.035 is the lowest. Carried per the
   user's instruction: both bright-MSE AND pale-MSE stay as controls.
+- **By eye** (final in-run Observation Sequence figures, saved to
+  `throwaway/figs_ce/phase1_{ceRN,mseB}_observation_vs_prediction.png`, also
+  in each run's wandb media): the CE run's argmax predictions match the
+  observation nearly tile-for-tile (landmark shapes, wall band, the blue
+  triangle corner); the MSE run's predictions are the familiar blur - a
+  muddy blue-yellow gradient with barely a hint of structure. Same
+  architecture, same room, same budget; only the loss differs.
 - ⚠️ For the morning: the CE policies CONCENTRATE (locH ~4.8-5.7,
   coverage ~0.12-0.16 vs random's 0.39). The representation is better while
   the coverage is lower - where the policy actually goes (occupancy maps,
