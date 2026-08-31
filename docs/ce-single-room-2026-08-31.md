@@ -13,7 +13,7 @@ One config field: `arch_prnn.loss ∈ {MSE, CE}` (`configs.py::PredLoss`).
   focal_gamma=None)` in `lossFuns`, a `readout="logits"` architecture kwarg
   (the historical sigmoid head untouched byte-for-byte at the default), and a
   `loss_kwargs` pass-through on `PredictiveNet`. Fork gate: 48 passed
-  (7 new in `tests/test_ce_loss.py`).
+  (7 new in the fork's test_ce_loss.py).
 - Here: `envs/palette.py::TILE_VOCABULARY` — the committed 7-class alphabet
   (floor, wall, agent, blue, green, red, yellow), measured closed over
   1,053,696 bank tiles and re-derived live by `tests/test_palette.py`;

@@ -13,6 +13,8 @@ segments never span environment boundaries; GAE runs per env stream.
 
 from dataclasses import dataclass, field
 
+import threading
+
 import numpy as np
 import torch
 from torch_ac.utils import DictList
@@ -261,7 +263,33 @@ def collect_rollout(
         device_obs = device_pool.observation_device()
         device_reset_index = 0
         # (n_segments, B): which room each stream's s-th episode runs in.
-        segment_layouts = device_pool.prepare_resets(count=T // cfg.prnn_seqdur)
+        # The B shell resets behind `prepare_resets` are the rollout's single
+        # biggest CPU cost - measured 1.31 s of a 2.08 s rollout at B=256
+        # (2026-08-31, CG_TIMING, sync-attributed). They touch only the pool's
+        # own CPU shells and its `_layout_rng` - state nothing in the device
+        # rollout reads before the first prepared reset is APPLIED - so the
+        # work runs concurrently with the GPU loop and joins at first use.
+        # Same calls, same RNG order, same values: bitwise-identical to the
+        # serial form, which the STATE_SHA A/B and
+        # tests/test_device_collector.py gate.
+        prepared_resets: dict = {}
+
+        def _prepare_resets_worker() -> None:
+            try:
+                with timer("collect/prepare_resets"):
+                    prepared_resets["schedule"] = device_pool.prepare_resets(
+                        count=T // cfg.prnn_seqdur
+                    )
+            except BaseException as e:  # surfaced at join, not swallowed
+                prepared_resets["error"] = e
+
+        _prepare_thread = threading.Thread(target=_prepare_resets_worker, daemon=True)
+        _prepare_thread.start()
+
+        def _join_prepared() -> None:
+            _prepare_thread.join()
+            if "error" in prepared_resets:
+                raise prepared_resets["error"]
         # Each item is (post image, post direction, post position, initial
         # position) for one synchronized segment, all still on-device.
         device_last_batches: list[tuple[torch.Tensor, ...]] = []
@@ -277,6 +305,7 @@ def collect_rollout(
         because the pool's position/direction tensors are the authority.
         """
         nonlocal device_reset_index, device_obs
+        _join_prepared()  # the schedule must be resident before it is applied
         device_last_batches.append(
             (
                 post_images.clone(),
@@ -340,7 +369,8 @@ def collect_rollout(
             seq_done = (t + 1) % cfg.prnn_seqdur == 0
             state.mask_b.fill(1 - seq_done)
             if seq_done:
-                _close_device_segment(*device_pool.observation_device())
+                with timer("collect/close_segment"):
+                    _close_device_segment(*device_pool.observation_device())
             continue
 
         # --- action selection (one batched forward) ----------------------
@@ -566,6 +596,8 @@ def collect_rollout(
         state.sr = rollout_graph.current_sr()
 
     if device_pool is not None:
+        _join_prepared()
+        segment_layouts = prepared_resets["schedule"]
         # The episode view of the positions buffer, copied because a graphed
         # rollout reuses its buffers in place. Pre-action, so row 0 of each
         # episode is its spawn. e = s * B + b, matching segment_layouts.
@@ -578,9 +610,10 @@ def collect_rollout(
         )
         # Only directions and positions are needed by CPU diagnostics. Images
         # and terminal observations stay on-device for PPO/world-model work.
-        meta_tb = torch.cat(
-            (device_directions.unsqueeze(-1), device_positions), dim=-1
-        ).cpu().numpy()
+        with timer("collect/meta_to_host"):
+            meta_tb = torch.cat(
+                (device_directions.unsqueeze(-1), device_positions), dim=-1
+            ).cpu().numpy()
         last_observations = [
             {
                 "mission": device_pool.mission,
@@ -615,16 +648,17 @@ def collect_rollout(
     # left holding logits, as its name says.
     log_probs = policy_logits.gather(-1, actions.long().unsqueeze(-1)).squeeze(-1)
 
-    probs_np = policy_logits.softmax(dim=-1).cpu().numpy()
-    np.add.at(
-        joint,
-        (
-            meta_tb[:, :, 0].reshape(-1),
-            meta_tb[:, :, 1].reshape(-1),
-            meta_tb[:, :, 2].reshape(-1),
-        ),
-        probs_np.reshape(B * T, -1),
-    )
+    with timer("collect/joint_probs"):
+        probs_np = policy_logits.softmax(dim=-1).cpu().numpy()
+        np.add.at(
+            joint,
+            (
+                meta_tb[:, :, 0].reshape(-1),
+                meta_tb[:, :, 1].reshape(-1),
+                meta_tb[:, :, 2].reshape(-1),
+            ),
+            probs_np.reshape(B * T, -1),
+        )
 
     # make sure last obs is included in done indices (per env stream)
     if device_pool is None:
@@ -641,7 +675,8 @@ def collect_rollout(
     )
     directions = meta_tb[:, :, 0].transpose(1, 0).reshape(B * T)
     positions = meta_tb[:, :, 1:].transpose(1, 0, 2).reshape(B * T, 2)
-    flat_locs = [tuple(map(int, position)) for position in positions]
+    with timer("collect/flat_locs"):
+        flat_locs = [tuple(map(int, position)) for position in positions]
 
     if subroom_size_ is not None:
         # one batched call; (t, b) order matches the historical per-step appends
@@ -651,12 +686,13 @@ def collect_rollout(
     def flat(x):  # (T, B, ...) -> (B*T, ...)
         return x.permute(1, 0, *range(2, x.dim())).reshape(B * T, *x.shape[2:])
 
-    f_actions = flat(actions)
-    f_values = flat(values)
-    f_rewards = flat(rewards)
-    f_log_probs = flat(log_probs)
-    f_masks = flat(masks)
-    f_SRs = flat(SRs)
+    with timer("collect/flat_buffers"):
+        f_actions = flat(actions)
+        f_values = flat(values)
+        f_rewards = flat(rewards)
+        f_log_probs = flat(log_probs)
+        f_masks = flat(masks)
+        f_SRs = flat(SRs)
     curious_rewards = torch.zeros(B * T, device=device)
     int_rewards = torch.zeros(B * T, device=device)
 
@@ -764,7 +800,8 @@ def collect_rollout(
     exps.done_indices = done_indices
     exps.last_observations = last_observations
 
-    loc_entropy, loc_entropy_5 = loc_stats.update(flat_locs)
+    with timer("collect/loc_stats"):
+        loc_entropy, loc_entropy_5 = loc_stats.update(flat_locs)
 
     if device_pool is not None:
         # Reuse the already resident rollout bank. Values intentionally match

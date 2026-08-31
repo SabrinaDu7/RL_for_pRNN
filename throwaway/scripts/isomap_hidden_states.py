@@ -170,22 +170,32 @@ def build_agent(*, kind: str, run_dir: Path, step: int, pN, cfg, env):
                              _torch.device("cpu"), str(policies[step]))
     agent = get_agent(env=env, agent_Type=AgentType.AC, prnn=pN,
                       device=_torch.device("cpu"), ac_model=acmodel,
-                      argmax=True, pastSR=cfg.arch_prnn.action_offset == 0)
+                      argmax=True, action_offset=cfg.arch_prnn.action_offset)
     return agent, acmodel
 
 
-def make_probe_env(hidden_size: int):
-    """The default L-room, exactly as the A/B arms trained in it."""
+def make_probe_env(hidden_size: int, room: int | None = None):
+    """The default L-room (the parity arms' home), or - with `--room N` - the
+    ROOMS_SELECTED entry at that position, impassable, so a multienv-trained
+    checkpoint is probed IN DISTRIBUTION rather than in an unseen-landmark
+    room."""
     from prnn.utils import ActionEncodingsEnum, MinigridEnvNames
 
     from curious_george import AgentInputType, make_env
 
-    return make_env(
+    env = make_env(
         env_key=MinigridEnvNames.LRoom,
         input_type=AgentInputType.H_PO.value,
         act_enc=ActionEncodingsEnum.SpeedHD.value,
         seed=PROBE['seed'],
     )
+    if room is not None:
+        from curious_george.envs.layouts import ROOMS_SELECTED, with_affordance
+
+        layout = with_affordance((ROOMS_SELECTED[room],), impassable=True)[0]
+        env.env.unwrapped.landmarks = list(layout.landmarks)
+        env.reset(seed=PROBE['seed'])
+    return env
 
 
 def collect_probe(*, env, agent, extra_eval, n_segments: int, steps: int):
@@ -355,6 +365,9 @@ def main() -> None:
                     help="policy = the run's own network, fully in eval "
                          "(acmodel.eval, pN.eval, argmax); random = the "
                          "coverage-matched control")
+    ap.add_argument("--room", type=int, default=None,
+                    help="probe in ROOMS_SELECTED[room] (impassable) instead "
+                         "of the default L-room")
     ap.add_argument("--probe-seed", type=int, default=PROBE_SEED,
                     help="re-rolls the TRAJECTORY, the script's only stochastic "
                          "input; Isomap itself is deterministic given the points")
@@ -385,13 +398,23 @@ def main() -> None:
         step, ckpt = latest_checkpoint(run_dir, a.step)
         offset = run_action_offset(run_dir)
         hidden = checkpoint_hiddensize(ckpt)
-        env = make_probe_env(hidden)
+        env = make_probe_env(hidden, room=a.room)
+        # The checkpoint knows its own readout: 147 pixels = MSE-era,
+        # n_tiles * n_classes logits = the CE head. Constructing the wrong one
+        # fails loudly at load (by design), so infer from the weights.
+        from curious_george.configs import PredLoss
+        state = torch.load(ckpt, map_location="cpu", weights_only=False)
+        from prnn.utils.checkpoints import CkptKeys
+        sd = state[CkptKeys.PRNN_STATE_DICT]
+        out_width = sd["W_out"].shape[0]
+        loss = PredLoss.MSE if out_width == env.getObsSize() else PredLoss.CE
         cfg = replace(Config(), arch_prnn=replace(Config().arch_prnn,
                                                   hidden_size=hidden,
-                                                  action_offset=offset))
+                                                  action_offset=offset,
+                                                  loss=loss))
         pN = get_pN(args=cfg, env=env, device="cpu", pRNN_ckpt=str(ckpt))
         pN.wandb_log = False
-        adapter = PRNNAdapter(pN, torch.device("cpu"), pastSR=offset == 0)
+        adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=offset)
         assert adapter.action_offset == offset, "adapter and run disagree on the circuit"
 
         agent, acmodel = build_agent(kind=a.agent, run_dir=run_dir, step=step,

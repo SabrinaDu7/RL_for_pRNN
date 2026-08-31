@@ -269,6 +269,8 @@ class DeviceTableShellPool:
         self.device = torch.device(device)
         self._mission = reference.unwrapped.mission
         self.layouts = list(layouts) if layouts else None
+        #: None = not yet built; False = fast reset inapplicable; list = cache.
+        self._layout_grids: list | None | bool = None
         self._layout_rng = np.random.default_rng(layout_seed)
 
         banks, tables = (
@@ -377,6 +379,49 @@ class DeviceTableShellPool:
         ]
         return images, self.directions.clone()
 
+    def _cache_layout_grids(self) -> list | None:
+        """One pristine Grid per layout, or None when the fast reset cannot
+        apply. Measured motivation: the per-rollout `prepare_resets` ran B full
+        MiniGrid resets - 1.31 s of a 2.08 s rollout at B=256 - and a reset's
+        only RNG consumer is `place_agent`; the grid build around it is
+        deterministic given the landmarks.
+
+        SAFE TO SHARE one Grid object across streams and episodes because this
+        pool's four-action space cannot mutate a cell (pickup is refused by
+        Floor/Obstacle/Wall - asserted below, mirroring
+        `obs_bank.build_transition_tables`), and the pool discards shell
+        observations (`_reset_streams` returns positions only; observations
+        come from the device banks).
+
+        IMPASSABLE-ONLY, deliberately: with blocking landmarks the env paints
+        the grid BEFORE `place_agent`, so a pre-painted cached grid consumes
+        np_random identically to a fresh build. The walkable arm places the
+        agent on the EMPTY grid first (a historical trajectory-preserving
+        order, see Lroom._gen_grid) - a cached painted grid would change the
+        rejection-sampling draws and silently move every trajectory. Walkable
+        layouts therefore return None and keep the full reset.
+        """
+        if self.layouts is None:
+            return None
+        if not all(
+            any(lm.impassable for lm in layout.landmarks) for layout in self.layouts
+        ):
+            return None
+        import copy
+
+        scratch = copy.deepcopy(self._wrappers[0].unwrapped)
+        if scratch.agent_start_pos is not None or scratch.new_obj_pos is not None:
+            return None
+        grids = []
+        for layout in self.layouts:
+            scratch.landmarks = list(layout.landmarks)
+            scratch.reset()  # scratch np_random only; streams' RNG untouched
+            for cell in scratch.grid.grid:
+                if cell is not None and cell.can_pickup():
+                    return None  # a pickable cell would make grids mutable
+            grids.append(scratch.grid)
+        return grids
+
     def _reset_streams(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Draw one layout and one start state per stream. (layouts, pos, dir).
 
@@ -386,6 +431,8 @@ class DeviceTableShellPool:
         Reading the start from the shell keeps that rule owned by MiniGrid
         rather than reimplemented here.
         """
+        if self._layout_grids is None and self.layouts is not None:
+            self._layout_grids = self._cache_layout_grids() or False
         if self.layouts is not None:
             chosen = self._layout_rng.integers(0, len(self.layouts), size=self.B)
             for b, wrapper in enumerate(self._wrappers):
@@ -393,8 +440,24 @@ class DeviceTableShellPool:
         else:
             chosen = np.zeros(self.B, dtype=np.int64)
 
-        for shell in self._training_shells:
-            shell.reset()
+        if self.layouts is not None and self._layout_grids:
+            # The fast reset: install the cached grid, then run the SAME
+            # `place_agent` the full reset would - the reset path's only RNG
+            # consumer - and the same episode-state clears MiniGridEnv.reset
+            # performs. Bitwise-identical draws (gated by the STATE_SHA A/B
+            # and the device-collector equivalence tests); ~25x cheaper than
+            # B full resets.
+            for b, wrapper in enumerate(self._wrappers):
+                u = wrapper.unwrapped
+                u.grid = self._layout_grids[int(chosen[b])]
+                u.agent_pos = (-1, -1)
+                u.agent_dir = -1
+                u.place_agent()
+                u.carrying = None
+                u.step_count = 0
+        else:
+            for shell in self._training_shells:
+                shell.reset()
         positions = np.asarray(
             [wrapper.unwrapped.agent_pos for wrapper in self._wrappers], dtype=np.int64
         )
