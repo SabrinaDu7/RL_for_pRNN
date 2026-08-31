@@ -62,10 +62,56 @@ The MSE-multienv pattern repeats Phase 1's: barely-committed policy
 above the pale-era 5-room values (~0.02-0.06) - room-specific coding is
 forming even under MSE in the 8-room bright set.
 
-**Wave 2b (CE + baselines): jobs 10577305 (ce8 s2), 10577306 (ce8 s3),
-10577307 (ce8-rndfwd), 10577308 (ce8-rnduni), 10577309 (ce8-count),
-submitted ~02:50 at 6593723, entropy 0.035 per the Phase-1 scan.**
-*(results pending)*
+**Wave 2b (all COMPLETED ~03:25; jobs 10577305-09, submitted ~02:50 at
+6593723, entropy 0.035 per the Phase-1 scan). Final summaries, seeded
+probes (`scratchpad/phase2_readout.py`):**
+
+| arm | wm loss (nats/tile) | room sRSA | pooled | remap | SWdist | SI | MI | locH | cov |
+|---|---|---|---|---|---|---|---|---|---|
+| ce8 curious s2 | 0.299 | 0.625 | 0.443 | +0.183 | 0.112 | 0.574 | 0.067 | 7.23 | 0.287 |
+| ce8 curious s3 | 0.357 | 0.543 | 0.392 | +0.151 | 0.080 | 0.588 | 0.059 | 7.26 | 0.284 |
+| ce8-count | 0.248 | **0.659** | 0.502 | +0.157 | 0.070 | 0.666 | 0.014 | 7.36 | 0.163 |
+| ce8-rndfwd | 0.194 | 0.607 | **0.510** | +0.097 | 0.095 | 0.688 | — | 7.13 | 0.361 |
+| ce8-rnduni | 0.244 | 0.573 | 0.454 | +0.119 | 0.085 | 0.709 | — | 7.31 | 0.179 |
+| *(2a)* mse8 s2 | *0.0143 (MSE)* | 0.517 | 0.327 | +0.191 | 0.059 | 0.518 | 0.054 | 6.99 | 0.225 |
+| *(2a)* mse8 s3 | *0.0129 (MSE)* | 0.502 | 0.312 | +0.190 | 0.050 | 0.539 | 0.058 | 7.16 | 0.234 |
+
+**What holds (confirmed, n=2 CE-curious vs n=2 MSE-curious, seeded probes):**
+
+- **CE lifts the multienv representation across the board**: every CE arm's
+  room sRSA (0.543-0.659) is at or above both MSE baselines (0.502-0.517);
+  CE-curious mean 0.584 vs MSE-curious 0.510; SI likewise (0.57-0.71 vs
+  0.52-0.54). The morning deliverable - CE multienv training with
+  above-baseline sRSA - stands.
+- Both behavioral baselines matched the analytic calibration mid-run
+  (rndfwd 0.368 vs 0.360, rnduni 0.180 vs 0.182): the exploration wiring
+  is sound and the baseline numbers mean what they claim.
+- Prediction figures by eye (`throwaway/figs_ce/phase2_ce8_s2_...png` +
+  per-run wandb media): floor/wall/agent crisp everywhere; landmark binding
+  is INTERMITTENT - step 96 reproduces the room's blue-left/red-right
+  structure, neighbouring blind steps predict background where landmarks
+  are. The model UNDERCALLS rare classes under room uncertainty.
+
+**What does NOT hold yet (honest negatives):**
+
+- Within CE, the CURIOUS policy has not separated from its baselines:
+  count-based beats curious s2 (0.659 vs 0.625) and curious s3 (0.543)
+  falls below rndfwd (0.607). MI stayed low (0.06-0.07 vs Phase-1's 0.36):
+  at half budget on 8 rooms the policy never strongly commits.
+- SWdist favours the MSE arms (0.05-0.06 vs 0.07-0.11) at this n; read
+  against its known high estimator noise, but do not claim CE wins it.
+
+**Next steps, ranked (all data-grounded):**
+1. FULL-budget ce8 (43,936 wm steps, ~60 min): the intermittent landmark
+   binding + wm loss 0.30-0.36 (vs single-room 0.16) reads as underfitting
+   first; budget before machinery. ⛔ BLOCKED on the Mila OTP.
+2. If full budget saturates with landmark recall still stalled while
+   background saturates - that is the named focal-loss trigger
+   (`sdu/focal-loss`, timeboxed).
+3. The curious-vs-count gap is the interesting science: count explores less
+   (cov 0.163) yet represents better - suggests visitation-targeted data
+   beats error-targeted data for the pRNN here. A learning-progress reward
+   is the principled contender; hold for the user.
 
 ## Operational notes
 
