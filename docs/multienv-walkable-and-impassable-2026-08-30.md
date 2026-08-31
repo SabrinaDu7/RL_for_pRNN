@@ -112,15 +112,62 @@ LR warmup (which is 🔴 absent in BOTH repos and would be silently dead under
   5-vs-10-room difference (0.618 vs 0.635) is not.
 - **SWdist has a 28.3% CV** and its estimator noise on a frozen checkpoint (0.117) exceeds
   every difference here. Do not read it.
-- **The random-agent baseline runs are still MISSING** (no multi-room random run has been
-  scored). The config-space blocker described here originally - three pairwise-conflicting
-  `Config` constraints making it unrepresentable - was removed after this doc's commit:
-  `22e7c0d` routed random actions through the one collection path, and
-  `tests/test_random_agent_baseline.py::test_a_random_agent_multi_room_config_is_now_expressible`
-  pins that `multienv-fast` + `--arch-policy.agent RANDOM` builds. What remains is running it.
+- **The random-agent baseline has now RUN** (2026-08-31). The config-space blocker described
+  here originally - three pairwise-conflicting `Config` constraints - was removed by
+  `22e7c0d`, which routed random actions through the one collection path;
+  `tests/test_random_agent_baseline.py` pins it. Measured, both at n=1:
+
+  | rooms | learned (raw, e=0.003) | random walker |
+  |---|---|---|
+  | walkable | 0.00526 / 0.8009 | **0.00347 / 0.8595** |
+  | impassable | 0.00561 / 0.6178 | **0.00388 / 0.6440** |
+
+  ⚠️ **The loss column is NOT a fair comparison**: the two agents generate different training
+  distributions, and a broad random sweep is genuinely easier to predict - lower loss under a
+  random walker is partly the curiosity objective working as intended. sRSA IS fair, since
+  both are scored by the same probe, and there the raw learned policy is *behind* by 0.059
+  and 0.026 against a 4.5% CV. A tuned policy does better - see the normalization section.
 - **`remapping_index` is deliberately ignored**, per instruction.
 - The spatial probe is still **unseeded** (`probe_seed` accepted, passed by nothing), so
   every sRSA point carries its own rollout noise on top of the seed noise.
+
+## Advantage normalization: the right direction, and it needed 40x more entropy
+
+Added 2026-08-31 (`train_policy.normalize_advantage`, branch `sdu/optim-pred`). Impassable
+n=5, half budget:
+
+| whitened `entropy_coef` | loss | per-room sRSA | MI | % pe<1.0 |
+|---|---|---|---|---|
+| 0.024 (s2/s3) | 0.00627 / 0.00703 | 0.5050 / 0.5275 | 0.13-0.15 | 1.3% / 2.6% |
+| 0.035 | 0.00609 | 0.5683 | 0.107 | 0.0% |
+| 0.07 | 0.00556 | 0.6420 | 0.048 | 0.0% |
+| **0.12 (s2/s3)** | 0.00545 / 0.00541 | **0.6735 / 0.6940** | 0.030 | 0.0% |
+| 0.20 | 0.00527 | 0.6210 | 0.019 | 0.0% |
+| 0.35 | **0.00515** | 0.6417 | 0.012 | 0.0% |
+| *raw, e=0.003 (s2/s3)* | *0.00561 / 0.00562* | *0.6178 / 0.6419* | *0.045* | *0.0%* |
+
+**At e=0.12 it beats raw**: sRSA 0.6838 against 0.6299 (n=2 each, +0.054 ~ 2.3 sd at a 4.5%
+CV) and loss 0.00543 against 0.00562.
+
+🔴 **A first attempt reported it as clearly WORSE, and that was a tuning error.** The ratio
+that governs exploration is `entropy_coef / |adv|`, and whitening RAISES |adv| from ~0.087 to
+1, so the raw knee of 0.003 becomes ~40x too weak. Those arms collapsed for 67-70% of
+updates. Nothing about whitening was being measured.
+
+**Loss and sRSA optimize at DIFFERENT coefficients** - loss falls monotonically to 0.35 while
+sRSA peaks at 0.12 and drops by 0.20. Higher entropy flattens the visiting distribution
+toward something easier to predict but less spatially structured. Report both or neither.
+
+**And at e=0.12 the learned policy finally beats the random walker on sRSA** (0.684 against
+0.644) - the first evidence in this work that the policy contributes anything. n=2 against
+n=1; suggestive, not settled.
+
+⚠️ The mechanism justification is weaker than the result. `advantages_std` really does halve
+over a run (0.087 -> 0.040, so the effective coefficient doubles), but the predicted symptom -
+raw `policy_entropy` drifting upward - is absent: it is flat at 1.84-1.89 against a 2.000
+ceiling, i.e. saturated, with nowhere to drift. And the transfer argument does not apply
+here: walkable and impassable have essentially identical advantage scales (0.0871 both), so
+the knee would carry between them even raw.
 
 ## 🔴 A rendering hazard found on the way
 
