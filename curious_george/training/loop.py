@@ -62,6 +62,7 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
             n_trajs=cfg.eval.n_trajs,
             traj_timesteps=cfg.collect.episode_steps,
             sleepstd=cfg.eval.sleep_std,
+            probe_seed=cfg.eval.probe_seed,
         )
         rooms = " ".join(f"{r['sRSA']:.3f}" for r in result["per_room"])
         # flush=True on every eval print, here and below. tqdm writes the
@@ -101,6 +102,7 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
             traj_timesteps=cfg.collect.episode_steps,  # eval trajs match training trajs
             trainDecoder=cfg.eval.spatial_path is SpatialEvalPath.LEGACY_DECODER,
             legacy_timesteps=cfg.eval.legacy_decoder_timesteps,
+            probe_seed=cfg.eval.probe_seed,
         )
         print(
             f"{nameext[1:]} sRSA={metrics['sRSA']:.4f} SWdist={metrics['SWdist']:.4f}",

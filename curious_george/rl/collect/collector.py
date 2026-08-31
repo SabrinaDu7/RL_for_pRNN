@@ -182,6 +182,7 @@ def collect_rollout(
     intrinsic_ref=None,  # IntrinsicReference (B=1 only) or None
     rollout_graph=None,  # GraphRolloutStepper (exp.rollout_cuda_graph) or None
     count_bonus=None,  # rewards.CountBonus (train_policy.k_count > 0) or None
+    reward_normalizer=None,  # advantage.RewardNormalizer (train_policy.normalize_reward) or None
 ) -> CollectResult:
     pool = envs if isinstance(envs, AsyncShellPool) else None
     device_pool = envs if isinstance(envs, DeviceTableShellPool) else None
@@ -745,6 +746,7 @@ def collect_rollout(
             k_curious=cfg.k_curious,
             count_rewards=count_rewards_tb,
             k_count=cfg.k_count,
+            reward_normalizer=reward_normalizer,
         )
     advantages = flat(advantages_tb)
 

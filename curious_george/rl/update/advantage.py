@@ -3,6 +3,54 @@
 import torch
 
 
+class RewardNormalizer:
+    """Divide the combined reward by a running std (`train_policy.normalize_reward`).
+
+    Burda et al. (Large-Scale Study of Curiosity-Driven Learning §2.2): the
+    curiosity reward is the world model's own loss, which the world model is
+    minimising, so the reward scale is non-stationary BY CONSTRUCTION (measured
+    here: ~7x decay over a run). A raw-scale reward makes the value target -
+    and with it `value_loss_coef`'s meaning - drift over training. Whitened
+    advantages fix the policy:entropy ratio; this fixes the CRITIC's target
+    scale. Scale only, never centered: subtracting a baseline from the reward
+    changes the discounted objective, dividing it does not.
+
+    Welford over reward ELEMENTS (Burda uses the std of discounted reward
+    sums; the difference is a constant factor ~1/(1-γλ) which whitened
+    advantages absorb, and per-element needs no second recurrence).
+
+    UPDATE-THEN-NORMALIZE per rollout, which makes the gate exact: with a
+    fresh normalizer, scaling every reward by c scales the running std by c
+    and the normalized reward is IDENTICAL - `k_curious x10` must be a no-op
+    with this on, and must not be with it off (tests/test_reward_norm.py).
+
+    Not checkpoint-persisted: a resumed run re-warms the estimate within a few
+    rollouts, and the transient is a scale wobble the whitened advantages
+    absorb.
+    """
+
+    def __init__(self, eps: float = 1e-8):
+        self.eps = eps
+        self.count = 0
+        self.mean = 0.0
+        self.m2 = 0.0
+
+    def update_and_normalize(self, reward: torch.Tensor) -> torch.Tensor:
+        n = reward.numel()
+        batch_mean = float(reward.mean())
+        batch_var = float(reward.var(unbiased=False))
+        delta = batch_mean - self.mean
+        total = self.count + n
+        self.mean += delta * n / total
+        self.m2 += batch_var * n + delta * delta * self.count * n / total
+        self.count = total
+        return reward / (self.std + self.eps)
+
+    @property
+    def std(self) -> float:
+        return (self.m2 / self.count) ** 0.5 if self.count else 0.0
+
+
 @torch.no_grad()
 def compute_gae(
     *,
@@ -19,6 +67,7 @@ def compute_gae(
     k_curious: float,
     count_rewards: torch.Tensor | None = None,
     k_count: float = 0.0,
+    reward_normalizer: RewardNormalizer | None = None,
 ) -> torch.Tensor:
     """Return GAE for rollout tensors shaped ``(T, ...)``.
 
@@ -51,6 +100,9 @@ def compute_gae(
         # Branched, not a zero tensor: the default path must stay bitwise
         # identical for the golden gate.
         reward = reward + k_count * count_rewards
+    if reward_normalizer is not None:
+        # Branched for the same golden-gate reason as count_rewards above.
+        reward = reward_normalizer.update_and_normalize(reward)
     deltas = reward + discount * next_values * next_masks - values
 
     decay = discount * gae_lambda * next_masks

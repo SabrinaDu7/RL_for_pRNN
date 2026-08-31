@@ -547,6 +547,13 @@ class TrainPolicyCfg:
     k_curious: float = 1.0
     intrinsic: bool = False
     k_intrinsic: float = 1.0
+    normalize_reward: bool = False
+    """Divide the combined reward by a running std before GAE. The curiosity
+    reward is the world model's own loss, which the world model is minimising,
+    so the raw reward scale decays ~7x over a run and the critic's target
+    drifts with it. Scale only, never centered. Gates and the exact-invariance
+    property: `rl/update/advantage.py::RewardNormalizer`."""
+
     k_count: float = 0.0
     """Count-based novelty bonus: the m-th visit a stream makes to state
     (room, x, y, head direction) in a rollout earns k_count/sqrt(N + m), with N
@@ -678,6 +685,18 @@ class EvalCfg:
     log_every_steps: int = 2_048
     plot_every_steps: int = 409_600
     analysis_every_steps: int = 409_600
+
+    probe_seed: int | None = None
+    """Seed for the spatial-eval probe rollouts (torch + numpy + env reset).
+
+    None reproduces the historical unseeded eval bitwise. Set, it makes the
+    probe FIXED: checkpoints within a run become comparable to each other
+    instead of each carrying its own rollout noise (measured bands 0.068-0.114
+    of sRSA per run unseeded - `docs/claude_logs/rl_tricks_2026-08-29.md` top).
+    A CONSTANT shared across runs and training seeds on purpose: seed-to-seed
+    CV then measures training variance, not probe variance. The multi-room
+    eval seeds per room as `probe_seed + room_index`, so room k's probe does
+    not depend on how much RNG the rooms before it consumed."""
 
 
 @dataclass(frozen=True)
@@ -975,12 +994,20 @@ def _parity() -> Config:
         main_train.py parity --arch-prnn.action-offset 1     # the new circuit
         main_train.py parity --train-policy.entropy-coef 0.005
 
-    `entropy_coef` is 0.003: the MEASURED knee, not the 0.001 the original
-    reference ran. It is the lowest value whose policy-collapse duty cycle is
-    0.0% - in 5 of 5 seeds - at a prediction loss matching the offset-0 baseline
-    and 3.7x the mutual information of a flat 0.01. See
-    `docs/entropy-sweep-and-noise-floor-2026-08-29.md`. To reproduce the older
-    runs exactly, pass `--train-policy.entropy-coef 0.001`.
+    2026-08-31: advantages are WHITENED by default and `entropy_coef` is 0.035
+    - the coefficient means "fraction of a unit advantage scale", not a value
+    tuned against a decaying |adv|. The raw-era knee was 0.003 (measured,
+    `docs/entropy-sweep-and-noise-floor-2026-08-29.md`); it does not carry
+    over: whitening rescales |adv| ~0.12 -> 1, and the 2026-08-30 rendering
+    line (`docs/invalid-runs.md`) moved the reward scale ~5x - which is also
+    why changing this preset IN PLACE costs nothing: every run the old values
+    produced is pale-era and already incomparable. 0.035 is a STARTING point;
+    the CE plan carries a scan. To reproduce the raw-era arms exactly:
+    `--train-policy.no-normalize-advantage --train-policy.entropy-coef 0.003`.
+
+    `probe_seed` is set here (constant, NOT derived from `run.seed` - see
+    `EvalCfg.probe_seed`), so every parity-shaped run's sRSA series is a fixed
+    probe rather than fresh rollout noise per event.
 
     NOT a replacement for `reference`, which names the SERIAL baseline and is
     what older runs and `tests/test_configs.py` mean by the word.
@@ -999,10 +1026,11 @@ def _parity() -> Config:
         ),
         train_policy=replace(
             base.train_policy, total_grad_steps=175_744, cuda_graph=True,
-            entropy_coef=0.003,
+            entropy_coef=0.035, normalize_advantage=True,
         ),
         eval=replace(
-            base.eval, analysis_every_steps=3_333_328, plot_every_steps=7_499_989
+            base.eval, analysis_every_steps=3_333_328, plot_every_steps=7_499_989,
+            probe_seed=10_007,
         ),
         run=replace(
             base.run, save_every_steps=8_388_608, archive_every_steps=8_388_608

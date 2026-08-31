@@ -162,15 +162,22 @@ def test_a_ramp_under_the_policy_graph_is_refused():
     TrainPolicyCfg(entropy_coef=0.003, cuda_graph=True)
 
 
-def test_parity_defaults_to_the_measured_entropy_knee():
-    """0.003, not the 0.001 the original reference ran.
+def test_parity_defaults_to_whitened_entropy():
+    """Whitened advantages, coefficient 0.035, and a seeded spatial probe.
 
-    The knee is the lowest coefficient with a 0.0% collapse duty cycle across 5
-    seeds; see docs/entropy-sweep-and-noise-floor-2026-08-29.md.
+    2026-08-31: the raw-era knee (0.003, docs/entropy-sweep-and-noise-floor-
+    2026-08-29.md) was superseded together with the rendering line that made
+    every raw-era run incomparable anyway - see the parity docstring and
+    docs/claude_logs/plan-ce-multienv-overnight-2026-08-31.md Phase 0. Under
+    whitening the coefficient is a fraction of a UNIT advantage scale, so it
+    transfers across reward-scale changes; 0.035 is the declared starting
+    point the CE plan's scan refines.
     """
     from curious_george.configs import PRESETS
 
     cfg = PRESETS["parity"][1]
-    assert cfg.train_policy.entropy_coef == 0.003
+    assert cfg.train_policy.normalize_advantage is True
+    assert cfg.train_policy.entropy_coef == 0.035
     assert cfg.train_policy.entropy_coef_final is None
+    assert cfg.eval.probe_seed is not None
     assert cfg.arch_prnn.action_offset == 0, "the circuit must still be typed to change"

@@ -123,6 +123,7 @@ class PredictivePPOAlgo:
         curious_agent=False,
         k_curious=1,
         k_count=0.0,
+        normalize_reward=False,
         reward_alignment="legacy",
         loss="ppo_clip",
         batched_wm=False,
@@ -283,6 +284,10 @@ class PredictivePPOAlgo:
             self.count_bonus = CountBonus.create(
                 n_layouts=self.envs.n_layouts, width=W, height=H, device=self.device
             )
+
+        from curious_george.rl.update.advantage import RewardNormalizer
+
+        self.reward_normalizer = RewardNormalizer() if normalize_reward else None
 
         self.intrinsic_ref = (
             IntrinsicReference(self, self.state.sr.shape[-1]) if intrinsic else None
@@ -445,6 +450,7 @@ class PredictivePPOAlgo:
             intrinsic_ref=self.intrinsic_ref,
             rollout_graph=self._rollout_graph,
             count_bonus=self.count_bonus,
+            reward_normalizer=self.reward_normalizer,
         )
 
         # expose the rollout on the algo for analysis/tasks that read attributes

@@ -15,6 +15,28 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `sdu/optim-pred` — parity/multienv-fast go whitened-by-default · 2026-08-31
+
+**What changed.** The `parity` preset (and `multienv-fast`, which derives from
+it): `normalize_advantage=True`, `entropy_coef` 0.003 → 0.035, and
+`eval.probe_seed=10007` (the spatial probe is FIXED - previously each analysis
+event drew fresh rollout noise, bands of 0.068-0.114 sRSA per run). Dataclass
+DEFAULTS are untouched, so `tests/golden/` train/eval fixtures stay bitwise;
+only the setup-composition fixture was recaptured (same filename, its own
+convention). `train_policy.normalize_reward` also lands (default False -
+absent from every prior run's config).
+
+**Why it costs nothing.** Every run these preset names ever produced is
+pale-era and already invalidated by the 2026-08-30 rendering line below;
+there is no bright-era run on the old values to be incomparable with.
+
+**What to know when reading.** A "parity"- or "multienv-fast"-shaped run from
+2026-08-31 on is whitened at 0.035 with a seeded probe; earlier ones are raw
+at 0.003 with an unseeded probe. The raw-era knee (0.003) does NOT translate
+to the whitened scale (measured factor ~8x, `slurm/multienv.sh` header).
+
+---
+
 ## `sdu/optim-pred` — full-colour landmarks, and triangle3 replaces x · 2026-08-30
 
 **What changed.** `minigrid` `22ef960` (two commits, re-pinned here in the same

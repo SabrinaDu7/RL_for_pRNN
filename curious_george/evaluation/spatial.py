@@ -266,6 +266,7 @@ def evaluate_multi_room_representation(
     onset_transient: int = 20,
     active_time_threshold: int = 200,
     rng: np.random.Generator | None = None,
+    probe_seed: int | None = None,
 ) -> dict:
     """Per-room and pooled spatial metrics, and the remapping index between them.
 
@@ -302,6 +303,13 @@ def evaluate_multi_room_representation(
         for k, layout in enumerate(layouts):
             env.env.unwrapped.landmarks = list(layout.landmarks)
             env.reset()
+            if probe_seed is not None:
+                # Per-room offset, for the reason EvalCfg.probe_seed gives:
+                # room k's probe must not depend on RNG the earlier rooms
+                # consumed. Same three seams as the single-room block above.
+                torch.manual_seed(probe_seed + k)
+                np.random.seed(probe_seed + k)
+                env.env.reset(seed=probe_seed + k)
             h, pos = collect_pooled_activity(
                 pN, env, agent,
                 n_trajs=n_trajs,
