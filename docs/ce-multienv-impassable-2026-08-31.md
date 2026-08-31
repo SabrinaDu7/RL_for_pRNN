@@ -67,6 +67,19 @@ forming even under MSE in the 8-room bright set.
 submitted ~02:50 at 6593723, entropy 0.035 per the Phase-1 scan.**
 *(results pending)*
 
+## Operational notes
+
+- ~03:10: the Mila SSH control master died and reconnection now prompts for
+  an email OTP (first occurrence on this machine; the runbook forbids
+  automating or retrying credentials). Runs are unaffected - they are
+  self-contained and rsync to $SCRATCH on exit; wandb carries all metrics
+  and figures. BLOCKED until the user supplies the OTP: log tails, sacct,
+  $SCRATCH checkpoint access (and with it the offline bump-contrast and
+  per-tile decomposition), and any further launches. The user was notified.
+- Mid-run sanity (~03:05, via wandb): ce8-rndfwd coverage 0.368 vs
+  calibration 0.360; ce8-rnduni 0.180 vs 0.182 - both behavioral baselines
+  sit exactly on the analytic references.
+
 ## Reading list when runs land
 
 - Per-room sRSA (seeded probe), pooled sRSA, remapping index, SWdist, SI —
