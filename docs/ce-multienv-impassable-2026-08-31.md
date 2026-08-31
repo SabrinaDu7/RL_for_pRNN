@@ -113,6 +113,25 @@ probes (`scratchpad/phase2_readout.py`):**
    beats error-targeted data for the pRNN here. A learning-progress reward
    is the principled contender; hold for the user.
 
+## Wave 3 — full budget (launched morning 2026-08-31)
+
+The ranked next step from the wave-2b reading: full budget (the preset's own
+43,936 wm / 175,744 policy gradient steps, 89,980,928 env steps) to separate
+underfitting from the class-imbalance story before any new machinery.
+
+| arm | where | id / run stem | flags beyond wave 2b |
+|---|---|---|---|
+| ce8full s2 | local 4060 | mx-impassable-n8-s2-ce8full-local | *(budget only)* |
+| mse8full s2 | local 4060 (queued after) | mx-impassable-n8-s2-mse8full-local | |
+| ce8full s3 | Mila 10581798 | mx-impassable-n8-s3-ce8full | |
+| mse8full s3 | Mila 10581799 | mx-impassable-n8-s3-mse8full | |
+| ce8-countfull s2 | Mila 10581800 | mx-impassable-n8-s2-ce8-countfull | count vs curious at full budget |
+
+Local runs carry `-local` in the name; comparisons stay on the gradient-step
+axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster
+curves). Cluster tree reset to `7db61dd` BEFORE sbatch (the wave-1 lesson).
+Mila auth recovered key-only (~morning); the OTP path was never needed again.
+
 ## Operational notes
 
 - ~03:10: the Mila SSH control master died and reconnection now prompts for
