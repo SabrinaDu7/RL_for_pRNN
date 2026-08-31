@@ -20,7 +20,9 @@ from curious_george.envs.layouts import (
     MULTI_ROOM_ID,
     EnvContent,
     EnvShape,
+    Landmark,
     LandmarkKind,
+    Layout,
     ROOMS_SELECTED,
     RoomRules,
     RoomSetRules,
@@ -57,11 +59,23 @@ def test_committed_rooms_are_the_pool_at_the_named_indices(impassable_pool):
     `Committed`'s docstring gives the reason this matters: re-deriving a set
     after a generator change silently yields different rooms while every
     historical result keeps referring to the old ones.
+
+    2026-08-30: the committed rooms deliberately carry `triangle3` where the
+    source pool carries `x` (the active design changed; anchors and colours
+    did not - see SHAPES and docs/invalid-runs.md). `Layout.key` hashes the
+    shape, so the key comparison rebuilds each room with the source pool's
+    shape: a generator change is still caught bitwise, and only the reviewed
+    shape swap is exempted.
     """
     blocked = with_affordance(ROOMS_SELECTED, impassable=True)
     assert len(blocked) == len(SOURCE_INDICES)
     for room, index in zip(blocked, SOURCE_INDICES):
-        assert room.key == impassable_pool[index].key
+        as_sourced = Layout(tuple(
+            Landmark("x" if lm.shape == "triangle3" else lm.shape,
+                     lm.color, lm.anchor, impassable=lm.impassable)
+            for lm in room.landmarks
+        ))
+        assert as_sourced.key == impassable_pool[index].key
         assert room.anchors == impassable_pool[index].anchors
 
 
