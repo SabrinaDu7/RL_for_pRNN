@@ -113,12 +113,16 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
 def run_behavior_analysis(
     cfg, comps: TrainingComponents, run_ctx: RunContext, update: int, with_figures: bool = True
 ) -> None:
-    # Reuse the training rollout (free) unless the random-action path is
-    # active, which never fills the algo's buffers.
+    # Reuse the training rollout (free) for EVERY agent: since 22e7c0d the
+    # random baseline collects through the same path and fills the same
+    # buffers. The old RANDOM special case built a fresh algo clone that
+    # dropped reward_alignment (an assertion error under action_offset=1) and
+    # random_actions (the "random" analysis rollout sampled the POLICY) - it
+    # cost four cluster jobs before this ran for the first time.
     opa = OnPolicyAnalysis(
         comps.algo,
         timesteps=cfg.eval.behaviour_timesteps,
-        reuse_last_rollout=cfg.arch_policy.agent is not AgentType.RANDOM,
+        reuse_last_rollout=True,
     )
     if run_ctx.wandb_log:
         train_log.log_behavior(opa, with_figures=with_figures)

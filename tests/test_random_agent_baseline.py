@@ -162,6 +162,32 @@ def test_random_actions_survive_the_rollout_cuda_graph():
     assert 0.35 < (acts == 2).mean() < 0.85, f"forward fraction {(acts == 2).mean()}"
 
 
+def test_the_behaviour_analysis_runs_for_the_random_baseline():
+    """The path that cost four cluster jobs on first contact: the analysis
+    event used to build a fresh algo clone for RANDOM runs that dropped
+    reward_alignment (an assertion under action_offset=1) and random_actions.
+    Every agent now reuses the training rollout."""
+    from types import SimpleNamespace
+
+    from curious_george.training.loop import run_behavior_analysis
+    from curious_george.training.setup import setup_training
+    from tests.small_config import small_config
+
+    cfg = small_config(backend=EnvBackend.DEVICE)
+    cfg = dataclasses.replace(
+        cfg, arch_policy=dataclasses.replace(cfg.arch_policy, agent=AgentType.RANDOM)
+    )
+    comps = setup_training(cfg)
+    comps.algo.collect_experiences()
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        run_behavior_analysis(
+            cfg, comps, SimpleNamespace(wandb_log=False, model_dir=tmp + "/"),
+            update=1, with_figures=False,
+        )
+
+
 def test_the_random_baseline_trains_its_world_model():
     """The bug that made the first baseline meaningless.
 
