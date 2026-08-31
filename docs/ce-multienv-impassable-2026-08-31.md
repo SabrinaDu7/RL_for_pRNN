@@ -127,6 +127,17 @@ underfitting from the class-imbalance story before any new machinery.
 | mse8full s3 | Mila 10581799 | mx-impassable-n8-s3-mse8full | |
 | ce8-countfull s2 | Mila 10581800 | mx-impassable-n8-s2-ce8-countfull | count vs curious at full budget |
 
+**ce8full s2 (local) FINISHED, exit 0** — the new board leader:
+room sRSA **0.668** (curve still rising at the end: 0.651 → 0.668 over the
+last two events), pooled 0.472, remap +0.196, SWdist 0.088, SI 0.675,
+MI **0.157** (2.3x the half-budget arm - the policy commits given budget),
+wm loss 0.281 nats/tile, coverage 0.177. Above every half-budget arm
+including count (0.659). Figure
+(`throwaway/figs_ce/phase2_ce8full_s2_...png`): wall geometry crisp,
+landmark binding improved but still partial (right class and place, wrong
+extent) - and since sRSA had NOT plateaued, the next lever remains budget,
+not focal.
+
 Local runs carry `-local` in the name; comparisons stay on the gradient-step
 axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster
 curves). Cluster tree reset to `7db61dd` BEFORE sbatch (the wave-1 lesson).
