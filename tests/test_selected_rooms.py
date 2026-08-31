@@ -179,3 +179,20 @@ def test_n_out_of_range_is_refused():
         Selected(n=0)
     with pytest.raises(ValueError, match="must be 1"):
         Selected(n=len(ROOMS_SELECTED) + 1)
+
+
+def test_positions_select_by_position_not_source_index():
+    """The CE plan's 8-room set: positions (0,1,2,3,5,6,7,8) drop source
+    index 83 (position 4) and take 191 (position 8). Order preserved."""
+    from curious_george.envs.layouts import resolve_layouts  # noqa: F401  (import parity)
+
+    picked = Selected(impassable=True, positions=(0, 1, 2, 3, 5, 6, 7, 8))
+    chosen = tuple(ROOMS_SELECTED[p] for p in picked.positions)
+    assert len(chosen) == 8
+    assert ROOMS_SELECTED[4] not in chosen          # source index 83 dropped
+    assert chosen[4] == ROOMS_SELECTED[5]           # order preserved past the gap
+
+    with pytest.raises(ValueError, match="positions"):
+        Selected(positions=(0, 0))
+    with pytest.raises(ValueError, match="positions"):
+        Selected(positions=(99,))

@@ -95,6 +95,18 @@ class EnvBackend(str, enum.Enum):
         return self is not EnvBackend.DEVICE
 
 
+class PredLoss(str, enum.Enum):
+    """The world model's prediction objective - ONE switch, and everything
+    follows from it: the upstream loss (`predMSE`/`predCE`), the readout head
+    (147-sigmoid pixels vs n_tiles x n_classes logits over
+    `envs/palette.py::TILE_VOCABULARY`), and the curiosity reward's error
+    measure (pixel MSE vs per-step summed surprisal in nats). No half-states:
+    a run is one or the other, visible in its config and provenance."""
+
+    MSE = "mse"
+    CE = "ce"
+
+
 class CompileMode(str, enum.Enum):
     """`torch.compile` on the recurrent cell. Was typed `bool` in YAML and read
     as `bool | str` in code, because a launcher passes the string `layer`."""
@@ -356,6 +368,10 @@ class ArchPrnnCfg:
     hidden_size: int = 500
     """REQUESTED width. PredictiveNet may round it; the effective value is
     folded back into the config before provenance is written."""
+
+    loss: PredLoss = PredLoss.MSE
+    """See `PredLoss`. MSE constructs the network EXACTLY as before this field
+    existed (same kwargs, same RNG stream - the goldens gate it bitwise)."""
 
     action_encoding: ActionEncodingsEnum = ActionEncodingsEnum.SpeedHD
     n_timescale: int = 2

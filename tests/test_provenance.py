@@ -49,7 +49,7 @@ def test_a_floating_pin_is_recorded_as_such():
     it is how that risk stays visible in every artifact."""
     source = provenance.resolve_package("prnn")
     assert source.origin == "vcs"
-    assert source.requested == "sdu/rl-integration", (
+    assert source.requested == "sdu/ce-loss", (
         f"prnn pin changed to {source.requested!r}; if it is now a sha, this "
         "test should assert that instead - the drift it guards is gone"
     )

@@ -27,6 +27,7 @@ from curious_george.log_and_store.storage import (
     get_agent,
     get_model_dir,
     get_video_dir,
+    prediction_loss_kwargs,
 )
 from curious_george.utils.checkpoints import (
     StatusCkptKeys,
@@ -183,6 +184,7 @@ def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
         trainNoiseMeanStd=(cfg.arch_prnn.noise_mean, cfg.arch_prnn.noise_std),
         f=cfg.arch_prnn.sparsity,
         wandb_log=wandb_log,
+        **prediction_loss_kwargs(cfg.arch_prnn, env),
     )
     predictiveNet.env_shell.hd_trans = np.array([-1, 1, 0, 0])  # TODO: remove later
     # (already the FaramaMinigridShell default; kept for parity)

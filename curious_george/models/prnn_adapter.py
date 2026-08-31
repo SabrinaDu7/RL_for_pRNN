@@ -381,6 +381,12 @@ class PRNNAdapter:
     ):
         self.pN = predictive_net
         self.device = device
+        # arch_prnn.loss, read off the CONSTRUCTED loss rather than a second
+        # config plumb - the loss object is the one home for "which objective".
+        from prnn.utils.lossFuns import predCE
+
+        self.ce = isinstance(self.pN.loss_fn, predCE)
+        self.vocab = self.pN.loss_fn.vocab if self.ce else None
         # WHICH ACTION SHARES A ROW WITH obs[t] - the whole circuit, and the
         # only name for it. There used to be a second, `pastSR`, meaning the
         # same fact from the rollout side; two names for one fact are two
@@ -567,6 +573,41 @@ class PRNNAdapter:
                 SR = self.pN.predict_single(obs_pN[:, :-1, :], act_pN).squeeze(dim=0)
         return SR
 
+    def _prediction_errors(
+        self, obs_pred: torch.Tensor, obs_next: torch.Tensor, *, feature_dim: int
+    ) -> torch.Tensor:
+        """Per-step prediction error, reducing `feature_dim` away.
+
+        MSE: pixel MSE averaged over the observation dims - the historical
+        curiosity reward, bitwise-pinned by the goldens. CE: per-step SUMMED
+        per-tile surprisal in nats (`-log p[true class]`), the categorical
+        objective's own quantity. Shapes: any layout with the feature axis at
+        `feature_dim`; the reduced result keeps the remaining axes in order.
+        """
+        if not self.ce:
+            return ((obs_pred - obs_next) ** 2).mean(dim=feature_dim)
+        vocab = self.vocab.to(obs_next.device)
+        n_classes, n_channels = vocab.shape
+        logits = obs_pred.movedim(feature_dim, -1)
+        pixels = obs_next.movedim(feature_dim, -1)
+        n_tiles = pixels.shape[-1] // n_channels
+        logits = logits.reshape(*logits.shape[:-1], n_tiles, n_classes)
+        pixels = pixels.reshape(*pixels.shape[:-1], n_tiles, n_channels)
+        targets = (pixels.unsqueeze(-2) - vocab).abs().sum(-1).argmin(-1)
+        logp = torch.log_softmax(logits, dim=-1)
+        return -logp.gather(-1, targets.unsqueeze(-1)).squeeze(-1).sum(dim=-1)
+
+    def render_prediction_rows(self, pred_rows: torch.Tensor) -> torch.Tensor:
+        """Prediction rows -> displayable pixel rows in [0,1], any leading axes.
+
+        MSE rows already ARE pixels. CE rows are per-tile logits; the render
+        is the argmax class's palette colour - what "check the prediction by
+        eye" means for a categorical head.
+        """
+        if not self.ce:
+            return pred_rows
+        return self.pN.loss_fn.render(pred_rows)
+
     def _curiosity_errors(
         self,
         obs_b: torch.Tensor,
@@ -599,9 +640,9 @@ class PRNNAdapter:
                     )
         with timer("collect/curious/error"):
             # Batched masked-pRNN layout is (phase=1, L, X, B).
-            return ((obs_pred - obs_next) ** 2).mean(dim=2)[0].transpose(0, 1)[
-                :, target_offset:
-            ]
+            return self._prediction_errors(obs_pred, obs_next, feature_dim=2)[
+                0
+            ].transpose(0, 1)[:, target_offset:]
 
     def prediction_mses(
         self,
@@ -838,7 +879,7 @@ class PRNNAdapter:
 
             obs_pred, obs_next, h = self.pN.predict(obs_formatted, act_formatted) # obs_next is reformatted version of obs_formatted
             obs_pred, obs_next = obs_pred.squeeze(0), obs_next.squeeze(0)
-            errors = ((obs_pred - obs_next) ** 2).mean(dim=1)
+            errors = self._prediction_errors(obs_pred, obs_next, feature_dim=1)
 
         return (
             obs_pred[target_offset:],

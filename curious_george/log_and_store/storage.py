@@ -112,6 +112,29 @@ def load_policy(model_dir: str | Path):
     return torch.load(find_policy(model_dir), map_location=get_device(), weights_only=False)
 
 
+def prediction_loss_kwargs(arch_prnn, env) -> dict:
+    """Extra PredictiveNet kwargs for `arch_prnn.loss`, the ONE home.
+
+    MSE returns {} so the constructor call is byte-identical to the
+    pre-CE code path (goldens gate it). CE selects the upstream predCE loss,
+    hands it the committed tile vocabulary, and swaps the readout to
+    n_tiles x n_classes logits.
+    """
+    from curious_george.configs import PredLoss
+
+    if arch_prnn.loss is PredLoss.MSE:
+        return {}
+    from curious_george.envs.palette import TILE_VOCABULARY, vocab_tensor
+
+    n_tiles = env.getObsSize() // 3
+    return dict(
+        losstype="predCE",
+        loss_kwargs={"vocab": vocab_tensor()},
+        output_size=n_tiles * len(TILE_VOCABULARY),
+        readout="logits",
+    )
+
+
 def get_pN(
     args, env: FaramaMinigridShell, device: torch.device | str, pRNN_ckpt: str
 ) -> PredictiveNet:
@@ -127,6 +150,7 @@ def get_pN(
         trainNoiseMeanStd=(args.arch_prnn.noise_mean, args.arch_prnn.noise_std),
         f=args.arch_prnn.sparsity,
         wandb_log=args.run.wandb,
+        **prediction_loss_kwargs(args.arch_prnn, env),
     )
     load_pN(
         model_ckpt_filepath=pRNN_ckpt,

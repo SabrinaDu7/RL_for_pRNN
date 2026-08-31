@@ -1122,7 +1122,7 @@ wheels = [
 [[package]]
 name = "prnn"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/LevensteinLab/pRNN.git?branch=sdu%2Frl-integration#f0e651f40ef1046c1ac7ca52f69caf75dea7b44a" }
+source = { git = "ssh://git@github.com/LevensteinLab/pRNN.git?branch=sdu%2Fce-loss#600c7e0996c90615b6d89ad00972e515b8b75c79" }
 dependencies = [
     { name = "gym" },
     { name = "gymnasium" },
@@ -1586,7 +1586,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.22.4" },
     { name = "pandas", specifier = ">=1.5.3" },
     { name = "plotly", specifier = ">=6.3.0" },
-    { name = "prnn", git = "ssh://git@github.com/LevensteinLab/pRNN.git?branch=sdu%2Frl-integration" },
+    { name = "prnn", git = "ssh://git@github.com/LevensteinLab/pRNN.git?branch=sdu%2Fce-loss" },
     { name = "pyarrow", specifier = ">=21.0.0" },
     { name = "pynapple", specifier = "==0.6.1" },
     { name = "pyparsing", specifier = ">=3.1.1" },

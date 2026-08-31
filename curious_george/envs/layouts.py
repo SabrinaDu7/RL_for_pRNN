@@ -935,8 +935,24 @@ class Selected:
     n: int = 5
     impassable: bool = True
 
+    positions: tuple[int, ...] | None = None
+    """Which `ROOMS_SELECTED` entries, by POSITION in that tuple (NOT by the
+    source-pool index in the per-row comments - position 4 is source index
+    83). None keeps the historical meaning: the first `n`. Set, it overrides
+    `n` entirely; distinct, in-range, order preserved. Exists for the CE
+    plan's 8-room set - positions (0, 1, 2, 3, 5, 6, 7, 8) - which drops
+    source index 83, the room one cell away from index 0, and takes 191
+    instead."""
+
     def __post_init__(self) -> None:
-        if not 1 <= self.n <= len(ROOMS_SELECTED):
+        if self.positions is not None:
+            bad = [p for p in self.positions if not 0 <= p < len(ROOMS_SELECTED)]
+            if bad or len(set(self.positions)) != len(self.positions):
+                raise ValueError(
+                    f"Selected.positions must be distinct positions in "
+                    f"0..{len(ROOMS_SELECTED) - 1}, got {self.positions}"
+                )
+        elif not 1 <= self.n <= len(ROOMS_SELECTED):
             raise ValueError(
                 f"Selected.n must be 1..{len(ROOMS_SELECTED)}, got {self.n}"
             )
@@ -1198,9 +1214,12 @@ def resolve_rooms(
     elif isinstance(source, Selected):
         # `content` is deliberately NOT consulted: the anchors are pinned and the
         # affordance is the source's own field. See `Selected`.
-        rooms = with_affordance(
-            ROOMS_SELECTED[: source.n], impassable=source.impassable
+        chosen = (
+            tuple(ROOMS_SELECTED[p] for p in source.positions)
+            if source.positions is not None
+            else ROOMS_SELECTED[: source.n]
         )
+        rooms = with_affordance(chosen, impassable=source.impassable)
     else:
         placements = admissible_placements(shape, content, room_rules)
         seed = source.seed
