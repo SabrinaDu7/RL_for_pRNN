@@ -80,6 +80,14 @@ def predictions_for_room(*, pN, env, layout, steps: int) -> RoomPrediction:
             "Update this module deliberately - see docs/prnn-io-alignment.md."
         )
 
+    if hasattr(pN.loss_fn, "render"):
+        # A categorical head predicts logits; the loss owns how they become
+        # an image (argmax colour). The mse below is then the PIXEL error of
+        # that rendered image - zero exactly where the argmax class is right,
+        # so it stays a per-step "how wrong does it look" in [0,1] units and
+        # comparable across losses.
+        obs_pred = pN.loss_fn.render(obs_pred)
+
     mask = np.asarray(pN.pRNN.inMask, dtype=bool)
     return RoomPrediction(
         key=layout.key,
