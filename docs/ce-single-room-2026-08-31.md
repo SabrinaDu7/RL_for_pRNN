@@ -67,9 +67,47 @@ Repo commit `b1763ae` (branch `sdu/optim-pred`), all arms
 Reading order per the plan: A vs anchor (era ballpark), D vs E (loss effect
 at fixed data — the most diagnostic pair), C vs A and C vs D.
 
-## Results
+## Results (all 7 arms COMPLETED 0:0, 28:52-29:59 elapsed; read ~02:45)
 
-*(pending — runs land ~30 min after launch)*
+Final summary values, seeded probe (10007), `scratchpad/phase1_readout.py`:
+
+| arm | wm loss | sRSA | SWdist | SI | MI | entropy | locH | coverage |
+|---|---|---|---|---|---|---|---|---|
+| A  mse-bright | 0.0109 | 0.652 | 0.106 | 0.996 | 0.075 | 1.790 | 7.12 | 0.252 |
+| C  ce+rnorm e.035 | 0.159 | **0.871** | **0.087** | 1.036 | **0.358** | 0.956 | 5.13 | 0.142 |
+| C  ce+rnorm e.024 | 0.192 | 0.782 | 0.217 | 1.277 | 0.449 | 0.937 | 5.74 | 0.159 |
+| C  ce+rnorm e.07 | 0.205 | 0.814 | 0.107 | 1.138 | 0.334 | 0.980 | 4.76 | 0.118 |
+| C' ce raw-reward | 0.192 | 0.808 | 0.138 | 1.204 | 0.366 | 1.133 | 6.58 | 0.151 |
+| D  ce random-fwd | 0.063 | 0.682 | 0.135 | 1.031 | — | 1.832 | 7.12 | 0.391 |
+| E  mse random-fwd | 0.0078 | 0.700 | 0.214 | 1.159 | — | 1.887 | 7.12 | 0.391 |
+
+(wm loss units differ by design: pixel MSE vs nats/tile - never compare
+across the loss column. Anchor, ballpark only: sRSA 0.64, SWdist 0.049,
+SI 0.90, MI 0.042.)
+
+**Verdict: the Phase-1 gate PASSES, and the plan's success criterion is met
+in Phase 1 already.** The headline CE arm (e0.035) posts sRSA 0.871 with a
+COMMITTED policy (MI 0.358, entropy 0.96 bits) - above its own random
+baseline (D, 0.682), above the bright-MSE control (A, 0.652), above the
+anchor. **The MI-sRSA anticorrelation is broken**: under MSE the curious arm
+still sits BELOW its random baseline (0.652 vs 0.700 - the pale-era
+pathology, reproduced in the bright era); under CE it sits far above.
+
+Supporting readings:
+- **D vs E** (loss effect at fixed data): 0.682 vs 0.700 - the loss swap
+  alone does not degrade the spatial code. The user's stated risk, retired.
+- **Both random arms hit coverage 0.391** vs the calibration's 0.395 -
+  the exploration wiring sanity rule passes.
+- **Reward normalization earns its default-for-CE**: ceRaw is worse on sRSA
+  (0.808) and SWdist (0.138) at otherwise identical settings.
+- **Entropy pick for Phase 2: 0.035** (best sRSA and SWdist of the scan).
+- SWdist is elevated across ALL bright-era arms relative to the pale anchor
+  (0.09-0.22 vs 0.049); within-era, C-e.035 is the lowest. Carried per the
+  user's instruction: both bright-MSE AND pale-MSE stay as controls.
+- ⚠️ For the morning: the CE policies CONCENTRATE (locH ~4.8-5.7,
+  coverage ~0.12-0.16 vs random's 0.39). The representation is better while
+  the coverage is lower - where the policy actually goes (occupancy maps,
+  trajectory stats) is the next behavioural question, not a blocker.
 
 ## Deviations from the plan
 

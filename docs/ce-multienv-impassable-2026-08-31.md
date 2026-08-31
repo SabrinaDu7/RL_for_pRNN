@@ -50,7 +50,22 @@ gate (`docs/ce-single-room-2026-08-31.md`) reads out.
 
 ## Results
 
-*(pending)*
+**Wave 2a (bright-MSE baseline, COMPLETED ~02:20, 32:22-32:42 elapsed):**
+
+| run | wm loss | room sRSA | pooled sRSA | remap | SWdist | SI | MI | locH | cov |
+|---|---|---|---|---|---|---|---|---|---|
+| mx8-mse s2 | 0.0143 | 0.517 | 0.327 | +0.191 | 0.059 | 0.518 | 0.054 | 6.99 | 0.225 |
+| mx8-mse s3 | 0.0129 | 0.502 | 0.312 | +0.190 | 0.050 | 0.539 | 0.058 | 7.16 | 0.234 |
+
+The MSE-multienv pattern repeats Phase 1's: barely-committed policy
+(MI ~0.056), moderate per-room sRSA. Notable: remapping index +0.19 - far
+above the pale-era 5-room values (~0.02-0.06) - room-specific coding is
+forming even under MSE in the 8-room bright set.
+
+**Wave 2b (CE + baselines): jobs 10577305 (ce8 s2), 10577306 (ce8 s3),
+10577307 (ce8-rndfwd), 10577308 (ce8-rnduni), 10577309 (ce8-count),
+submitted ~02:50 at 6593723, entropy 0.035 per the Phase-1 scan.**
+*(results pending)*
 
 ## Reading list when runs land
 
