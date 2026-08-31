@@ -221,6 +221,41 @@ Center = wd 3e-3, lr 3e-3, pool 8 (exists twice: wave-2b L40S 0.6253 and
 Judged on: per-class argmax recall (shared probe trajectory, room 0), wm
 loss (nats/tile), seeded room sRSA, MI. Winner confirms at full budget.
 
+**Results (n=2 seeds: local s2 + Mila s3; recall from the s2 checkpoints):**
+
+| arm | room sRSA (s2/s3) | wm loss (s2/s3) | MI (s2/s3) | blue/green/red recall (s2) |
+|---|---|---|---|---|
+| center | 0.619 / 0.543* | 0.291 / 0.357* | 0.057 / 0.059* | 0.218 / 0.315 / 0.732 |
+| wd0 | 0.580 / 0.568 | 0.288 / 0.299 | 0.051 / 0.065 | 0.125 / 0.302 / 0.668 |
+| wd3e4 | 0.585 / 0.560 | 0.292 / 0.277 | 0.051 / 0.064 | 0.187 / 0.158 / 0.672 |
+| lr1e3 | 0.442 / 0.432 | 0.455 / 0.431 | 0.056 / 0.051 | 0.082 / 0.086 / 0.328 |
+| lr1e2 | 0.341 / 0.342 | 0.342 / 0.299 | 0.188 / 0.242 | 0.195 / 0.284 / 0.679 |
+| pool4 | 0.530 / 0.506 | 0.312 / 0.262 | 0.154 / 0.084 | 0.249 / 0.329 / 0.630 |
+| pool2 | 0.419 / 0.518 | 0.320 / 0.211 | 0.267 / 0.087 | **0.525 / 0.432 / 0.785** |
+
+(*center s3 = wave-2b's ce8 s3. A first readout pass mixed seeds through an
+ambiguous name matcher - caught by an impossible 4-decimal cross-seed
+equality; the table above is seed-exact.)
+
+**Verdicts (n=2):**
+- **Weight decay: flat on sRSA** (0.57 vs center ~0.58, inside seed noise),
+  marginally better loss at 3e-4. The pre-sweep suspicion that decay causes
+  the landmark undercalling is WRONG.
+- **lr 3e-3 is a genuine knee** - both directions clearly worse on sRSA
+  (1e-3 also on loss; 1e-2 trades everything for MI).
+- **Pool is the real dial**: smaller pools (more, less-averaged wm steps on
+  the same data) buy PREDICTION - pool2 posts the best wm loss anywhere
+  (0.211) and doubles blue recall - at a half-budget sRSA cost. The MSE-era
+  "serial overtrains sRSA" finding reproduces under CE as a smooth
+  representation-vs-prediction trade-off.
+- No arm beats the center on room sRSA: the MSE-era optimizer settings
+  transfer to CE better than suspected.
+
+**Confirmation launched**: pool4 at FULL budget, seeds 2+3 (jobs
+10596401-2) - the balanced candidate; the question is whether budget
+recovers its sRSA the way it did for pool8 (0.58 -> 0.648) while keeping
+the recall gains.
+
 ## Operational notes
 
 - ~03:10: the Mila SSH control master died and reconnection now prompts for
