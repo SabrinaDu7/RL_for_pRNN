@@ -200,6 +200,27 @@ vs 0.625 room sRSA). Runtime 10.2 min against wave-2b's ~33. Measured: 31,456 ->
 full-budget multienv run drops ~55 -> ~20 min. The world model is now the
 bottleneck (444 ms/rollout, 63%).
 
+## Hyperparameter sweep (launched ~afternoon 2026-08-31, local 4060, post-speedup)
+
+Motivated by the measured failure mode (landmark recall 0.21-0.74 ordered by
+landmark size, blue/green surprisal near chance; `error_decomposition`) and
+the MSE-era provenance of the world-model optimizer settings. Half budget,
+seed 2, CE + reward-norm, 8 impassable rooms; two arms concurrent per wave.
+Center = wd 3e-3, lr 3e-3, pool 8 (exists twice: wave-2b L40S 0.6253 and
+`ce8-fastreset-check` local 0.6190).
+
+| arm | change from center | budget note |
+|---|---|---|
+| swp-wd0 | weight_decay 0 | |
+| swp-wd3e4 | weight_decay 3e-4 | |
+| swp-lr1e3 | lr 1e-3 | |
+| swp-lr1e2 | lr 1e-2 | |
+| swp-pool4 | episodes_per_grad_step 4 | wm grad steps 43,936 - same 45M env steps, same policy budget; pool and step COUNT move together by construction |
+| swp-pool2 | episodes_per_grad_step 2 | wm grad steps 87,872 - same data, same coupling caveat |
+
+Judged on: per-class argmax recall (shared probe trajectory, room 0), wm
+loss (nats/tile), seeded room sRSA, MI. Winner confirms at full budget.
+
 ## Operational notes
 
 - ~03:10: the Mila SSH control master died and reconnection now prompts for
