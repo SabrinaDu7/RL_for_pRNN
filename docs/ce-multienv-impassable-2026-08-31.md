@@ -86,7 +86,7 @@ probes (`scratchpad/phase2_readout.py`):**
 - Both behavioral baselines matched the analytic calibration mid-run
   (rndfwd 0.368 vs 0.360, rnduni 0.180 vs 0.182): the exploration wiring
   is sound and the baseline numbers mean what they claim.
-- Prediction figures by eye (`throwaway/figs_ce/phase2_ce8_s2_...png` +
+- Prediction figures by eye (`throwaway/figs_ce/phase2_ce8_s2_observation_vs_prediction.png` +
   per-run wandb media): floor/wall/agent crisp everywhere; landmark binding
   is INTERMITTENT - step 96 reproduces the room's blue-left/red-right
   structure, neighbouring blind steps predict background where landmarks
@@ -133,7 +133,7 @@ last two events), pooled 0.472, remap +0.196, SWdist 0.088, SI 0.675,
 MI **0.157** (2.3x the half-budget arm - the policy commits given budget),
 wm loss 0.281 nats/tile, coverage 0.177. Above every half-budget arm
 including count (0.659). Figure
-(`throwaway/figs_ce/phase2_ce8full_s2_...png`): wall geometry crisp,
+(`throwaway/figs_ce/phase2_ce8full_s2_observation_vs_prediction.png`): wall geometry crisp,
 landmark binding improved but still partial (right class and place, wrong
 extent) - and since sRSA had NOT plateaued, the next lever remains budget,
 not focal.
