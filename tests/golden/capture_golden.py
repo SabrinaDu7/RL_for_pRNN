@@ -28,7 +28,8 @@ FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
     golden_v1.pt  post-migration, valid up to and including `37aaa1b`.
     golden_v2.pt  from `d275149` on.
     golden_v3.pt  from the UpdateLogs epoch-averaging fix on.
-    golden_v4.pt  from the readout OUTPUT BIAS on (prnn 4ec775ed). <- current
+    golden_v4.pt  from the readout OUTPUT BIAS on (prnn 4ec775ed).
+    golden_v5.pt  from FULL-COLOUR landmarks on (minigrid 22ef960). <- current
 
 `d275149` ("rl: remove dead `recurrence`") removed a code path that silently
 dropped one transition on odd epochs, so the policy minibatches changed and
@@ -41,6 +42,15 @@ downstream of it moved.
 
 The bump went unnoticed for three days because nothing ran this file.
 `tests/golden/test_golden.py` now does.
+
+v4 -> v5: `minigrid` 22ef960 fills Floor/Obstacle at full COLORS instead of
+COLORS/2, so every observation pixel on a landmark cell doubles its
+separation from floor (see docs/invalid-runs.md 2026-08-30). This fixture's
+room is the DEFAULT L-room (triangle6/plus6/x6 Floor landmarks), so its
+observations move with the brightness alone - the triangle3-for-x swap in
+SHAPES/ROOMS_SELECTED does not reach it. Observations are an input to both
+learners, so everything downstream moves: weights, losses, rewards, and the
+rollout RNG comparison.
 
 v3 -> v4: `prnn` gained a trainable bias on the observation readout
 (`Architectures.b_out`, its own `OutputBias` optimizer group). At INIT it is
@@ -79,7 +89,7 @@ FRAMES = 64
 SEQDUR = 32
 UPDATES = 2
 DEVICE = torch.device("cpu")
-OUT = "tests/golden/golden_v4.pt"  # see FIXTURE VERSIONS in the module docstring
+OUT = "tests/golden/golden_v5.pt"  # see FIXTURE VERSIONS in the module docstring
 
 
 def build_fixture() -> dict:

@@ -17,7 +17,7 @@ uses are correct.
 Because nothing is precomputed, the bank is verified at EVERY reachable pose
 rather than at the handful some particular walk visited.
 
-    PYTHONPATH=../minigrid uv run python throwaway/q3_setup_check.py
+    uv run python throwaway/q3_setup_check.py
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from PIL import Image  # noqa: E402
 
 from curious_george.envs.layouts import (  # noqa: E402
     BASE_ROOM_ID,
+    SHAPES,
     separation_signature,
     MULTI_ROOM_ID,
     EnvContent,
@@ -58,7 +59,8 @@ N_ROOMS = 200
 SEED = 7
 ROOM_TILE = 18  # top-down render scale; the network never sees this
 VERIFY_SAMPLE = 60  # poses checked per room past the first; see verify_bank
-SHAPES = ("x", "plus", "block3")
+# SHAPES comes from layouts: the page checks the ACTIVE design (triangle3
+# since 2026-08-30), not a private copy that would go stale silently.
 
 
 def build_rooms(*, impassable: bool, n: int = N_ROOMS):

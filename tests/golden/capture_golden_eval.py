@@ -80,7 +80,10 @@ ONSET_TRANSIENT = 20
 DEVICE = torch.device("cpu")
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / "tests" / "golden" / "golden_eval_v1.pt"
+# _v1 was captured under the pale (COLORS/2) rendering; _v2 from minigrid
+# 22ef960 (full-colour landmarks) on. Same reviewed line as golden_v5 - see
+# FIXTURE VERSIONS in capture_golden.py and docs/invalid-runs.md 2026-08-30.
+OUT = REPO / "tests" / "golden" / "golden_eval_v2.pt"
 
 #: The circuits this fixture is captured for. `action_offset` is the whole
 #: circuit (configs.py::ArchPrnnCfg): 0 pairs obs[t] with the action chosen
@@ -93,7 +96,7 @@ OUT = REPO / "tests" / "golden" / "golden_eval_v1.pt"
 #: the Circuit refactor churns - had no pinned values at all: tests/
 #: test_action_offset.py pins EQUIVALENCES there (device == table, batched ==
 #: serial) but never a value.
-CIRCUIT_FIXTURES = {0: OUT, 1: REPO / "tests" / "golden" / "golden_eval_offset1_v1.pt"}
+CIRCUIT_FIXTURES = {0: OUT, 1: REPO / "tests" / "golden" / "golden_eval_offset1_v2.pt"}
 
 
 def fixture_path(action_offset: int) -> Path:
@@ -113,7 +116,7 @@ def build_fixture(action_offset: int = 0) -> dict:
     """Load reference weights, run ONE collect in eval mode, compute the five.
 
     `action_offset=0` is the historical path and MUST stay bitwise against
-    `golden_eval_v1.pt`; the default preserves it exactly.
+    `golden_eval_v2.pt`; the default preserves it exactly.
     """
     RLutils.seed(SEED)
 

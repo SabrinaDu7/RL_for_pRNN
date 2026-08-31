@@ -13,20 +13,40 @@ scale - a 500-room layout pool would be 500 files - and it was 246 files with
 2 tracked, which answers "which of these is canonical?" with "nobody knows".
 
 Byte-equality with the live render is asserted in tests/test_obs_bank.py;
-the bank is keyed by a fingerprint of grid.encode(), so a layout change
-(e.g. OMT's object-present vs object-absent envs, randomized FourRooms)
-transparently builds/loads a different bank file. Bank arrays are served
+the bank is keyed by a fingerprint of grid.encode() plus the installed
+minigrid commit (the render code is an input the symbolic grid cannot see),
+so a layout OR rendering change (e.g. OMT's object-present vs object-absent
+envs, the 2026-08-30 full-colour fill) transparently builds/loads a
+different bank file. Bank arrays are served
 read-only (writeable=False) so accidental mutation raises instead of
 silently corrupting the bank.
 """
 
+import functools
 import hashlib
 import os
 from pathlib import Path
 
 import numpy as np
 from minigrid.core.constants import DIR_TO_VEC
+from minigrid.core.grid import Grid
 from minigrid.wrappers import RGBImgPartialObsWrapper_HD
+
+
+@functools.lru_cache(maxsize=1)
+def _render_revision() -> str:
+    """The installed minigrid commit, resolved once per process.
+
+    Part of every bank fingerprint: the render code is an input to the bank
+    that `grid.encode()` cannot see (see `_grid_fingerprint`). A dirty local
+    checkout gets a `-dirty` suffix - unstable on purpose, so such banks are
+    rebuilt rather than trusted across edits.
+    """
+    from curious_george.log_and_store.provenance import resolve_package
+
+    source = resolve_package("minigrid")
+    rev = (source.commit or "unversioned")[:8]
+    return f"{rev}-dirty" if source.dirty else rev
 
 BANK_DIR = Path(__file__).resolve().parents[2] / "data" / "obs_bank"
 
@@ -35,6 +55,75 @@ BANK_DIR = Path(__file__).resolve().parents[2] / "data" / "obs_bank"
 # immutable and small (~0.2 MB for 16x16), so they are held in-process, keyed by
 # the same fingerprint that names the file.
 _BANK_CACHE: dict[str, np.ndarray] = {}
+
+#: The static L-room action space the transition tables enumerate.
+NUM_TABLE_ACTIONS = 4
+
+
+def build_transition_tables(env) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Exhaustive ``(x, y, dir, action)`` tables for a static MiniGrid grid.
+
+    Returns read-only ``(next_state, rewarding, terminated)``:
+    ``next_state`` is ``(W, H, 4, A, 3)`` int16 mapping a state-action to
+    ``(x, y, dir)``; the other two are ``(W, H, 4, A)`` bool. `env` is the raw
+    MiniGrid env (unwrapped). The ONE home for the table dynamics: the
+    table-driven wrapper steps it, the device pool stacks it per layout, and
+    `envs.action_graph` walks it as a graph.
+    """
+    if env.action_space.n != NUM_TABLE_ACTIONS:
+        raise ValueError(
+            "table_env requires the four-action L-room action space; "
+            f"got Discrete({env.action_space.n})"
+        )
+
+    for cell in env.grid.grid:
+        if cell is not None and cell.can_pickup():
+            raise ValueError(
+                "table_env does not support mutable/pickable grid objects"
+            )
+
+    # State is (x, y, direction). Invalid/wall states are populated too;
+    # the agent never occupies them, and flat complete tables keep lookup
+    # and device transfer simple.
+    shape = (env.width, env.height, 4, NUM_TABLE_ACTIONS)
+    next_state = np.empty(shape + (3,), dtype=np.int16)
+    rewarding = np.zeros(shape, dtype=np.bool_)
+    terminated = np.zeros(shape, dtype=np.bool_)
+
+    for x in range(env.width):
+        for y in range(env.height):
+            for direction in range(4):
+                for action in range(NUM_TABLE_ACTIONS):
+                    nx, ny, nd = x, y, direction
+                    if action == int(env.actions.left):
+                        nd = (direction - 1) % 4
+                    elif action == int(env.actions.right):
+                        nd = (direction + 1) % 4
+                    elif action == int(env.actions.forward):
+                        dx, dy = DIR_TO_VEC[direction]
+                        fx, fy = x + int(dx), y + int(dy)
+                        # Invalid table states on an outer boundary can
+                        # point outside the grid. They remain stationary.
+                        if 0 <= fx < env.width and 0 <= fy < env.height:
+                            cell = env.grid.get(fx, fy)
+                            if cell is None or cell.can_overlap():
+                                nx, ny = fx, fy
+                            if cell is not None:
+                                rewarding[x, y, direction, action] = (
+                                    cell.type == "goal"
+                                    or cell.type == "fake_lava"
+                                )
+                                terminated[x, y, direction, action] = (
+                                    rewarding[x, y, direction, action]
+                                    or cell.type == "lava"
+                                )
+                    # pickup is a no-op because pickable cells were rejected
+                    next_state[x, y, direction, action] = (nx, ny, nd)
+
+    next_state.flags.writeable = False
+    rewarding.flags.writeable = False
+    terminated.flags.writeable = False
+    return next_state, rewarding, terminated
 
 
 class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
@@ -54,15 +143,21 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
     def _grid_fingerprint(self) -> str:
         """Fingerprint of everything that changes the rendered observation.
 
-        grid.encode() alone is NOT enough: `see_through_walls` decides whether
-        gen_obs_grid runs process_vis, so two envs with the same grid but
-        different occlusion produce different observations. Without this the
-        bank would serve non-occluded observations for an occluded env.
-        The suffix is only appended when occlusion is ON, so every bank cached
-        before this change (all see_through_walls=True) keeps its filename.
+        grid.encode() alone is NOT enough, twice over:
+
+        - `see_through_walls` decides whether gen_obs_grid runs process_vis,
+          so two envs with the same grid but different occlusion produce
+          different observations.
+        - the RENDER CODE itself: `grid.encode()` is symbolic, so a change to
+          how minigrid paints a tile (2026-08-30: Floor/Obstacle went from
+          COLORS/2 to full COLORS) keeps the fingerprint and would silently
+          serve stale banks forever. The installed minigrid commit is
+          therefore part of the key - over-invalidating on non-render minigrid
+          bumps, which costs one 0.49 s rebuild per grid and can never lie.
         """
         grid = self.unwrapped.grid
         fp = hashlib.sha1(grid.encode().tobytes()).hexdigest()[:16]
+        fp += f"-{_render_revision()}"
         if not getattr(self.unwrapped, "see_through_walls", True):
             fp += "-occl"
         return fp
@@ -74,6 +169,12 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
     def _build_bank(self) -> np.ndarray:
         """Render every (x, y, dir) once (walls included - the agent never
         stands there, but rendering them is harmless and keeps indexing flat)."""
+        # Grid.tile_cache is PROCESS-GLOBAL and keyed on obj.encode(), which a
+        # render change does not move - a dirty cache here poisons a DISK
+        # artifact that then outlives the process (measured: 209 of 688
+        # observations wrong when two test files shared one process; see
+        # docs/multienv-walkable-and-impassable-2026-08-30.md).
+        Grid.tile_cache.clear()
         env = self.unwrapped
         saved_pos, saved_dir = env.agent_pos, env.agent_dir
         h, w, c = self.observation_space.spaces["image"].shape
@@ -154,7 +255,7 @@ class TableDrivenRGBPartialObsWrapper(BankedRGBPartialObsWrapper):
     on the hot path.
     """
 
-    _NUM_ACTIONS = 4
+    _NUM_ACTIONS = NUM_TABLE_ACTIONS
 
     def __init__(self, env, tile_size: int = 1, bank_dir: Path | None = None):
         super().__init__(env, tile_size=tile_size, bank_dir=bank_dir)
@@ -171,63 +272,9 @@ class TableDrivenRGBPartialObsWrapper(BankedRGBPartialObsWrapper):
         self._transition_fingerprint = self._fingerprint
 
     def _build_transition_tables(self) -> None:
-        env = self.unwrapped
-        if env.action_space.n != self._NUM_ACTIONS:
-            raise ValueError(
-                "table_env requires the four-action L-room action space; "
-                f"got Discrete({env.action_space.n})"
-            )
-
-        for cell in env.grid.grid:
-            if cell is not None and cell.can_pickup():
-                raise ValueError(
-                    "table_env does not support mutable/pickable grid objects"
-                )
-
-        # State is (x, y, direction). Invalid/wall states are populated too;
-        # the agent never occupies them, and flat complete tables keep lookup
-        # and device transfer simple.
-        shape = (env.width, env.height, 4, self._NUM_ACTIONS)
-        next_state = np.empty(shape + (3,), dtype=np.int16)
-        rewarding = np.zeros(shape, dtype=np.bool_)
-        terminated = np.zeros(shape, dtype=np.bool_)
-
-        for x in range(env.width):
-            for y in range(env.height):
-                for direction in range(4):
-                    for action in range(self._NUM_ACTIONS):
-                        nx, ny, nd = x, y, direction
-                        if action == int(env.actions.left):
-                            nd = (direction - 1) % 4
-                        elif action == int(env.actions.right):
-                            nd = (direction + 1) % 4
-                        elif action == int(env.actions.forward):
-                            dx, dy = DIR_TO_VEC[direction]
-                            fx, fy = x + int(dx), y + int(dy)
-                            # Invalid table states on an outer boundary can
-                            # point outside the grid. They remain stationary.
-                            if 0 <= fx < env.width and 0 <= fy < env.height:
-                                cell = env.grid.get(fx, fy)
-                                if cell is None or cell.can_overlap():
-                                    nx, ny = fx, fy
-                                if cell is not None:
-                                    rewarding[x, y, direction, action] = (
-                                        cell.type == "goal"
-                                        or cell.type == "fake_lava"
-                                    )
-                                    terminated[x, y, direction, action] = (
-                                        rewarding[x, y, direction, action]
-                                        or cell.type == "lava"
-                                    )
-                        # pickup is a no-op because pickable cells were rejected
-                        next_state[x, y, direction, action] = (nx, ny, nd)
-
-        next_state.flags.writeable = False
-        rewarding.flags.writeable = False
-        terminated.flags.writeable = False
-        self._next_state = next_state
-        self._rewarding = rewarding
-        self._terminated = terminated
+        self._next_state, self._rewarding, self._terminated = (
+            build_transition_tables(self.unwrapped)
+        )
 
     @staticmethod
     def _scalar_action(action) -> int:

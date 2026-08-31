@@ -15,6 +15,46 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `sdu/optim-pred` — full-colour landmarks, and triangle3 replaces x · 2026-08-30
+
+**What changed.** `minigrid` `22ef960` (two commits, re-pinned here in the same
+change): (1) `Floor.render`/`Obstacle.render` fill at full `COLORS[c]` instead
+of `COLORS[c]/2` — as observed through the 7x7 partial view, a landmark cell
+moves from `76 + 0.35*COLORS[c]` to `76 + 0.7*COLORS[c]`, doubling every
+landmark-vs-floor and landmark-vs-landmark separation (blue: (76,76,165) ->
+(76,76,255) against floor (76,76,76)); (2) a new `triangle3` stencil — rows of
+1, 2, 3 cells growing downward, the one small shape that is
+orientation-dependent in the egocentric view — and `SHAPES`/`ROOMS_SELECTED`
+swap it in for `x` at unchanged anchors and colours.
+
+**Why.** The curiosity reward is per-pixel MSE over 147 dims; at pale fill a
+fully mispredicted landmark cell contributed ~0.0008-0.0017 against an ambient
+reward mean of ~0.005, so the room-identity signal — the epistemically real
+uncertainty in multi-room training — was buried. The full-strength fill
+quadruples a landmark cell's squared-error contribution.
+
+**What it invalidates.** Every run, checkpoint, golden fixture, obs bank and
+prediction figure made before this line sees different observations from any
+made after: pRNN loss, curiosity reward scale, sRSA/SI/SWdist are all computed
+from the changed pixels. The `mx-*` multienv series and the parity/reference
+runs of 2026-08-29/30 are the last of the pale-x era; nothing after this line
+is comparable to them. `data/obs_bank` was cleared and rebuilt (the bank
+fingerprint now includes the minigrid commit, so a future render change
+invalidates banks by construction instead of by memory).
+
+**Knock-on facts, measured.** Impassable rooms now have 152 standable cells
+(was 153: triangle3 occupies 6 cells against the x's 5). All 20
+`ROOMS_SELECTED` x affordance combinations still clear every `RoomRules`
+margin; the tightest is `min_testable_offsets` — impassable rooms 2 and 8 sit
+exactly at the minimum of 20. The OMT novel object (`FloorBright` neon_green,
+unchanged) is now only ~42 as-observed from a GREEN landmark (was ~99):
+brightness no longer marks novelty apart, only hue does — revisit the novel
+colour before the next OMT run. `ROOMS_SELECTED`'s per-row keys are the
+SOURCE (x-stencil) pool's keys, not `Layout.key`, since the key hashes the
+shape.
+
+---
+
 ## `sdu/optim-pred` — the readout output bias · 2026-08-30
 
 **What changed.** `prnn` `4ec775ed`: the observation readout

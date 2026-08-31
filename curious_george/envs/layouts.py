@@ -48,22 +48,30 @@ import numpy as np
 from minigrid.envs.Lroom import Landmark
 
 # All three are used in every layout, so "distinct shapes" is automatic and the
-# set is the design, not a sample space.
-SHAPES: tuple[str, ...] = ("x", "plus", "block3")
+# set is the design, not a sample space. `triangle3` replaced `x` on 2026-08-30
+# (minigrid 22ef960): same 3x3 span and centre anchor, but rows of 1, 2, 3
+# cells - the one small shape that is orientation-dependent in the egocentric
+# 7x7 view. `x` stays defined upstream for the frozen historical sets below.
+SHAPES: tuple[str, ...] = ("triangle3", "plus", "block3")
 
 # Observations are rendered at tile_size=1, so a cell is ONE pixel and colour
 # carries the entire per-cell signal.
 #
-# Distances below are AS RENDERED, not the nominal palette. `Floor` paints
-# `76 + 0.35 * COLORS[c]`, a blend toward grey, so every nominal separation
-# reaches the network at 35% of its face value - empty floor is (76, 76, 76),
-# not black. Chosen on that basis: within this palette the closest pair is 89
-# apart and the closest colour to empty floor is 89.
+# Distances below are AS OBSERVED in the 7x7 partial view, not the nominal
+# palette. Since minigrid 22ef960 a landmark fills at full COLORS[c] (the /2
+# "pale" fill before it halved every separation), and the partial-view
+# highlight blend maps each rendered value v to 0.7*v + 76 - empty floor is
+# (76, 76, 76), a landmark cell is 76 + 0.7*COLORS[c] - so nominal separations
+# reach the network at 70% of face value. Within this palette the closest pair
+# (red-yellow, green-yellow) is 178 apart and the closest colour to empty
+# floor is 178.
 #
-# Excluded, and why - `grey` renders 61 from empty floor, weaker than any pair
-# here, and it was visibly indistinguishable in the rendered rooms; `purple` is
-# 46 from `blue`; `neon_green` is 21 from `green` and is reserved for
-# FloorBright, the OMT novel object.
+# Excluded, and why - `grey` observes 121 from empty floor, weaker than any
+# pair here; `purple` is 93 from `blue`; `neon_green` is reserved for
+# FloorBright, the OMT novel object. ⚠️ Since the full-strength fill the novel
+# object is only ~42 from a GREEN landmark as observed (was ~99 when landmarks
+# were pale): brightness no longer marks novelty apart, only hue does. Revisit
+# the novel colour before the next OMT run (docs/invalid-runs.md, 2026-08-30).
 LANDMARK_COLORS: tuple[str, ...] = ("blue", "green", "red", "yellow")
 
 # The object-vector window: a landmark-centred (2r+1)x(2r+1) patch.
@@ -525,7 +533,12 @@ ROOMS_SQUARE: tuple = tuple(
 # The affordance is applied by `Selected`, not baked here; these carry the
 # default `impassable=False` and are rebuilt per arm.
 #
-# Re-derive (all 10 keys must match the comment on each row):
+# 2026-08-30: the first landmark's SHAPE became `triangle3` (with the rest of
+# the active design, see SHAPES); anchors and colours are untouched. The
+# per-row `index/key` comments are the SOURCE pool's - the x-stencil impassable
+# pool the anchors were hand-picked from - so they no longer equal
+# `Layout.key`, which hashes the shape. Re-derive the SOURCE keys (x stencils,
+# deliberately not SHAPES):
 #     uv run python -c "
 #     from curious_george.envs.layouts import *
 #     r = resolve_rooms(shape=EnvShape('MiniGrid-LRoom-v0'),
@@ -537,29 +550,30 @@ ROOMS_SQUARE: tuple = tuple(
 ROOMS_SELECTED: tuple[Layout, ...] = tuple(
     Layout(tuple(Landmark(shape, color, anchor) for shape, color, anchor in spec))
     for spec in (
-        # index   0, key 3066247d
-        (("x", "blue", (5, 3)), ("plus", "green", (3, 10)), ("block3", "red", (12, 5))),
-        # index  14, key c0520c0f
-        (("x", "blue", (9, 5)), ("plus", "green", (4, 12)), ("block3", "red", (3, 5))),
-        # index  31, key e5189419
-        (("x", "blue", (6, 4)), ("plus", "green", (12, 6)), ("block3", "red", (8, 12))),
-        # index  35, key 3ee49d95
-        (("x", "blue", (3, 11)), ("plus", "green", (6, 4)), ("block3", "red", (12, 4))),
-        # ⚠️ index 83 differs from index 0 ONLY in the x anchor, (6,3) against
-        # (5,3) - one cell. The first five rooms carry less configuration
-        # diversity than "five rooms" suggests; say so with any per-room result.
-        # index  83, key 6f5e993b
-        (("x", "blue", (6, 3)), ("plus", "green", (3, 10)), ("block3", "red", (12, 5))),
-        # index 126, key c7073822
-        (("x", "blue", (4, 12)), ("plus", "green", (11, 3)), ("block3", "red", (4, 6))),
-        # index 144, key 9380723c
-        (("x", "blue", (8, 11)), ("plus", "green", (10, 3)), ("block3", "red", (4, 3))),
-        # index 169, key ca2a3d9a
-        (("x", "blue", (6, 4)), ("plus", "green", (12, 3)), ("block3", "red", (4, 11))),
-        # index 191, key a31257da
-        (("x", "blue", (10, 4)), ("plus", "green", (7, 11)), ("block3", "red", (4, 5))),
-        # index 195, key 7165ad4e
-        (("x", "blue", (3, 3)), ("plus", "green", (6, 10)), ("block3", "red", (10, 4))),
+        # source index   0, source key 3066247d
+        (("triangle3", "blue", (5, 3)), ("plus", "green", (3, 10)), ("block3", "red", (12, 5))),
+        # source index  14, source key c0520c0f
+        (("triangle3", "blue", (9, 5)), ("plus", "green", (4, 12)), ("block3", "red", (3, 5))),
+        # source index  31, source key e5189419
+        (("triangle3", "blue", (6, 4)), ("plus", "green", (12, 6)), ("block3", "red", (8, 12))),
+        # source index  35, source key 3ee49d95
+        (("triangle3", "blue", (3, 11)), ("plus", "green", (6, 4)), ("block3", "red", (12, 4))),
+        # ⚠️ index 83 differs from index 0 ONLY in the first landmark's anchor,
+        # (6,3) against (5,3) - one cell. The first five rooms carry less
+        # configuration diversity than "five rooms" suggests; say so with any
+        # per-room result.
+        # source index  83, source key 6f5e993b
+        (("triangle3", "blue", (6, 3)), ("plus", "green", (3, 10)), ("block3", "red", (12, 5))),
+        # source index 126, source key c7073822
+        (("triangle3", "blue", (4, 12)), ("plus", "green", (11, 3)), ("block3", "red", (4, 6))),
+        # source index 144, source key 9380723c
+        (("triangle3", "blue", (8, 11)), ("plus", "green", (10, 3)), ("block3", "red", (4, 3))),
+        # source index 169, source key ca2a3d9a
+        (("triangle3", "blue", (6, 4)), ("plus", "green", (12, 3)), ("block3", "red", (4, 11))),
+        # source index 191, source key a31257da
+        (("triangle3", "blue", (10, 4)), ("plus", "green", (7, 11)), ("block3", "red", (4, 5))),
+        # source index 195, source key 7165ad4e
+        (("triangle3", "blue", (3, 3)), ("plus", "green", (6, 10)), ("block3", "red", (10, 4))),
     )
 )
 
@@ -584,7 +598,9 @@ def with_affordance(rooms: tuple[Layout, ...], *, impassable: bool) -> list[Layo
 
 #: The `-Multi-v0` variants accept a `landmarks=` argument; the plain ids ship
 #: their own landmarks and do not. Which one a run builds follows from whether
-#: it specifies a room set at all.
+#: it specifies a room set at all. The square room's walls are four-fold
+#: symmetric, so its landmarks are the ONLY cue to position - which is why it
+#: needs the D4 handling below and the L-room does not.
 MULTI_ROOM_ID = {
     "MiniGrid-LRoom-v0": "MiniGrid-LRoom-Multi-v0",
     "MiniGrid-SquareRoom-v0": "MiniGrid-SquareRoom-Multi-v0",
@@ -592,14 +608,6 @@ MULTI_ROOM_ID = {
 
 BASE_ROOM_ID = "MiniGrid-LRoom-v0"       # owns the wall geometry; landmarks never change it
 SQUARE_ROOM_ID = "MiniGrid-SquareRoom-v0"
-
-# Rooms a run can be built in. The square room's walls are four-fold symmetric,
-# so its landmarks are the ONLY cue to position - which is why it needs the D4
-# handling below and the L-room does not.
-MULTI_ENV_ID = {
-    BASE_ROOM_ID: "MiniGrid-LRoom-Multi-v0",
-    SQUARE_ROOM_ID: "MiniGrid-SquareRoom-Multi-v0",
-}
 
 
 def base_walkable(room_id: str = BASE_ROOM_ID) -> frozenset[tuple[int, int]]:

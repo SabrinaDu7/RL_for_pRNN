@@ -32,6 +32,7 @@ def build(*, pool: int, seed: int, n_train: int, n_held_out: int, room: str) -> 
 
     from curious_george.envs.layouts import (
         MULTI_ROOM_ID,
+        SHAPES,
         EnvContent,
         EnvShape,
         LandmarkKind,
@@ -45,7 +46,7 @@ def build(*, pool: int, seed: int, n_train: int, n_held_out: int, room: str) -> 
     from curious_george.envs.obs_bank import TableDrivenRGBPartialObsWrapper
 
     content = EnvContent(
-        kinds=tuple(LandmarkKind(s, impassable=True) for s in ("x", "plus", "block3"))
+        kinds=tuple(LandmarkKind(s, impassable=True) for s in SHAPES)
     )
     source = Uniform(n=pool, seed=seed)
     set_rules = RoomSetRules(varies=frozenset({Vary.POSITION}))
