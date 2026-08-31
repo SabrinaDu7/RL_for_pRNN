@@ -265,6 +265,35 @@ representation-vs-prediction frontier along the pool axis is real and
 persists across budgets - the trigger condition for a multi-objective
 (Pareto) study, if mapping that frontier is worth a day of compute.
 
+## Double-budget probe (ce8-2x-local, 180M env steps, COMPLETED, 38 min)
+
+The budget lever's ceiling, mapped. Seeded per-room sRSA by analysis event
+(15M-step cadence; the first six replay the full-budget run bitwise):
+
+```
+0.457  0.530  0.619  0.651  0.668 | 0.704  0.632  0.541  0.649  0.470  0.626 (final 0.626)
+                        full budget ^peak                            2x budget
+```
+
+**Findings:**
+- The curve PEAKS at ~90-105M steps (0.704 - the best multienv number of the
+  series) and then OSCILLATES with growing amplitude (0.47-0.70) rather than
+  improving; final 0.626 with wm loss 0.333 (worse than full-budget's 0.281 -
+  the extended regime hurts prediction too on this seed). MI stays high
+  (0.20). The trade-off reappears along the TIME axis: past the peak, more
+  wm steps per unit of data diversity destabilise the representation - the
+  same mechanism the pool axis showed.
+- **Actionable recipe**: train the standard full budget (its endpoint sits at
+  the peak's edge) and SELECT the best archived checkpoint by seeded probe -
+  `evaluation/checkpoint_series` over the step-tagged archive does exactly
+  this offline; the 0.704 checkpoint of this run is in its archive.
+- The budget lever is now spent as a free win; remaining gains are
+  scientific (data diversity per step: more rooms, learning-progress reward,
+  coverage-shaping) rather than optimizer-shaped. This also weakens the case
+  for an optuna frontier study: both axes of the trade-off (pool, time) are
+  mapped, the optimizer knobs are flat or kneed, and a Pareto search would
+  re-discover this frontier at a day of compute.
+
 ## Operational notes
 
 - ~03:10: the Mila SSH control master died and reconnection now prompts for
