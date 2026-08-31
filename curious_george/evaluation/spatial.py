@@ -108,6 +108,38 @@ def collect_pooled_activity(
     )
 
 
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _probe_rng(probe_seed: int | None):
+    """Deterministic probe draws WITHOUT perturbing the training stream.
+
+    🔴 The bug this exists for (2026-08-31): `torch.manual_seed` seeds EVERY
+    device's global generator, so seeding the probe mid-run restarted the
+    training stream - dropout masks, action sampling, world-model noise -
+    from the same constant at every analysis event, in every run, regardless
+    of `run.seed`. Comparisons stayed internally consistent (all arms equally
+    affected) but seed-to-seed independence was partially destroyed after the
+    first event. This context seeds, runs the probe, and RESTORES the global
+    torch (all devices) and numpy states, so the probe is fixed and the run's
+    own randomness continues exactly where it left off.
+    """
+    if probe_seed is None:
+        yield
+        return
+    torch_state = torch.random.get_rng_state()
+    cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    np_state = np.random.get_state()
+    try:
+        yield
+    finally:
+        torch.random.set_rng_state(torch_state)
+        if cuda_states is not None:
+            torch.cuda.set_rng_state_all(cuda_states)
+        np.random.set_state(np_state)
+
 def evaluate_spatial_representation(
     pN: PredictiveNet,
     env,
@@ -140,13 +172,31 @@ def evaluate_spatial_representation(
     if hasattr(agent, "acmodel"):
         modules.append(agent.acmodel)
 
+    with _probe_rng(probe_seed):
+        return _evaluate_spatial_inner(
+            pN, env, agent, modules,
+            n_trajs=n_trajs, traj_timesteps=traj_timesteps,
+            trainDecoder=trainDecoder, legacy_timesteps=legacy_timesteps,
+            sleepstd=sleepstd, sleep_timesteps=sleep_timesteps,
+            onset_transient=onset_transient,
+            active_time_threshold=active_time_threshold, rng=rng,
+            probe_seed=probe_seed, wandb_nameext=wandb_nameext,
+        )
+
+
+def _evaluate_spatial_inner(
+    pN, env, agent, modules, *, n_trajs, traj_timesteps, trainDecoder,
+    legacy_timesteps, sleepstd, sleep_timesteps, onset_transient,
+    active_time_threshold, rng, probe_seed, wandb_nameext,
+) -> dict:
     if probe_seed is not None:
         # The env owns its OWN Generator (gymnasium `np_random`), which
         # np.random.seed does not touch - so seeding globally left the start
         # position free and the eval unreproducible: identical action
         # sequences, different trajectories. Seeding the env too makes this a
         # FIXED probe, i.e. checkpoints become comparable to each other rather
-        # than each carrying its own rollout noise.
+        # than each carrying its own rollout noise. `_probe_rng` restores the
+        # global streams on exit - see its docstring for the bug it fixes.
         torch.manual_seed(probe_seed)
         np.random.seed(probe_seed)
         env.env.reset(seed=probe_seed)
@@ -299,7 +349,7 @@ def evaluate_multi_room_representation(
     per_room: list[dict] = []
     h_rows: list = []
     pos_rows: list = []
-    with eval_mode(modules), on_device(modules, "cpu"):
+    with _probe_rng(probe_seed), eval_mode(modules), on_device(modules, "cpu"):
         for k, layout in enumerate(layouts):
             env.env.unwrapped.landmarks = list(layout.landmarks)
             env.reset()

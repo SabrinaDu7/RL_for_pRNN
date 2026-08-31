@@ -15,6 +15,29 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `sdu/optim-pred` — the seeded probe leaked into the training stream · 2026-08-31
+
+**What was wrong.** From the `probe_seed` threading (`87c6c22`, ~01:00) until
+the fix (this line, ~evening), every analysis event called
+`torch.manual_seed(probe_seed)` / `np.random.seed(probe_seed)` with NO state
+restore - and `torch.manual_seed` seeds EVERY device's global generator. So
+after each analysis event the run's training randomness (dropout masks,
+action sampling, world-model noise) restarted from the same constant, in
+every run, regardless of `run.seed`.
+
+**What it does and does not invalidate.** Within the affected era every
+comparison is internally consistent: all arms carry the identical coupling,
+runs remain deterministic and reproducible, and the CE-vs-MSE / sweep
+orderings stand. What it biases is SEED-TO-SEED INDEPENDENCE: after the
+first analysis event, s2 and s3 share their RNG streams and differ only
+through accumulated state and data - so "n=2 seeds" understates variance in
+the era's tables. Fixed by `_probe_rng` (evaluation/spatial.py): the probe
+seeds inside a save/restore of the global torch (all devices) and numpy
+states; gated by tests/test_spatial_eval.py::
+test_seeded_probe_leaves_the_training_streams_untouched.
+
+---
+
 ## `sdu/optim-pred` — parity/multienv-fast go whitened-by-default · 2026-08-31
 
 **What changed.** The `parity` preset (and `multienv-fast`, which derives from

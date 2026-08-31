@@ -101,3 +101,35 @@ def test_pooled_eval_restores_device_placement(setup):
         onset_transient=5, active_time_threshold=5, sleep_timesteps=30,
     )
     assert next(pN.pRNN.parameters()).device == before
+
+
+def test_seeded_probe_leaves_the_training_streams_untouched(setup):
+    """🔴 The 2026-08-31 bug this gates: `probe_seed` reseeded the GLOBAL torch
+    (all devices) and numpy generators mid-run, so every analysis event
+    restarted the training stream from the same constant in every run -
+    partially collapsing seed-to-seed independence. `_probe_rng` must restore
+    both streams, and the probe itself must stay reproducible."""
+    env, pN, agent = setup
+
+    torch.manual_seed(20260831)
+    np.random.seed(20260831)
+    torch.rand(3)
+    np.random.rand(3)
+    torch_before = torch.random.get_rng_state().clone()
+    np_before = np.random.get_state()
+
+    kwargs = dict(n_trajs=2, traj_timesteps=40, onset_transient=5,
+                  active_time_threshold=10, sleep_timesteps=30, probe_seed=10007)
+    m1 = evaluate_spatial_representation(pN, env, agent, **kwargs)
+
+    assert torch.equal(torch.random.get_rng_state(), torch_before), (
+        "seeded eval perturbed the global torch stream"
+    )
+    b, a = np_before, np.random.get_state()
+    assert b[0] == a[0] and np.array_equal(b[1], a[1]) and b[2:] == a[2:], (
+        "seeded eval perturbed the global numpy stream"
+    )
+
+    # and the probe itself is FIXED: same seed, same numbers
+    m2 = evaluate_spatial_representation(pN, env, agent, **kwargs)
+    assert m1["sRSA"] == m2["sRSA"] and m1["SWdist"] == m2["SWdist"]
