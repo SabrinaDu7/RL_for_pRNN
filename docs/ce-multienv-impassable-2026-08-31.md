@@ -144,6 +144,13 @@ beat curious (0.659 vs 0.625); full-budget curious beats count (0.668 vs
 0.637). The curiosity signal needs budget to pay off - the wave-2b "honest
 negative" resolves in curiosity's favour, pending the s3 replication.
 
+**Cluster s3 pair FINISHED (58:08 / 57:05)**: ce8full s3 room sRSA 0.628,
+MI 0.282 (entropy 1.06 - the most committed multienv policy of the series),
+pooled 0.491; mse8full s3 0.589, MI 0.065, pooled 0.347, remap +0.242. The
+s3-vs-s3 room-sRSA gap narrows to +0.04 (a strong MSE seed), but the
+structural contrast holds: CE pooled sRSA 0.44-0.49 vs MSE 0.33-0.35, and
+CE gains representation WHILE committing 3-4x harder on MI.
+
 Local runs carry `-local` in the name; comparisons stay on the gradient-step
 axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster
 curves). Cluster tree reset to `7db61dd` BEFORE sbatch (the wave-1 lesson).
