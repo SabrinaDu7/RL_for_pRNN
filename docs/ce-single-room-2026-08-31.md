@@ -49,20 +49,20 @@ One config field: `arch_prnn.loss ∈ {MSE, CE}` (`configs.py::PredLoss`).
   sRSA 0.64 last-2 [series 0.34→0.68→0.60 — unseeded-probe noise, which is
   why `probe_seed` now exists], SWdist 0.049, mean SI 0.90, MI 0.042).
 
-## Arms (launched 2026-08-31 ~01:3x via `slurm/parity.sh`, project `curious-george`)
+## Arms (relaunched 2026-08-31 ~02:00 via `slurm/parity.sh`, project `curious-george`)
 
 Repo commit `b1763ae` (branch `sdu/optim-pred`), all arms
 `sbatch slurm/parity.sh '' [ent] 2 sdu/optim-pred '' <label> <extra...>`:
 
 | arm | label / run-name stem | slurm job | command tail |
 |---|---|---|---|
-| A bright-MSE control | parity-s2-mseB | 10576255 | *(pure preset: whitened, e=0.035, probe_seed on)* |
-| C bright-CE | parity-s2-ceRN | 10576256 | `--arch-prnn.loss CE --train-policy.normalize-reward` |
-| C-raw ablation | parity-s2-ceRaw | 10576257 | `--arch-prnn.loss CE` (no reward norm) |
-| D CE + random fwd | parity-s2-ceRN-rndfwd | 10576258 | C's flags + `--arch-policy.agent RANDOM` |
-| E MSE + random fwd | parity-s2-mse-rndfwd | 10576259 | `--arch-policy.agent RANDOM` |
-| C-e024 | parity-e0.024-s2-ceRN | 10576260 | C's flags, entropy 0.024 |
-| C-e07 | parity-e0.07-s2-ceRN | 10576261 | C's flags, entropy 0.07 |
+| A bright-MSE control | parity-s2-mseB | 10576559 | *(pure preset: whitened, e=0.035, probe_seed on)* |
+| C bright-CE | parity-s2-ceRN | 10576560 | `--arch-prnn.loss CE --train-policy.normalize-reward` |
+| C-raw ablation | parity-s2-ceRaw | 10576561 | `--arch-prnn.loss CE` (no reward norm) |
+| D CE + random fwd | parity-s2-ceRN-rndfwd | 10576562 | C's flags + `--arch-policy.agent RANDOM` |
+| E MSE + random fwd | parity-s2-mse-rndfwd | 10576563 | `--arch-policy.agent RANDOM` |
+| C-e024 | parity-e0.024-s2-ceRN | 10576564 | C's flags, entropy 0.024 |
+| C-e07 | parity-e0.07-s2-ceRN | 10576565 | C's flags, entropy 0.07 |
 
 Reading order per the plan: A vs anchor (era ballpark), D vs E (loss effect
 at fixed data — the most diagnostic pair), C vs A and C vs D.
@@ -72,6 +72,21 @@ at fixed data — the most diagnostic pair), C vs A and C vs D.
 *(pending — runs land ~30 min after launch)*
 
 ## Deviations from the plan
+
+- 🔴 **The first launch wave (jobs 10576255-61, 10576276-77, ~01:35) was
+  mislaunched and cancelled.** `sbatch` reads the launch script from the
+  shared cluster checkout's WORKING TREE at submission time, and that tree
+  was still on `sdu/multienv` @ `b583405` — a `parity.sh` without label or
+  EXTRA support, so every label and every extra flag (including
+  `--arch-prnn.loss CE`) was silently dropped: the "CE" jobs were running
+  plain bright-MSE under junk names, and the mx8 wave ignored both the
+  positions argument (room 83 back in) and the project override. The
+  RUNBOOK's preflight step 3/4 names exactly this trap; the preflight here
+  checked the ORIGIN ref and not the working tree. Fixed by advancing the
+  checkout to `origin/sdu/optim-pred` and resubmitting; the six junk wandb
+  runs are tagged `mislaunched-drop` with an explanatory note. Job 10576255
+  additionally died at 8m11s (FAILED 1:0) — not diagnosed further; it was
+  junk either way.
 
 - Golden fixtures did NOT need a v6 recapture for the defaults flip: the flip
   landed at PRESET level, dataclass defaults untouched, so the train/eval

@@ -37,14 +37,14 @@ preset defaults, `probe_seed` on.
 
 | wave | arm | label / run stem | slurm job | extra flags |
 |---|---|---|---|---|
-| 2a | MSE curious s2 | mx-impassable-n8-s2-wm21968-mse8 | 10576276 | `--run.wandb-project curious-george-multienv` |
-| 2a | MSE curious s3 | mx-impassable-n8-s3-wm21968-mse8 | 10576277 | same |
+| 2a | MSE curious s2 | mx-impassable-n8-s2-wm21968-mse8 | 10576566 | `--run.wandb-project curious-george-multienv` |
+| 2a | MSE curious s3 | mx-impassable-n8-s3-wm21968-mse8 | 10576567 | same |
 | 2b | CE curious | *(pending Phase-1 gate + entropy pick)* | | `+ --arch-prnn.loss CE --train-policy.normalize-reward` |
 | 2b | CE random fwd | | | 2b's flags, agent arg `random` |
 | 2b | CE random uniform | | | + `--arch-policy.random-action-probs 0.25 0.25 0.25 0.25` |
 | 2b | CE count-based | | | `--train-policy.no-curious --train-policy.k-count 0.1` + CE flags |
 
-🔴 Ordering honoured: wave 2a (bright-MSE) submitted 2026-08-31 ~01:50,
+🔴 Ordering honoured: wave 2a (bright-MSE) submitted 2026-08-31 ~02:00 (first wave ~01:50 mislaunched and cancelled - see the Phase-1 doc's deviations),
 BEFORE any CE run exists in the project. Wave 2b launches after the Phase-1
 gate (`docs/ce-single-room-2026-08-31.md`) reads out.
 
