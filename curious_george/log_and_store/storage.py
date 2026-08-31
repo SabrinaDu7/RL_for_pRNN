@@ -123,13 +123,18 @@ def prediction_loss_kwargs(arch_prnn, env) -> dict:
     from curious_george.configs import PredLoss
 
     if arch_prnn.loss is PredLoss.MSE:
+        if arch_prnn.focal_gamma is not None:
+            raise ValueError("focal_gamma is a CE-loss reweighting; loss is MSE")
         return {}
     from curious_george.envs.palette import TILE_VOCABULARY, vocab_tensor
 
+    loss_kwargs: dict = {"vocab": vocab_tensor()}
+    if arch_prnn.focal_gamma is not None:
+        loss_kwargs["focal_gamma"] = float(arch_prnn.focal_gamma)
     n_tiles = env.getObsSize() // 3
     return dict(
         losstype="predCE",
-        loss_kwargs={"vocab": vocab_tensor()},
+        loss_kwargs=loss_kwargs,
         output_size=n_tiles * len(TILE_VOCABULARY),
         readout="logits",
     )

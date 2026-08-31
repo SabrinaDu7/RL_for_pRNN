@@ -373,6 +373,17 @@ class ArchPrnnCfg:
     """See `PredLoss`. MSE constructs the network EXACTLY as before this field
     existed (same kwargs, same RNG stream - the goldens gate it bitwise)."""
 
+    focal_gamma: float | None = None
+    """Focal reweighting ((1-pt)^gamma * ce) for the CE TRAINING loss only -
+    the curiosity reward stays plain surprisal (information is information;
+    only the gradient allocation changes). CE-only; refused under MSE.
+
+    Armed 2026-08-31 on the plan's named trigger, now MEASURED: background
+    saturated at 0.17 nats/tile while landmark tiles sit at 1.8 - near chance
+    (ln 7 = 1.95) - EVEN at shown steps with the landmark in the input
+    (throwaway/figs_ce/surprisal_vs_time.png). Not an inference failure; a
+    rare-class reconstruction failure, which is focal's exact use case."""
+
     action_encoding: ActionEncodingsEnum = ActionEncodingsEnum.SpeedHD
     n_timescale: int = 2
     dropout: float = 0.15
