@@ -28,6 +28,11 @@ BINDINGS = {
     "AGENTFLAG": "--arch-policy.agent RANDOM",
     "NORMFLAG": "--train-policy.normalize-advantage",
     "ENTFLAG": "--train-policy.entropy-coef 0.024",
+    # parity.sh's verbatim passthrough (args 7+), bound to a representative
+    # baseline arm so the gate parses what a count run actually submits. The
+    # key carries the braces/subscript because the substitution below builds
+    # '"$' + name + '"' and the script spells it "${EXTRA[@]}".
+    "{EXTRA[@]}": "--train-policy.no-curious --train-policy.k-count 0.1",
 }
 
 
@@ -66,6 +71,15 @@ def test_the_launcher_command_line_parses(name):
     cfg = cli(argv)  # SystemExit here IS the failure
     assert cfg.run.exp_name == "test-run"
     assert cfg.run.seed == 3
+
+
+def test_parity_extra_flags_reach_tyro():
+    """The verbatim passthrough is how every baseline arm rides parity.sh; a
+    swallowed flag would silently train the DEFAULT agent under a baseline's
+    name."""
+    cfg = cli(_invocation(SLURM / "parity.sh"))
+    assert cfg.train_policy.k_count == 0.1
+    assert cfg.train_policy.curious is False
 
 
 def test_multienv_launcher_selects_the_room_set_it_claims():
