@@ -28,6 +28,8 @@ BINDINGS = {
     "AGENTFLAG": "--arch-policy.agent RANDOM",
     "NORMFLAG": "--train-policy.normalize-advantage",
     "ENTFLAG": "--train-policy.entropy-coef 0.024",
+    # multienv.sh's positions passthrough, bound to the CE plan's 8-room set.
+    "POSFLAG": "--env.source.positions 0 1 2 3 5 6 7 8",
     # parity.sh's verbatim passthrough (args 7+), bound to a representative
     # baseline arm so the gate parses what a count run actually submits. The
     # key carries the braces/subscript because the substitution below builds
@@ -91,3 +93,7 @@ def test_multienv_launcher_selects_the_room_set_it_claims():
     assert isinstance(cfg.env.source, Selected)
     assert cfg.env.source.n == 5
     assert cfg.env.source.impassable is True, "the --env.source.impassable flag was lost"
+    assert cfg.env.source.positions == (0, 1, 2, 3, 5, 6, 7, 8), (
+        "the positions passthrough was lost - the 8-room arm would silently "
+        "train the first five rooms"
+    )

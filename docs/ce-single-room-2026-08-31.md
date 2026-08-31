@@ -49,17 +49,20 @@ One config field: `arch_prnn.loss ∈ {MSE, CE}` (`configs.py::PredLoss`).
   sRSA 0.64 last-2 [series 0.34→0.68→0.60 — unseeded-probe noise, which is
   why `probe_seed` now exists], SWdist 0.049, mean SI 0.90, MI 0.042).
 
-## Arms (launched via `slurm/parity.sh`, project `curious-george`)
+## Arms (launched 2026-08-31 ~01:3x via `slurm/parity.sh`, project `curious-george`)
 
-| arm | label | command tail | wandb run |
+Repo commit `b1763ae` (branch `sdu/optim-pred`), all arms
+`sbatch slurm/parity.sh '' [ent] 2 sdu/optim-pred '' <label> <extra...>`:
+
+| arm | label / run-name stem | slurm job | command tail |
 |---|---|---|---|
-| A bright-MSE control | mseB | *(pure preset: whitened, e=0.035, probe_seed on)* | *(fills on launch)* |
-| C bright-CE | ceRN | `--arch-prnn.loss CE --train-policy.normalize-reward` | |
-| C-e024 | ceRN (e=0.024) | same + entropy arg 0.024 | |
-| C-e07 | ceRN (e=0.07) | same + entropy arg 0.07 | |
-| C-raw ablation | ceRaw | `--arch-prnn.loss CE` (no reward norm) | |
-| D CE + random fwd | ceRN-rndfwd | C's flags + `--arch-policy.agent RANDOM` | |
-| E MSE + random fwd | mse-rndfwd | `--arch-policy.agent RANDOM` | |
+| A bright-MSE control | parity-s2-mseB | 10576255 | *(pure preset: whitened, e=0.035, probe_seed on)* |
+| C bright-CE | parity-s2-ceRN | 10576256 | `--arch-prnn.loss CE --train-policy.normalize-reward` |
+| C-raw ablation | parity-s2-ceRaw | 10576257 | `--arch-prnn.loss CE` (no reward norm) |
+| D CE + random fwd | parity-s2-ceRN-rndfwd | 10576258 | C's flags + `--arch-policy.agent RANDOM` |
+| E MSE + random fwd | parity-s2-mse-rndfwd | 10576259 | `--arch-policy.agent RANDOM` |
+| C-e024 | parity-e0.024-s2-ceRN | 10576260 | C's flags, entropy 0.024 |
+| C-e07 | parity-e0.07-s2-ceRN | 10576261 | C's flags, entropy 0.07 |
 
 Reading order per the plan: A vs anchor (era ballpark), D vs E (loss effect
 at fixed data — the most diagnostic pair), C vs A and C vs D.
