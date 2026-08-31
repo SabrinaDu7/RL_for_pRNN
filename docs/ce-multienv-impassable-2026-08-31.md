@@ -251,10 +251,19 @@ equality; the table above is seed-exact.)
 - No arm beats the center on room sRSA: the MSE-era optimizer settings
   transfer to CE better than suspected.
 
-**Confirmation launched**: pool4 at FULL budget, seeds 2+3 (jobs
-10596401-2) - the balanced candidate; the question is whether budget
-recovers its sRSA the way it did for pool8 (0.58 -> 0.648) while keeping
-the recall gains.
+**Confirmation (jobs 10596401-2, COMPLETED 28:00/27:57): budget does NOT
+rescue small pools.** pool4-full room sRSA 0.499/0.520 (mean 0.510) - below
+pool8-full's 0.648 and no better than pool4-half (0.518). The trade-off
+PERSISTS at full budget; pool8 dominates the representation at both
+budgets. Note the seed spread on pool4-full's wm loss (0.371 vs 0.216) with
+strongly committed policies (MI 0.249/0.315, coverage down to 0.12-0.16) -
+the small-pool regime is also less stable.
+
+**Sweep conclusion**: the production shape stays the center (pool 8,
+lr 3e-3, wd 3e-3); the no-trade-off lever remains budget; the
+representation-vs-prediction frontier along the pool axis is real and
+persists across budgets - the trigger condition for a multi-objective
+(Pareto) study, if mapping that frontier is worth a day of compute.
 
 ## Operational notes
 
