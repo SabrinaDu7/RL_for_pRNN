@@ -1,4 +1,12 @@
-2026-08-31 · branch `sdu/optim-pred` · prnn pin `sdu/ce-loss` @ `a83dede4` · overnight, autonomous
+2026-08-31 · branch `sdu/optim-pred` · prnn pin `sdu/ce-loss` @ `600c7e09` · overnight, autonomous
+
+*(Audit corrections, 2026-08-31 evening: the pin above originally read
+`a83dede4` - the runs actually installed `600c7e09`, whose only delta is the
+argmax RENDER path, no dynamics. The repo has since re-pinned `1939006e`
+(audit refactors: `targets_for` as the one pixel-to-class home, `readout`
+popped in `create_layers` - construction and math unchanged, goldens gate
+it). These runs also pre-date the seeded-probe RNG fix (docs/invalid-runs.md
+top entry): cross-run orderings stand, seed-variance is understated.)*
 
 # Phase 1: the CE prediction loss on the bright single L-room
 
@@ -9,7 +17,7 @@ STATUS: IN PROGRESS — sections fill as runs land.
 ## What the CE switch is (implementation, all landed and gated)
 
 One config field: `arch_prnn.loss ∈ {MSE, CE}` (`configs.py::PredLoss`).
-- Upstream (`prnn` branch `sdu/ce-loss`, pinned `a83dede4`): `predCE(vocab,
+- Upstream (`prnn` branch `sdu/ce-loss`, pinned `600c7e09`): `predCE(vocab,
   focal_gamma=None)` in `lossFuns`, a `readout="logits"` architecture kwarg
   (the historical sigmoid head untouched byte-for-byte at the default), and a
   `loss_kwargs` pass-through on `PredictiveNet`. Fork gate: 48 passed
@@ -105,7 +113,7 @@ Supporting readings:
   (0.09-0.22 vs 0.049); within-era, C-e.035 is the lowest. Carried per the
   user's instruction: both bright-MSE AND pale-MSE stay as controls.
 - **By eye** (final in-run Observation Sequence figures, saved to
-  `throwaway/figs_ce/phase1_{ceRN,mseB}_observation_vs_prediction.png`, also
+  `docs/figures/phase1_{ceRN,mseB}_observation_vs_prediction.png`, also
   in each run's wandb media): the CE run's argmax predictions match the
   observation nearly tile-for-tile (landmark shapes, wall band, the blue
   triangle corner); the MSE run's predictions are the familiar blur - a

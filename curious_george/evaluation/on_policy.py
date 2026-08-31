@@ -392,6 +392,13 @@ class OnPolicyAnalysis:
                 reward_alignment=PPOalgo.reward_alignment,
                 random_actions=PPOalgo.random_actions,
                 random_action_probs=PPOalgo.random_action_probs,
+                # Same bug class, next generation (audit 2026-08-31): without
+                # these a normalized/count run's fresh-clone analysis computed
+                # advantages on raw rewards - a different scale from the run
+                # it claims to describe.
+                normalize_advantage=PPOalgo.normalize_advantage,
+                normalize_reward=PPOalgo.reward_normalizer is not None,
+                k_count=PPOalgo.k_count,
             )
         else:
             required_keys = [

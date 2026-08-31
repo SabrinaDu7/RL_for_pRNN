@@ -28,9 +28,8 @@ from curious_george.envs.layouts import (
     base_walkable,
 )
 
-#: Chebyshev radius the "testable offsets" count is quoted at, matching
-#: `Layout.n_testable_offsets`'s own default.
-OFFSET_RADIUS = 4
+from curious_george.envs.layouts import OFFSET_RADIUS  # the one home (it is 3
+# since 2026-08-27; a local copy here said 4 and mislabelled every caption)
 
 
 

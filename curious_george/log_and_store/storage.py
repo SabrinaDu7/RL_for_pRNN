@@ -131,6 +131,9 @@ def prediction_loss_kwargs(arch_prnn, env) -> dict:
     loss_kwargs: dict = {"vocab": vocab_tensor()}
     if arch_prnn.focal_gamma is not None:
         loss_kwargs["focal_gamma"] = float(arch_prnn.focal_gamma)
+    assert env.getObsSize() % 3 == 0, (
+        f"CE tiles assume RGB rows; obs size {env.getObsSize()} is not /3"
+    )
     n_tiles = env.getObsSize() // 3
     return dict(
         losstype="predCE",
@@ -300,5 +303,3 @@ def save_pN_and_acmodel(
     save_policy(status_save, step_dir)
 
 
-# def get_vocab(model_dir):
-#     return load_policy(model_dir)["vocab"]

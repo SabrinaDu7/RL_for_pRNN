@@ -10,6 +10,10 @@ RLutils/__pycache__/*
 results/*
 omt-*/
 *.png
+# EXCEPTION - figures CITED from docs/*.md are results, and a result that only
+# exists untracked is untraceable (the throwaway/ rule). Committed 2026-08-31
+# with the surprisal-vs-time focal-trigger evidence.
+!docs/figures/*.png
 .zed
 
 # Claude and outputs

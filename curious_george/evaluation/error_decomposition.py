@@ -19,6 +19,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 
 from curious_george.envs.palette import TILE_CLASS_NAMES, vocab_tensor
+from curious_george.models.prnn_adapter import FORWARD_IDX as FORWARD
 
 
 @dataclass(frozen=True)
@@ -105,8 +106,6 @@ class BumpContrast:
     def bump_minus_free(self) -> float:
         return self.bump_mean_error - self.free_mean_error
 
-
-FORWARD = 2  # the SpeedHD forward action index (prnn_adapter.FORWARD_IDX)
 
 
 def bump_contrast(

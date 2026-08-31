@@ -63,3 +63,27 @@ def test_running_std_accumulates_across_rollouts():
     for _ in range(5):
         norm.update_and_normalize(torch.randn(16, 8, generator=torch.Generator().manual_seed(3)) * 2.0)
     assert abs(norm.std - 2.0) < 0.3, f"running std {norm.std} far from the true 2.0"
+
+
+def test_welford_matches_the_numpy_std_over_different_batches():
+    """The parallel-variance merge, against the definitional spelling: after
+    any sequence of DIFFERENT batches, `std` must equal np.std of everything
+    seen. (The accumulation test above feeds the SAME batch five times, which
+    a broken cross-term can survive - audit 2026-08-31.)"""
+    import numpy as np
+
+    norm = RewardNormalizer()
+    seen = []
+    for i, size in enumerate([7, 1, 64, 3]):
+        batch = torch.randn(size, generator=torch.Generator().manual_seed(i)) * (i + 0.5) + i
+        norm.update_and_normalize(batch)
+        seen.append(batch.numpy())
+    assert abs(norm.std - float(np.std(np.concatenate(seen)))) < 1e-6
+
+
+def test_constant_nonzero_reward_normalizes_finite():
+    """A constant reward has zero variance; update-then-normalize must return
+    finite values (mean is NOT subtracted, so the reward itself survives
+    the eps division as a huge but finite number, never NaN)."""
+    out = RewardNormalizer().update_and_normalize(torch.full((16, 8), 3.0))
+    assert torch.isfinite(out).all()

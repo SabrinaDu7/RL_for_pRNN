@@ -25,7 +25,7 @@ from curious_george.training.schedule import (
     TrainingSchedule,
 )
 from curious_george.training.setup import RunContext, TrainingComponents
-from curious_george.models.device import on_device
+from curious_george.models.device import eval_mode, on_device
 from curious_george.utils.checkpoints import StatusCkptKeys
 from curious_george.utils.timing import timer
 
@@ -270,12 +270,21 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             archive_due = cadence.archive.fire(num_frames)
 
             # --- periodic plotting (expensive: figure + GPU<->CPU model swap)
-            if plot_due:
-                # plotSampleTrajectory runs predict on CPU tensors; pin the
-                # models to CPU for the call (placement restored on exit).
+            if plot_due and EvalKind.TRAJECTORY_PLOT in cfg.eval.evals:
+                # Gated on its EvalKind (it was dead config before - the plot
+                # ran regardless; audit 2026-08-31), drawn in eval_mode (the
+                # figure previously rendered through train-mode dropout), and
+                # with the run's ACTUAL agent (a RANDOM run's figure showed
+                # the untrained policy's walk).
+                plot_agent = (
+                    comps.random_agent
+                    if cfg.arch_policy.agent is AgentType.RANDOM
+                    else comps.ac_agent
+                )
                 with timer("log/sample_trajectory"):
-                    with on_device([comps.predictiveNet, comps.acmodel], "cpu"):
-                        comps.predictiveNet.plotSampleTrajectory(env=comps.env, agent=comps.ac_agent)
+                    with eval_mode([comps.predictiveNet, comps.acmodel]), \
+                            on_device([comps.predictiveNet, comps.acmodel], "cpu"):
+                        comps.predictiveNet.plotSampleTrajectory(env=comps.env, agent=plot_agent)
 
             # --- periodic logging -----------------------------------------
             if log_due:

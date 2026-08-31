@@ -317,9 +317,22 @@ class _GraphWMTrainer:
         )
         self._param_ptrs = self._fingerprint()
 
+    _VOCAB_CHECK_EVERY = 64  # eager closed-set checks per graphed steps; see below
+
     def train_batch(self, obs_b: torch.Tensor, act_b: torch.Tensor, *, batched: bool) -> None:
         """One graphed pRNN gradient step on obs_b (B, L+1, X), act_b (B, L, A),
         both already on device. Equal shapes share one graph."""
+        # Graph REPLAYS execute no Python, so predCE's closed-set assert only
+        # ever ran on the capture batch (audit 2026-08-31). This periodic
+        # EAGER check re-arms it: every _VOCAB_CHECK_EVERY graphed steps,
+        # validate the incoming batch against the vocabulary before copying
+        # it into the static buffers. One host sync per 64 steps.
+        loss_fn = getattr(self.pN, "loss_fn", None)
+        if hasattr(loss_fn, "targets_for"):
+            self._vocab_check_counter = getattr(self, "_vocab_check_counter", 0) + 1
+            if self._vocab_check_counter % self._VOCAB_CHECK_EVERY == 1:
+                n_ch = loss_fn.vocab.shape[1]
+                loss_fn.targets_for(obs_b.reshape(*obs_b.shape[:-1], -1, n_ch), check=True)
         self._invalidate_if_moved()  # a device round-trip freed the old params
         key = (batched, obs_b.size(0), obs_b.size(1))
         if key not in self.graphs:
@@ -586,14 +599,17 @@ class PRNNAdapter:
         """
         if not self.ce:
             return ((obs_pred - obs_next) ** 2).mean(dim=feature_dim)
-        vocab = self.vocab.to(obs_next.device)
-        n_classes, n_channels = vocab.shape
+        n_classes, n_channels = self.vocab.shape
         logits = obs_pred.movedim(feature_dim, -1)
         pixels = obs_next.movedim(feature_dim, -1)
         n_tiles = pixels.shape[-1] // n_channels
         logits = logits.reshape(*logits.shape[:-1], n_tiles, n_classes)
         pixels = pixels.reshape(*pixels.shape[:-1], n_tiles, n_channels)
-        targets = (pixels.unsqueeze(-2) - vocab).abs().sum(-1).argmin(-1)
+        # The loss's own lookup - the ONE home for pixel->class (audit
+        # 2026-08-31) - with its closed-set assert live: this runs eagerly on
+        # the curiosity outputs, so under `predNet.cuda_graph` it is also the
+        # reward-side vocabulary check the captured trainStep cannot perform.
+        targets = self.pN.loss_fn.targets_for(pixels, check=True)
         logp = torch.log_softmax(logits, dim=-1)
         return -logp.gather(-1, targets.unsqueeze(-1)).squeeze(-1).sum(dim=-1)
 
@@ -615,7 +631,9 @@ class PRNNAdapter:
         *,
         target_offset: int,
     ) -> torch.Tensor:
-        """Per-step observation-prediction MSE for equal-length segments.
+        """Per-step observation-prediction ERROR for equal-length segments
+        (pixel MSE under the MSE objective, summed surprisal under CE -
+        `_prediction_errors` is the one home for the distinction).
 
         `obs_b` (N, L+1+target_offset, X_obs), `act_b` (N, L+target_offset,
         X_act), both on device. Returns (N, L): one row per segment, one
@@ -653,8 +671,10 @@ class PRNNAdapter:
         num_frames: int,
         target_offset: int = 0,
     ) -> torch.Tensor:
-        """Per-step observation-prediction MSE over the collected rollout,
-        computed per episode segment. Used as the curiosity reward.
+        """Per-step observation-prediction error over the collected rollout,
+        computed per episode segment. Used as the curiosity reward. Named
+        `prediction_mses` for history; under CE the rows are surprisal in
+        nats, not MSE (see `_prediction_errors`).
 
         ALIGNMENT CONTRACT (see throwaway/ported/docs_legacy/refactor_baseline.md flaw #1): with
         predOffset=0, prediction row t targets obss[t].

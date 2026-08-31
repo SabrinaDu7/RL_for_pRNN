@@ -82,6 +82,7 @@ def collect_pooled_activity(
     n_trajs: int,
     traj_timesteps: int,
     onset_transient: int = 20,
+    reset_each: bool = False,
 ) -> tuple[Float[np.ndarray, "N H"], Float[np.ndarray, "N 2"]]:
     """Theta-mean hidden activity and matching positions over `n_trajs` rollouts.
 
@@ -92,6 +93,14 @@ def collect_pooled_activity(
     h_rows: list = []
     pos_rows: list = []
     for _ in range(n_trajs):
+        if reset_each:
+            # Seeded-probe protocol v2 (audit 2026-08-31): each probe
+            # trajectory starts from a fresh recurrent state, so trajectory k
+            # does not depend on trajectory k-1's endpoint - and, in the
+            # multi-room eval, room k's probe does not carry room k-1's
+            # hidden state into its behaviour. Gated on the seeded protocol
+            # so the historical unseeded measurement stays bitwise.
+            pN.reset_state(device="cpu")
         obs, act, state, _ = pN.collectObservationSequence(
             env, agent, traj_timesteps, discretize=True
         )
@@ -113,7 +122,7 @@ from contextlib import contextmanager
 
 
 @contextmanager
-def _probe_rng(probe_seed: int | None):
+def _probe_rng(probe_seed: int | None, pN=None):
     """Deterministic probe draws WITHOUT perturbing the training stream.
 
     🔴 The bug this exists for (2026-08-31): `torch.manual_seed` seeds EVERY
@@ -132,6 +141,12 @@ def _probe_rng(probe_seed: int | None):
     torch_state = torch.random.get_rng_state()
     cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
     np_state = np.random.get_state()
+    # The RNG leak's surviving sibling (audit 2026-08-31): the on-policy
+    # probe advances pN.state/pN.phase via predict_single, and at B=1 the
+    # next TRAINING rollout continued from the eval's leftover state. Both
+    # are module-level globals of the PredictiveNet, snapshotted here.
+    pn_state = pN.state.clone() if pN is not None else None
+    pn_phase = pN.phase if pN is not None else None
     try:
         yield
     finally:
@@ -139,6 +154,9 @@ def _probe_rng(probe_seed: int | None):
         if cuda_states is not None:
             torch.cuda.set_rng_state_all(cuda_states)
         np.random.set_state(np_state)
+        if pN is not None:
+            pN.state = pn_state
+            pN.phase = pn_phase
 
 def evaluate_spatial_representation(
     pN: PredictiveNet,
@@ -172,7 +190,7 @@ def evaluate_spatial_representation(
     if hasattr(agent, "acmodel"):
         modules.append(agent.acmodel)
 
-    with _probe_rng(probe_seed):
+    with _probe_rng(probe_seed, pN):
         return _evaluate_spatial_inner(
             pN, env, agent, modules,
             n_trajs=n_trajs, traj_timesteps=traj_timesteps,
@@ -208,9 +226,9 @@ def _evaluate_spatial_inner(
     # train-mode expectation matches eval mode. Measuring through it therefore
     # reports activations inflated 17.6% and then randomly zeroed: neither the
     # training nor the inference distribution. The agent never sees it either -
-    # predict_single skips clip_mask entirely. Every other eval path in the
-    # repo already does this (evaluation/task.py, evaluation/probe.py, and the
-    # OMT task, now in the questions repo); this one was the outlier.
+    # predict_single skips clip_mask entirely. evaluation/task.py and
+    # evaluation/probe.py do the same; checkpoint_series.score and the figure
+    # paths historically did NOT (audit 2026-08-31) - see their own notes.
     #
     # The injected noise (predNet.trainNoiseMeanStd) is deliberately KEPT: it
     # is the model's dynamics, and it is what generates the "sleep" activity
@@ -242,6 +260,7 @@ def _evaluate_spatial_inner(
             n_trajs=n_trajs,
             traj_timesteps=traj_timesteps,
             onset_transient=onset_transient,
+            reset_each=probe_seed is not None,
         )
 
         # prnn owns metric computation AND wandb logging (Sabrina's rule);
@@ -349,7 +368,7 @@ def evaluate_multi_room_representation(
     per_room: list[dict] = []
     h_rows: list = []
     pos_rows: list = []
-    with _probe_rng(probe_seed), eval_mode(modules), on_device(modules, "cpu"):
+    with _probe_rng(probe_seed, pN), eval_mode(modules), on_device(modules, "cpu"):
         for k, layout in enumerate(layouts):
             env.env.unwrapped.landmarks = list(layout.landmarks)
             env.reset()
@@ -365,6 +384,7 @@ def evaluate_multi_room_representation(
                 n_trajs=n_trajs,
                 traj_timesteps=traj_timesteps,
                 onset_transient=onset_transient,
+                reset_each=probe_seed is not None,
             )
             h_rows.append(h)
             pos_rows.append(pos)

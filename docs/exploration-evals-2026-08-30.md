@@ -35,7 +35,10 @@ spawn is `positions[:, 0]` (positions are pre-action, `collector.py`).
 
 **Denominator: the episode's own room's walkable set**, always
 `layout.walkable(base_walkable(room))`, never a constant. Why per-room and not
-the pooled union: measured on the committed 5-room set, per-room walkable is
+the pooled union: measured on the committed 5-room set AS OF 2026-08-30
+(stencil `x`; `triangle3` made it 152 the same day - regenerate with
+`uv run python -m curious_george.envs.action_graph`, do not transcribe),
+per-room walkable was
 153 (impassable) vs 172 (walkable), but no landmark cell is blocked in ALL
 five rooms, so the pooled set — and with it `EnvCfg.loc_entropy_ceiling` — is
 172 cells / 7.4263 bits in BOTH arms. Ceiling-normalizing the pooled

@@ -179,8 +179,9 @@ A's (the whole point).
 **If it fails, the debugging ladder** — ask in this order, and answer with a
 measurement, not a retry:
 1. *Implementation?* — goldens at MSE default; CE unit tests; class-target
-   assert; loss curve shape (CE should start near `49*ln(C)` nats/step
-   summed and fall).
+   assert; loss curve shape (CE should start near ~~`49*ln(C)` nats/step
+   summed~~ `ln(C)` nats/tile - the loss reduces with a mean over tiles;
+   appendix delta 8 - and fall).
 2. *Evaluation?* — probe seeded? same probe across arms? argmax-render
    checked by eye against a true observation?
 3. *Baselines?* — what do D and E say? A curious-arm problem that D shares
@@ -301,3 +302,12 @@ figures and verdicts. The deltas from the plan as written:
    first-ever Mila email-OTP prompt (never retried; user notified).
 6. The seed-3 replications of ce8/mse8 ran; Phase-1 arms are n=1 (seed 2)
    by design - the scan + 2x2 spent that budget instead.
+7. `probe_seed` landed as a CONSTANT in the presets (10007), not derived
+   from `run.seed` as planned: a shared probe makes cross-run sRSA
+   differences attributable to the representation alone, at the cost of one
+   shared probe-noise draw (see `EvalCfg.probe_seed`'s docstring).
+8. *(2026-08-31 audit)* The ladder's "CE should start near `49*ln(C)`" was
+   wrong as written: `predCE` reduces with a MEAN over tiles, so the curve
+   starts near `ln(C)` ≈ 1.95 nats/tile - which is what every logged run
+   shows. The curiosity REWARD is the per-step summed surprisal; the logged
+   wm loss is per-tile.

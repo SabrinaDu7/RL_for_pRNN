@@ -158,6 +158,12 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
         grid = self.unwrapped.grid
         fp = hashlib.sha1(grid.encode().tobytes()).hexdigest()[:16]
         fp += f"-{_render_revision()}"
+        # tile_size and view size change the bank's SHAPE; the disk filename
+        # carried tile_size but the in-process _BANK_CACHE keyed on this
+        # fingerprint alone, so two wrappers at different sizes on one grid
+        # would silently share a bank (audit 2026-08-31; latent - everything
+        # runs tile 1 / view 7 today).
+        fp += f"-t{self.tile_size}v{getattr(self.unwrapped, 'agent_view_size', 7)}"
         if not getattr(self.unwrapped, "see_through_walls", True):
             fp += "-occl"
         return fp

@@ -139,7 +139,10 @@ def run_config(*, room: str, source: str, hiddensize: int, impassable: bool = Fa
     base = Config(
         env=env,
         collect=replace(Config().collect, backend=EnvBackend.DEVICE),
-        eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM})),
+        # rooms_max=5, matching the multienv-fast preset the scored runs
+        # trained under - the dataclass default (4) silently made this series
+        # a DIFFERENT measurement from the online one (audit 2026-08-31).
+        eval=EvalCfg(evals=frozenset({EvalKind.SPATIAL_MULTIROOM}), rooms_max=5),
     )
     return replace(base, arch_prnn=replace(base.arch_prnn, hidden_size=hiddensize))
 
@@ -313,9 +316,18 @@ def score_exploration_series(
 
 
 def score(*, pN, rolls, env) -> tuple[float, np.ndarray, np.ndarray]:
-    """(prediction loss, pooled h rows, pooled positions) over the probe."""
+    """(prediction loss, pooled h rows, pooled positions) over the probe.
+
+    Under `eval_mode` since the 2026-08-31 audit: this scored through the
+    0.15 train-mode input dropout - its own OPEN-ITEM note - so its rows were
+    neither the training nor the inference distribution, and its numbers were
+    not the online series'. ⚠️ Comparisons of offline series across this line
+    are train-mode-vs-eval-mode; rescore old runs rather than mixing tables.
+    """
+    from curious_george.models.device import eval_mode
+
     losses, h_rows, pos_rows = [], [], []
-    with torch.no_grad():
+    with eval_mode([pN]), torch.no_grad():
         for obs, act, pos in rolls:
             obs_pred, obs_next, h = pN.predict(obs, act)
             losses.append(float(pN.loss_fn(obs_pred, obs_next, h)))

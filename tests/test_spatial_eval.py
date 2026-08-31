@@ -118,9 +118,15 @@ def test_seeded_probe_leaves_the_training_streams_untouched(setup):
     torch_before = torch.random.get_rng_state().clone()
     np_before = np.random.get_state()
 
+    pn_state_before = pN.state.clone()
+    pn_phase_before = pN.phase
     kwargs = dict(n_trajs=2, traj_timesteps=40, onset_transient=5,
                   active_time_threshold=10, sleep_timesteps=30, probe_seed=10007)
     m1 = evaluate_spatial_representation(pN, env, agent, **kwargs)
+
+    assert torch.equal(pN.state, pn_state_before) and pN.phase == pn_phase_before, (
+        "seeded eval perturbed pN.state/pN.phase - the leak's sibling is back"
+    )
 
     assert torch.equal(torch.random.get_rng_state(), torch_before), (
         "seeded eval perturbed the global torch stream"
@@ -133,3 +139,21 @@ def test_seeded_probe_leaves_the_training_streams_untouched(setup):
     # and the probe itself is FIXED: same seed, same numbers
     m2 = evaluate_spatial_representation(pN, env, agent, **kwargs)
     assert m1["sRSA"] == m2["sRSA"] and m1["SWdist"] == m2["SWdist"]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="gates the CUDA leg of _probe_rng")
+def test_seeded_probe_restores_the_cuda_stream(setup):
+    """`torch.manual_seed` seeds EVERY device's generator, so the restore has
+    to cover CUDA too - the CPU-only test above cannot see this leg."""
+    env, pN, agent = setup
+    torch.manual_seed(20260831)
+    torch.rand(3, device="cuda")
+    before = torch.cuda.get_rng_state_all()
+    evaluate_spatial_representation(
+        pN, env, agent, n_trajs=2, traj_timesteps=40, onset_transient=5,
+        active_time_threshold=10, sleep_timesteps=30, probe_seed=10007,
+    )
+    after = torch.cuda.get_rng_state_all()
+    assert all(torch.equal(a, b) for a, b in zip(before, after)), (
+        "the probe moved a CUDA generator"
+    )

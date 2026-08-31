@@ -161,7 +161,9 @@ Both pRNN and policy networks live here, plus the device machinery they share.
   imports `prnn`; everything else talks to it. It owns the hidden-state trackers, the
   action and observation encoding, the training step, and the prediction-error computation
   the curiosity reward is built from. If the upstream pRNN API changes, this is the file
-  that changes.
+  that changes. The prediction loss itself is one config switch (`arch_prnn.loss`):
+  MSE on pixels, or CE classifying each tile over `envs/palette.py`'s vocabulary —
+  curiosity is the summed per-step error either way (surprisal, in nats, under CE).
 - `models/device.py` — `on_device` / `eval_mode`, the context managers that move models
   between CPU and accelerator without changing their identity. Here because it operates
   *on* models, not because it is one. **Note**: the spatial evaluation runs on CPU, and
@@ -184,6 +186,9 @@ updates it.
   is local and untracked: rebuilding one bank is 0.49 s, so it saves half a second per
   distinct grid and nothing else.
 - `envs/layouts.py` — seeded pools of landmark layouts for multi-room training.
+- `envs/palette.py` — the committed tile vocabulary: every RGB value a tile_size=1
+  observation can hold. The CE prediction loss classifies over this alphabet, and
+  `tests/test_palette.py` re-measures it from live banks.
 - `envs/action_graph.py` — the transition table as a graph: shortest-path distance
   in ACTIONS (a turn costs a step), and the reference walkers — uniform/categorical
   random and the greedy sweeper positive control — that bound what any policy can
@@ -200,6 +205,10 @@ Called by `training/loop.py` on a cadence, but importable on their own.
   reports the coverage of the SI estimate alongside it.
 - `evaluation/on_policy.py` — `OnPolicyAnalysis`, `occupancy_counts`, `mutual_info_policy`:
   what the policy did, as arrays and as figures.
+- `evaluation/error_decomposition.py` — per-tile-class error shares and the
+  bump-vs-free contrast, for either loss; `evaluation/surprisal_timing.py` — landmark
+  surprisal against episode time and steps-since-glimpse (the focal-loss trigger
+  measurement, docs/figures/surprisal_vs_time.png).
 - `evaluation/exploration.py` — how well the policy EXPLORED: coverage curves and
   normalized AUC, time-to-cover with censoring reported first, per-room visitation
   entropy (the arm-comparable form), and coverage binned by BFS distance from spawn.
@@ -249,7 +258,7 @@ carry the reasoning for the settings they pass.
 | `train_fast.sh` | the tuned production configuration, parameterised by positional arguments (layout set, seed, entropy coefficient, budget, and the CUDA-graph switches) |
 | `multienv.sh` | multi-room training |
 | `bsweep.sh` | a job array sweeping parallel-environment counts against seeds |
-| `async_bench.sh` | a benchmark of async against synchronous rollout collection |
+| `parity.sh` | the single-room parity preset, with a label and verbatim extra flags so baseline arms ride the same launcher |
 
 Two things worth knowing before adapting one: the GPU type is load-bearing for anything
 with a wall-clock target, and every job fetches into the same shared checkout, so the fetch

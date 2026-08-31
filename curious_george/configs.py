@@ -378,11 +378,14 @@ class ArchPrnnCfg:
     the curiosity reward stays plain surprisal (information is information;
     only the gradient allocation changes). CE-only; refused under MSE.
 
-    Armed 2026-08-31 on the plan's named trigger, now MEASURED: background
-    saturated at 0.17 nats/tile while landmark tiles sit at 1.8 - near chance
-    (ln 7 = 1.95) - EVEN at shown steps with the landmark in the input
-    (throwaway/figs_ce/surprisal_vs_time.png). Not an inference failure; a
-    rare-class reconstruction failure, which is focal's exact use case."""
+    Armed 2026-08-31 on the plan's named trigger, MEASURED under eval_mode
+    (evaluation/surprisal_timing.py on the ce8full s2 checkpoint): background
+    saturated at ~0.16 nats/tile while landmark tiles sit at 1.49 - near
+    chance (ln 7 = 1.95) - EVEN at shown steps with the landmark in the
+    input (docs/figures/surprisal_vs_time.png). Not an inference failure; a
+    rare-class reconstruction failure, which is focal's exact use case. (The
+    original one-off measured 1.78 through train-mode dropout; the audit's
+    eval-mode rerun moved the number, not the conclusion.)"""
 
     action_encoding: ActionEncodingsEnum = ActionEncodingsEnum.SpeedHD
     n_timescale: int = 2
@@ -421,6 +424,18 @@ class ArchPrnnCfg:
                 f"action_offset is which action shares a row with obs[t]; "
                 f"only 0 and 1 mean anything, got {self.action_offset}"
             )
+        if self.focal_gamma is not None:
+            if self.loss is not PredLoss.CE:
+                raise ValueError(
+                    "focal_gamma reweights the CE loss; it means nothing under "
+                    f"{self.loss} (storage.prediction_loss_kwargs would refuse "
+                    "it later, but a config should fail where it is written)"
+                )
+            if not self.focal_gamma > 0:
+                raise ValueError(
+                    f"focal_gamma must be > 0 (gamma=0 IS plain CE - spell "
+                    f"that as focal_gamma=None), got {self.focal_gamma}"
+                )
 
 
 @dataclass(frozen=True)

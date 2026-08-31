@@ -130,6 +130,8 @@ LR warmup (which is 🔴 absent in BOTH repos and would be silently dead under
 - **`remapping_index` is deliberately ignored**, per instruction.
 - The spatial probe is still **unseeded** (`probe_seed` accepted, passed by nothing), so
   every sRSA point carries its own rollout noise on top of the seed noise.
+  *(Dated 2026-08-30. Seeded the next day - and the first threading leaked
+  the seed into the training streams; docs/invalid-runs.md has the line.)*
 
 ## Advantage normalization: the right direction, and it needed 40x more entropy
 

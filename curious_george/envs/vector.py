@@ -326,18 +326,27 @@ class DeviceTableShellPool:
         reusable all-zero reward vector and never inspects one, so a room that
         could pay out would be silently ignored rather than mishandled.
         """
+        # A deepcopy SCRATCH, not the live stream-0 wrapper: building banks
+        # used to call reference.reset(seed=0), which re-seeded stream 0's
+        # np_random to a CONSTANT at every multienv pool construction - its
+        # start-position draws ignored run.seed from then on (audit
+        # 2026-08-31; docs/invalid-runs.md). Same pattern as
+        # `_cache_layout_grids`.
+        import copy
+
+        scratch = copy.deepcopy(reference)
         banks, tables = [], []
         for layout in self.layouts:
-            reference.unwrapped.landmarks = list(layout.landmarks)
-            reference.reset(seed=0)
-            if np.any(reference._rewarding) or np.any(reference._terminated):
+            scratch.unwrapped.landmarks = list(layout.landmarks)
+            scratch.reset(seed=0)
+            if np.any(scratch._rewarding) or np.any(scratch._terminated):
                 raise ValueError(
                     f"layout {layout.key} has environment-triggered rewards or "
                     "terminations; the device path returns a constant zero reward "
                     "and would silently drop them"
                 )
-            banks.append(np.array(reference._bank))
-            tables.append(np.array(reference._next_state))
+            banks.append(np.array(scratch._bank))
+            tables.append(np.array(scratch._next_state))
         return banks, tables
 
     @property
@@ -455,6 +464,12 @@ class DeviceTableShellPool:
                 u.place_agent()
                 u.carrying = None
                 u.step_count = 0
+                # The wrapper's cached bank/table still describe the room of
+                # the last FULL reset; nothing in the device rollout reads
+                # them, but a future wrapper.step()/observation() would use
+                # the wrong room silently. Invalidate so any such use rebuilds
+                # (audit 2026-08-31).
+                wrapper._fingerprint = None
         else:
             for shell in self._training_shells:
                 shell.reset()

@@ -31,7 +31,7 @@ SEED = 5
 L = 32  # segment length
 
 
-def _make_pN(*, dropp: float, noise: tuple[float, float]) -> PredictiveNet:
+def _make_pN(*, dropp: float, noise: tuple[float, float], ce: bool = False) -> PredictiveNet:
     torch.manual_seed(SEED)
     np.random.seed(SEED)
     env = make_env(
@@ -40,10 +40,16 @@ def _make_pN(*, dropp: float, noise: tuple[float, float]) -> PredictiveNet:
         act_enc=ActionEncodingsEnum.SpeedHD.value,
         seed=SEED,
     )
+    ce_kwargs = {}
+    if ce:
+        from curious_george.configs import ArchPrnnCfg, PredLoss
+        from curious_george.log_and_store.storage import prediction_loss_kwargs
+
+        ce_kwargs = prediction_loss_kwargs(ArchPrnnCfg(loss=PredLoss.CE), env)
     return PredictiveNet(
         env, hidden_size=64, pRNNtype="thRNN_5win",
         trainNoiseMeanStd=noise, dropp=dropp, learningRate=3e-3,
-        weight_decay=3e-3, bptttrunc=int(1e8), wandb_log=False,
+        weight_decay=3e-3, bptttrunc=int(1e8), wandb_log=False, **ce_kwargs,
     )
 
 
@@ -463,3 +469,35 @@ def test_on_device_preserves_buffer_addresses():
     for k, ptr in before.items():
         assert after[k].data_ptr() == ptr, f"buffer {k} was relocated"
         assert torch.equal(after[k], values[k].to(after[k].device)), f"buffer {k} changed value"
+
+
+def test_graphed_ce_segment_bitwise_equals_eager_no_rng():
+    """The CE objective under `_GraphWMTrainer`: capture must bake in the
+    categorical loss (logits head, `targets_for` lookup) exactly as eager
+    computes it - the replay runs no Python, so a divergence here would be
+    silent in training (audit 2026-08-31)."""
+    dev = torch.device("cuda")
+
+    pN_eager = _make_pN(dropp=0.0, noise=(0.0, 0.0), ce=True)
+    pN_eager.pRNN.to(dev)
+    pN_eager.pRNN.train()
+    images, hd, act, last = _one_segment(pN_eager)
+    a_eager = PRNNAdapter(pN_eager, dev, action_offset=0, cuda_graph=False)
+    assert a_eager.ce
+    w0 = _weights(pN_eager).clone()
+    a_eager.train_on_episode(images, hd, act, last)
+    w_eager = _weights(pN_eager)
+
+    pN_graph = _make_pN(dropp=0.0, noise=(0.0, 0.0), ce=True)
+    pN_graph.pRNN.to(dev)
+    pN_graph.pRNN.train()
+    images, hd, act, last = _one_segment(pN_graph)
+    a_graph = PRNNAdapter(pN_graph, dev, action_offset=0, cuda_graph=True)
+    assert a_graph.cuda_graph and a_graph.ce
+    a_graph.train_on_episode(images, hd, act, last)
+
+    assert not torch.equal(w0, _weights(pN_eager)), "eager CE step did not move weights"
+    assert torch.equal(w_eager, _weights(pN_graph)), (
+        f"graphed CE != eager CE: max|d|="
+        f"{(w_eager - _weights(pN_graph)).abs().max().item():.3e}"
+    )

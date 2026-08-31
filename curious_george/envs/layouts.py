@@ -176,7 +176,7 @@ def entropy_ceiling(cells: frozenset[tuple[int, int]]) -> float:
     """The `loc_entropy` a perfectly uniform explorer would score, in bits.
 
     Quoted so a comparison ACROSS arms is possible: the ceiling moves with the
-    geometry - log2(153) = 7.26 for a room with three objects against
+    geometry - log2(152) = 7.25 for a room with three impassable objects (152 since triangle3) against
     log2(172) = 7.43 without - so a raw entropy from an impassable-object run is
     not comparable to one from a walkable control until it is divided by this.
     Within one design it is constant and can be ignored.

@@ -15,6 +15,34 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `sdu/optim-pred` — the 2026-08-31 audit's measurement-protocol lines
+
+Four smaller lines from the same audit pass, grouped because they share a
+commit. Runs BEFORE it are internally consistent; numbers measured across the
+line are different protocols, not regressions:
+
+- **Seeded-probe protocol v2**: the probe now resets `pN.state` per probe
+  trajectory (`collect_pooled_activity(reset_each=True)`) and `_probe_rng`
+  restores `pN.state`/`pN.phase` alongside the RNG streams. Seeded sRSA/SI
+  values move; unseeded probes are untouched.
+- **`checkpoint_series` scores under `eval_mode` and `rooms_max=5`**: it
+  used to score through 0.15 train-mode dropout over a 4-room prefix while
+  the online eval used 5 - its numbers were a THIRD protocol. Offline series
+  from before the line must be rescored, not mixed into tables.
+- **Stream-0 bank-build reseed**: multienv pool construction called
+  `reset(seed=0)` on stream 0's live wrapper, so after construction stream
+  0's GENERATOR held the seed-0 state whatever `run.seed` was. Realized
+  start draws still varied across seeds - the room schedule is seeded by
+  `run.seed` and steers the rejection sampling - which is why no downstream
+  number caught it; `tests/test_fast_reset.py::test_run_seed_reaches_stream_zero`
+  reads the generator state itself (verified: fails on the pre-fix code).
+  Banks were always collected correctly; the effect is a mild, structured
+  understatement of cross-seed variance on stream 0's episode starts.
+- **Fork re-pin `600c7e09` → `1939006e`** (`uv.lock`): audit refactors only
+  (`targets_for` as the one pixel→class home; `readout` popped in
+  `create_layers`). Construction and dynamics unchanged - the goldens gate
+  it - so this line marks provenance, not a numeric break.
+
 ## `sdu/optim-pred` — the seeded probe leaked into the training stream · 2026-08-31
 
 **What was wrong.** From the `probe_seed` threading (`87c6c22`, ~01:00) until

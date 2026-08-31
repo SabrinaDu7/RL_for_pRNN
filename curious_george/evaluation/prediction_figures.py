@@ -67,9 +67,14 @@ def predictions_for_room(*, pN, env, layout, steps: int) -> RoomPrediction:
     would hide the change it exists to show.
     """
     from curious_george.evaluation.checkpoint_series import fixed_probe
+    from curious_george.models.device import eval_mode
 
     (obs, act, _), = fixed_probe(pN=pN, env=env, layout=layout, n_trajs=1, steps=steps)
-    with torch.no_grad():
+    # eval_mode, not just no_grad: without it the figure's predictions ran
+    # through the 0.15 input dropout - train-mode draws, irreproducible
+    # figure-to-figure (audit 2026-08-31). trace_circuit in this module
+    # already did this; the two halves now agree.
+    with eval_mode([pN]), torch.no_grad():
         obs_pred, obs_next, _ = pN.predict(obs, act)
 
     T = obs_next.size(1)

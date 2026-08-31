@@ -283,8 +283,12 @@ def collect_rollout(
             except BaseException as e:  # surfaced at join, not swallowed
                 prepared_resets["error"] = e
 
+        # STARTED LATER, not here: the first graphed rollout captures its CUDA
+        # graph inside `rollout_graph.prepare()`, and capture_error_mode
+        # "global" forbids CUDA work from ANY thread while capturing - the
+        # worker's three H2D uploads could land mid-capture (audit 2026-08-31,
+        # timing-dependent crash). The thread starts after `prepare` returns.
         _prepare_thread = threading.Thread(target=_prepare_resets_worker, daemon=True)
-        _prepare_thread.start()
 
         def _join_prepared() -> None:
             _prepare_thread.join()
@@ -338,8 +342,8 @@ def collect_rollout(
         # observation it is given, so under action_offset=1 the environment has
         # to have moved first - otherwise h[0] encodes the view the finished
         # episode ended on, from a position the agent has already left.
-        # Under offset 0 nothing reads the observation, and the historical order
-        # is kept because both calls consume RNG.
+        # (On this backend neither call consumes RNG - the draws happened in
+        # prepare_resets - so the order is circuit-only, not stream-order.)
         if cfg.action_offset == 0:
             state.sr = tracker.reset_all_envs()
             device_pool.apply_prepared_reset(index=device_reset_index)
@@ -355,6 +359,8 @@ def collect_rollout(
 
     if rollout_graph is not None:
         rollout_graph.prepare(sr=state.sr)
+    if device_pool is not None:
+        _prepare_thread.start()  # after any capture; see the declaration above
 
     for t in range(T):
         if rollout_graph is not None:

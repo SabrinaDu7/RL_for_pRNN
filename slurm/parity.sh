@@ -18,8 +18,9 @@
 #
 #     offset    : arch_prnn.action_offset (0 | 1) - which action shares a row
 #                 with obs[t]; see docs/prnn-io-alignment.md
-#     entropy   : train_policy.entropy_coef. The preset's 0.003 is the MEASURED
-#                 knee (docs/entropy-sweep-and-noise-floor-2026-08-29.md).
+#     entropy   : train_policy.entropy_coef. Empty uses the preset (one home:
+#                 configs.py::_parity - whitened advantages since 2026-08-31;
+#                 its docstring holds the raw-vs-whitened knee history).
 #     seed      : run.seed
 #     branch    : branch to check out (default main)
 #     ent_final : train_policy.entropy_coef_final; ramps LINEARLY in environment

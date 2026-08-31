@@ -6,6 +6,21 @@ Executing `docs/claude_logs/plan-ce-multienv-overnight-2026-08-31.md` Phase 2.
 Project: **`curious-george-multienv`** (new; every run in it is bright-era,
 whitened, seeded-probe). STATUS: COMPLETE (wave 3 closed ~11:00).
 
+**Dated annotations (2026-08-31 audit, after the runs below).**
+- Every "room sRSA" here is the online multiroom eval, which scores the
+  FIRST `eval.rooms_max = 5` of the 8 training rooms - a fixed prefix, not
+  all 8. Comparisons within this doc share the prefix, so orderings stand;
+  the absolute numbers are 5-room means.
+- These runs pre-date the seeded-probe RNG fix (docs/invalid-runs.md, top
+  entry): the probe reseeded the global streams, so cross-seed variance at
+  n=2 is UNDERSTATED. Within-run orderings are unaffected.
+- "Focal remains un-triggered" below is superseded: the surprisal-vs-time
+  measurement (evaluation/surprisal_timing.py,
+  docs/figures/surprisal_vs_time.png) fired the trigger the same evening -
+  landmark tiles at 1.49 nats/tile at SHOWN steps under eval_mode (chance
+  1.95, background 0.16). Reconstruction, not inference; focal arms launched
+  (jobs 10607255-56).
+
 ## The room set
 
 `ROOMS_SELECTED` positions (0, 1, 2, 3, 5, 6, 7, 8) = source-pool indices
@@ -86,7 +101,7 @@ probes (`scratchpad/phase2_readout.py`):**
 - Both behavioral baselines matched the analytic calibration mid-run
   (rndfwd 0.368 vs 0.360, rnduni 0.180 vs 0.182): the exploration wiring
   is sound and the baseline numbers mean what they claim.
-- Prediction figures by eye (`throwaway/figs_ce/phase2_ce8_s2_observation_vs_prediction.png` +
+- Prediction figures by eye (`docs/figures/phase2_ce8_s2_observation_vs_prediction.png` +
   per-run wandb media): floor/wall/agent crisp everywhere; landmark binding
   is INTERMITTENT - step 96 reproduces the room's blue-left/red-right
   structure, neighbouring blind steps predict background where landmarks
@@ -133,10 +148,11 @@ last two events), pooled 0.472, remap +0.196, SWdist 0.088, SI 0.675,
 MI **0.157** (2.3x the half-budget arm - the policy commits given budget),
 wm loss 0.281 nats/tile, coverage 0.177. Above every half-budget arm
 including count (0.659). Figure
-(`throwaway/figs_ce/phase2_ce8full_s2_observation_vs_prediction.png`): wall geometry crisp,
+(`docs/figures/phase2_ce8full_s2_observation_vs_prediction.png`): wall geometry crisp,
 landmark binding improved but still partial (right class and place, wrong
 extent) - and since sRSA had NOT plateaued, the next lever remains budget,
-not focal.
+not focal. *(Superseded same evening - trigger fired; see the dated
+annotations at the top.)*
 
 **ce8-countfull s2 FINISHED (54:36)**: room sRSA 0.637, MI 0.014, SI 0.690.
 🔴 **The curious-vs-count ordering FLIPS at full budget**: half-budget count
@@ -174,7 +190,8 @@ inside its known noise), and MSE's larger remapping index rides on its much
 LOWER pooled sRSA (remap = room - pooled), so it is not a win for MSE.
 Landmark prediction recall remains partial with the sRSA curve still rising
 at budget's end - MORE budget stays the ranked lever; focal remains
-un-triggered.
+un-triggered. *(Superseded same evening: the trigger FIRED on the
+surprisal-vs-time measurement - see the dated annotations at the top.)*
 
 Local runs carry `-local` in the name; comparisons stay on the gradient-step
 axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster

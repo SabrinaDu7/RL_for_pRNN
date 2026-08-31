@@ -7,12 +7,18 @@
 #     seed       : run.seed           (default 2)
 #     branch     : default sdu/multienv
 #     wm_grad_steps : world-model gradient steps; policy is held at 4x. Empty
-#                     uses the preset's 43,936 (~43 min of training alone).
-#                     21968 halves it to ~21 min.
+#                     uses the preset's 43,936. (Wall-clock notes from before
+#                     the 2026-08-31 device-pool fast reset are stale; time a
+#                     run, don't trust an old number here.)
 #     agent      : "random" for the BASELINE (actions from RAND_ACT_PROBA, no
 #                  policy updates), empty for the learned policy.
-#     norm       : "norm" to whiten the advantage per minibatch, empty for raw.
-#     entropy    : train_policy.entropy_coef; empty uses the preset's 0.003.
+#     norm       : advantage whitening. Since 2026-08-31 the preset whitens
+#                  by DEFAULT (configs.py::_parity), so empty = whitened,
+#                  "norm" is the explicit spelling of the same thing, and
+#                  "raw" passes --train-policy.no-normalize-advantage.
+#     entropy    : train_policy.entropy_coef; empty uses the preset's default
+#                  (one home: configs.py::_parity, and its docstring holds the
+#                  raw-era vs whitened-era knee history).
 #
 # WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
 # to be selected before its fields exist:
@@ -54,9 +60,10 @@ WM="${5:-}"
 # "random" makes actions come from RAND_ACT_PROBA instead of the policy, through
 # the SAME collector - the baseline the learned policy is measured against.
 AGENT="${6:-}"
-# "norm" whitens the advantage per PPO minibatch. ⚠️ It rescales |adv| from ~0.12
-# to ~1, so entropy_coef means something ~8x weaker with it on and the measured
-# 0.003 knee does NOT carry over - re-sweep before trusting a comparison.
+# Whitening is the preset DEFAULT since 2026-08-31; "raw" is the arm that
+# needs a flag now. ⚠️ Whitening rescales |adv| ~0.12 -> ~1, so an
+# entropy_coef tuned in one era means something ~8x different in the other -
+# the preset docstring (configs.py::_parity) is the one home for that history.
 NORM="${7:-}"
 # positions  : comma-separated ROOMS_SELECTED POSITIONS (not source indices;
 #               position 4 is source index 83). Empty keeps "first n". The CE
@@ -69,10 +76,9 @@ NORM="${7:-}"
 #               cannot ride here; positions has its own argument for that).
 #               e.g. ... '' ce --arch-prnn.loss CE --train-policy.normalize-reward
 # train_policy.entropy_coef. Empty uses the preset's own default (one home:
-# configs.py::_parity). ⚠️ 0.003 was the knee for RAW advantages. Whitening raises |adv| from ~0.12 to
-# ~1, so the ratio entropy_coef/|adv| falls 8x and 0.003 becomes far too WEAK -
-# measured, the whitened arms collapsed for 67-70% of updates. The ratio-matched
-# value under whitening is ~0.024.
+# configs.py::_parity - whitened era; its docstring records the raw-era knee,
+# the measured 67-70% collapse when 0.003 rode whitened advantages, and the
+# ratio-matched ~0.024).
 ENT="${8:-}"
 POS="${9:-}"; LABEL="${10:-}"
 shift $(( $# < 10 ? $# : 10 ))
@@ -87,8 +93,9 @@ NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}${NORM:+-$NORM}${ENT
 ENTFLAG=${ENT:+--train-policy.entropy-coef $ENT}
 # tyro takes the enum MEMBER NAME, not its value: --arch-policy.agent RANDOM.
 case "$NORM" in
-  ""|raw) NORMFLAG= ;;
-  norm)   NORMFLAG="--train-policy.normalize-advantage" ;;
+  "")   NORMFLAG= ;;
+  raw)  NORMFLAG="--train-policy.no-normalize-advantage" ;;
+  norm) NORMFLAG="--train-policy.normalize-advantage" ;;
   *) echo "norm must be 'norm' or empty, got $NORM" >&2; exit 1 ;;
 esac
 case "$AGENT" in

@@ -6,7 +6,12 @@ Two results. The second is the more useful one: five seeds at ONE configuration
 give the seed-to-seed spread of every metric this project logs, which is the
 band any future eval - multi-room included - has to beat to say anything.
 
-## 1. The knee is `entropy_coef = 0.003`
+## 1. The knee is `entropy_coef = 0.003` *(RAW-advantage era)*
+
+*(Dated 2026-08-31: this knee was measured with raw advantages. The presets
+whiten by default since 2026-08-31, which rescales |adv| ~0.12 → ~1, so
+0.003 does NOT carry over - the whitened-era home is
+`configs.py::_parity`'s docstring.)*
 
 `action_offset=1`, seed 2, `main_train.py parity` shape (89,980,928 env steps;
 43,936 world-model and 175,744 policy gradient steps). Tail means: sRSA over the
