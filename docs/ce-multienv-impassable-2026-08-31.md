@@ -138,6 +138,12 @@ landmark binding improved but still partial (right class and place, wrong
 extent) - and since sRSA had NOT plateaued, the next lever remains budget,
 not focal.
 
+**ce8-countfull s2 FINISHED (54:36)**: room sRSA 0.637, MI 0.014, SI 0.690.
+🔴 **The curious-vs-count ordering FLIPS at full budget**: half-budget count
+beat curious (0.659 vs 0.625); full-budget curious beats count (0.668 vs
+0.637). The curiosity signal needs budget to pay off - the wave-2b "honest
+negative" resolves in curiosity's favour, pending the s3 replication.
+
 Local runs carry `-local` in the name; comparisons stay on the gradient-step
 axis (GPU type moves wall-clock, not curves - the dev box reproduces cluster
 curves). Cluster tree reset to `7db61dd` BEFORE sbatch (the wave-1 lesson).
