@@ -140,6 +140,85 @@ def plot_predictions(rooms: list[RoomPrediction], *, steps: int, path: Path | st
     return fig
 
 
+def landmark_frames(room: RoomPrediction, *, k: int = 5) -> list[int]:
+    """The k most landmark-informative SHOWN frames of a rollout.
+
+    A random window is mostly floor and wall; this picks frames where the
+    network was actually given a landmark to reconstruct. Greedy in two
+    passes: first the best frame for EACH landmark colour that appears at all
+    (so every object of the room is represented), then the remaining slots by
+    landmark-pixel count. Only shown steps qualify - on masked steps the input
+    is zeros and "prediction of the object" means something else.
+    """
+    from curious_george.envs.layouts import LANDMARK_COLORS
+    from curious_george.envs.palette import TILE_VOCABULARY
+
+    colours = {
+        name: np.array(TILE_VOCABULARY[name], dtype=np.float32) / 255
+        for name in LANDMARK_COLORS
+    }
+    T = room.observed.shape[0]
+    per_colour = {
+        name: np.array([
+            (np.abs(room.observed[t].reshape(-1, 3) - c).sum(-1) < 1e-3).sum()
+            for t in range(T)
+        ])
+        for name, c in colours.items()
+    }
+    eligible = np.where(room.shown)[0]
+    picked: list[int] = []
+    for name, counts in per_colour.items():
+        cand = eligible[np.argsort(-counts[eligible])]
+        if len(cand) and counts[cand[0]] > 0 and int(cand[0]) not in picked:
+            picked.append(int(cand[0]))
+    total = sum(per_colour.values())
+    for t in eligible[np.argsort(-total[eligible])]:
+        if len(picked) >= k:
+            break
+        if int(t) not in picked:
+            picked.append(int(t))
+    return sorted(picked[:k])
+
+
+def plot_landmark_gallery(
+    rooms: list[RoomPrediction], *, k: int = 5, path: Path | str | None = None
+):
+    """Obs/pred pairs at the landmark-informative frames of each room.
+
+    Same 0-1 RGB scale everywhere. Column titles carry the frame's step index;
+    every column is a SHOWN step by construction (see `landmark_frames`)."""
+    import matplotlib.pyplot as plt
+
+    n = len(rooms)
+    fig, axes = plt.subplots(
+        2 * n, k, figsize=(1.6 * k, 3.2 * n), squeeze=False,
+        gridspec_kw={"hspace": 0.15, "wspace": 0.05},
+    )
+    for r, room in enumerate(rooms):
+        frames = landmark_frames(room, k=k)
+        for col in range(k):
+            t = frames[col] if col < len(frames) else None
+            for row, source in enumerate((room.observed, room.predicted)):
+                ax = axes[2 * r + row][col]
+                ax.set_xticks([]); ax.set_yticks([])
+                if t is None:
+                    ax.axis("off")
+                    continue
+                ax.imshow(source[t], vmin=0.0, vmax=1.0, interpolation="nearest")
+                if row == 0:
+                    ax.set_title(f"t={t}", fontsize=8)
+        axes[2 * r][0].set_ylabel(f"{room.key}\nobservation", fontsize=8)
+        axes[2 * r + 1][0].set_ylabel("prediction", fontsize=8)
+    fig.suptitle(
+        "Observation vs prediction at landmark-bearing SHOWN steps\n"
+        "(argmax-colour render for a categorical head; same RGB scale everywhere)",
+        fontsize=11,
+    )
+    if path is not None:
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+    return fig
+
+
 def plot_run_predictions(
     *, run_dir: Path | str, path: Path | str | None = None, steps: int = 12, step: int | None = None
 ):
