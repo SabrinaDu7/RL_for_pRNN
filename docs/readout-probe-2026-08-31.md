@@ -97,3 +97,32 @@ fingerprint). Committed protocol (`surprisal_timing --readout MLP`):
   was never a strict lower bound for a DIFFERENT h. A fresh probe on the
   mlp-trained h (one command, --readout MLP --hidden 512) would measure the
   remaining extraction headroom.
+
+
+## Would a wider trunk help? Measured: no (2026-09-01)
+
+Probes on the frozen `focal5mlp` s2 h (same protocol, 48 eps/room fits):
+
+| head | landmark shown/masked | background | recall shown/masked | miss |
+|---|---|---|---|---|
+| own decode stack (co-trained, 675k params) | 0.636 / 0.709 | 0.307 | 0.680 / 0.634 | 0.109 / 0.127 |
+| fresh linear, focal fit | 0.958 / 0.963 | 0.400 | 0.539 / 0.452 | 0.155 / 0.221 |
+| fresh MLP-512 probe (~590k) | 0.601 / 0.674 | 0.219 | 0.718 / 0.647 | 0.074 / 0.089 |
+| fresh MLP-1024 probe (~1.2M) | 0.597 / 0.654 | 0.211 | 0.714 / 0.669 | 0.064 / 0.089 |
+
+- DOUBLING probe width moves shown-step extraction not at all (71.8 →
+  71.4% recall, 0.601 → 0.597 nats); only masked recall gains ~2pts. The
+  width curve is flat at ~512 ≈ the current trunk. Capacity is not the
+  binding constraint.
+- The probe that beats the co-trained decode is CAPACITY-MATCHED to it -
+  the co-trained head's gap is fit conditions (moving h, joint objective),
+  not size. The in-reach fixes are a post-hoc decode refit (this module;
+  +4pts recall free) or a readout-only fine-tune phase / higher
+  ReadoutTrunk lr.
+- The extractable ceiling sits at ~72% shown recall on BOTH the linear-
+  and mlp-trained h. That is a property of h now: the next frontier is the
+  representation (hidden size, masking schedule, budget under focal), not
+  the decoder.
+- Confirming side-effect of co-training: the mlp-trained h is much LESS
+  linearly decodable (53.9% vs the old h's 67.1%) - with a nonlinear
+  decoder available, h stops maintaining a linearized observation copy.
