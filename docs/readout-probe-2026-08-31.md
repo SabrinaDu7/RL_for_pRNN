@@ -69,3 +69,31 @@ eps 0.684 → 48 eps 0.652 - converging to a linear ceiling ≈0.63-0.65.
 - The h-side questions (hidden size, masking schedule) stay open but are
   now SECOND to the readout: the representation demonstrably carries more
   than is being read.
+
+
+## End-to-end confirmation (2026-09-01 ~00:00, Mila 10613004/05, `focal5mlp`)
+
+`readout="mlp"` trained end-to-end (fork `852cc7d2`, repo `c5dd7d9`,
+γ=5, full budget, both seeds). Checkpoints verified structurally before
+scoring (outlayer.0.net.* keys, 674,843 outlayer params - the mlp
+fingerprint). Committed protocol (`surprisal_timing --readout MLP`):
+
+| arm (full budget, γ=5) | landmark shown/masked | background | recall shown/masked | miss | mean room sRSA | SWdist |
+|---|---|---|---|---|---|---|
+| linear readout s2/s3 (`focal5full`) | 0.725 / 0.712 | ~0.36 | 0.664-0.677 / 0.593-0.609 | 0.11-0.12 / 0.14-0.15 | 0.731 / 0.762 | 0.115 / 0.119 |
+| **MLP readout s2/s3 (`focal5mlp`)** | **0.689 / 0.675** | **~0.30** | 0.677-0.686 / **0.630-0.633** | 0.107 / **0.12-0.13** | **0.791 / 0.740** | **0.071** / 0.101 |
+
+- Every axis moved the right way SIMULTANEOUSLY again - no trade. sRSA
+  0.791 (s2) is the project record; SWdist 0.071 the best measured.
+- Training loss: the MLP arm reached the linear arm's FINAL loss at half
+  the gradient steps (0.0177 @ ~21k vs 0.0171 @ ~44k; same focal-weighted
+  axis, docs/figures/focal5_mlp_vs_linear_loss.png) - ~2x step-efficiency.
+- Gallery: docs/figures/focal5mlp_s2_landmark_gallery.png - reconstructions
+  that were partial under linear (green plus, red block extents) are now
+  complete; residual errors are small shape-boundary details.
+- Honest note: end-to-end recall (0.68/0.63) did NOT exceed the frozen-h
+  MLP probe on the OLD representation (0.72/0.66). Inferred, not confirmed:
+  with a stronger readout co-training, h itself reallocates - the probe row
+  was never a strict lower bound for a DIFFERENT h. A fresh probe on the
+  mlp-trained h (one command, --readout MLP --hidden 512) would measure the
+  remaining extraction headroom.

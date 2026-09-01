@@ -201,6 +201,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ckpt", required=True, help="predictiveNet_state.pt path")
     ap.add_argument("--out", default="docs/figures/surprisal_vs_time.png")
+    ap.add_argument("--readout", choices=["LINEAR", "MLP"], default="LINEAR",
+                    help="the checkpoint's readout architecture (a mismatch fails at load)")
     ap.add_argument(
         "--positions", type=int, nargs="+", default=[0, 1, 2, 3, 5, 6, 7, 8],
         help="ROOMS_SELECTED indices (default: the 8-room training pool)",
@@ -209,6 +211,7 @@ def main() -> None:
 
     cfg = cli(
         ["multienv-fast", "--arch-prnn.loss", "CE", "--run.no-wandb",
+         "--arch-prnn.readout", args.readout,
          "env.source:selected", "--env.source.n", str(len(args.positions)),
          "--env.source.impassable", "--env.source.positions",
          *map(str, args.positions)]

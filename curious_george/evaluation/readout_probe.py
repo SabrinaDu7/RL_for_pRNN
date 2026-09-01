@@ -204,6 +204,8 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ckpt", required=True)
+    ap.add_argument("--readout", choices=["LINEAR", "MLP"], default="LINEAR",
+                    help="the checkpoint's readout architecture (a mismatch fails at load)")
     ap.add_argument("--positions", type=int, nargs="+", default=[0, 1, 2, 3, 5, 6, 7, 8])
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--gamma", type=float, default=5.0,
@@ -216,6 +218,7 @@ def main() -> None:
 
     cfg = cli(
         ["multienv-fast", "--arch-prnn.loss", "CE", "--run.no-wandb",
+         "--arch-prnn.readout", args.readout,
          "env.source:selected", "--env.source.n", str(len(args.positions)),
          "--env.source.impassable", "--env.source.positions",
          *map(str, args.positions)]
