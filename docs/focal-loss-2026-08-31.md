@@ -85,13 +85,57 @@ be compared against a same-tree plain-CE arm, not against the pre-audit
 `ce8full` numbers. Surprisal numbers (this doc's protocol) are unaffected -
 `surprisal_timing` carries its own protocol.
 
+## Results - full budget 2x2 + probes (landed ~22:20, all COMPLETED 0:0)
+
+Same protocol as above; checkpoints under `outputs/fetched/`, figures
+`docs/figures/surprisal_*.png`. Background is the per-bin mean's typical
+value.
+
+| arm | landmark shown | landmark blind | background | mean room sRSA |
+|---|---|---|---|---|
+| plain CE full s2 (`ce8full-v2`, 10611933) | 1.346 | 1.416 | ~0.14 | 0.481 |
+| plain CE full s3 (10611934) | 1.100 | 1.164 | ~0.12 | 0.571 |
+| focal γ=2 full s2 (`focal2full`, 10611931) | **0.837** | 0.872 | ~0.19 | **0.670** |
+| focal γ=2 full s3 (10611932) | **0.763** | 0.829 | ~0.19 | **0.664** |
+| focal γ=5 HALF s2 (`focal5`, 10611935) | 0.928 | 0.978 | ~0.43 | **0.743** |
+| floor + focal γ=2, 1 room s2 (10611936) | **0.464** | 0.484 | ~0.13 | 0.773 (own room) |
+
+(⚠️ `ce8full-v2` sRSA is lower than the pre-audit `ce8full` 0.668 because
+probe protocol v2 moved seeded sRSA values - exactly why the same-tree
+comparators were run. Surprisal numbers are protocol-stable throughout.)
+
+## Verdict (n=2 seeds on the 2x2; every cell recomputable by one command)
+
+1. **Focal wins the full-budget 2x2 on both metrics, both seeds.** Landmark
+   shown-step surprisal: 1.35→0.84 (s2), 1.10→0.76 (s3). Mean room sRSA:
+   0.48→0.67, 0.57→0.66. No cell disagrees.
+2. **Focal repairs the budget lever itself.** Under plain CE, going
+   half→full budget made landmarks WORSE (1.34→1.35 s2; the pre-audit
+   full-budget run measured 1.49). Under focal γ=2, half→full budget helps:
+   1.20→0.84 (s2), 0.93→0.76 (s3). The gradient keeps buying landmark
+   reconstruction instead of background polish.
+3. **The "memorization floor" was mostly gradient allocation, not
+   capacity**: focal lowers the single-room floor 0.610→0.464. A capacity
+   residual (~0.46 nats) remains - the readout/hidden-size thread's target.
+4. **γ curvature is real and not exhausted at 2**: γ=5 at HALF budget beats
+   γ=2 half on both axes (0.93 vs 1.20 shown; sRSA 0.743 - the best sRSA
+   measured in this project to date, at a quarter of the double-budget
+   peak's spend). Its cost is background 0.27→0.43 nats - no longer free,
+   still far under chance.
+
+## In flight, round 2 (launched ~22:30, tree `b220fbd`)
+
+| job | arm | label |
+|---|---|---|
+| 10612308/09 | focal γ=5, FULL budget, s2/s3 - the new best-candidate config | `focal5full` |
+| 10612310 | focal γ=10, half budget, s2 - where does the γ curve turn? | `focal10` |
+
 ## Read-out plan when they land
 
-- The 2x2 table (loss × seed, full budget): landmark shown-step surprisal
-  and mean room sRSA, this doc's protocol, one command per cell.
-- γ=5 vs γ=2 at half budget: is there curvature worth a γ sweep, or is γ=2
-  already on the plateau?
-- floorP0-focal2 vs floorP0: if focal lowers the single-room floor too, the
-  0.61-nat floor is gradient allocation all the way down; if not, the
-  residual is capacity/architecture (readout width, hidden size) - the
-  "perhaps readout" thread the user queued.
+- focal5full vs focal2full: does γ=5's half-budget lead survive full budget,
+  and what does its background cost do to SWdist/pooled sRSA?
+- focal10 half vs focal5 half: γ knee location; if 10 regresses, γ≈5 is the
+  operating point and the sweep is closed.
+- Then: hidden-state analysis on the best checkpoint (the user's gating
+  criterion - predictions first), and the capacity residual (readout) as the
+  separate thread.
