@@ -158,12 +158,36 @@ across masked steps. Hidden-state analysis on landmark binding should wait
 for (or condition on) better recall; spatial/sRSA analysis is already
 well-supported.
 
-## Read-out plan when they land
+## Results - round 2 (landed ~22:45, all COMPLETED 0:0)
 
-- focal5full vs focal2full: does γ=5's half-budget lead survive full budget,
-  and what does its background cost do to SWdist/pooled sRSA?
-- focal10 half vs focal5 half: γ knee location; if 10 regresses, γ≈5 is the
-  operating point and the sweep is closed.
-- Then: hidden-state analysis on the best checkpoint (the user's gating
-  criterion - predictions first), and the capacity residual (readout) as the
-  separate thread.
+| arm | landmark shown | recall shown/masked | miss shown/masked | background | mean room sRSA |
+|---|---|---|---|---|---|
+| focal γ=5 FULL s2 (10612308) | 0.725 | 0.664 / 0.609 | 0.107 / 0.139 | ~0.36 | 0.731 |
+| focal γ=5 FULL s3 (10612309) | **0.712** | **0.677 / 0.593** | 0.117 / 0.154 | ~0.35 | **0.762** |
+| focal γ=10 HALF s2 (10612310) | 0.968 | 0.516 / 0.422 | 0.170 / 0.281 | ~0.63 | 0.716 |
+
+## Verdict, final
+
+- **The γ knee is at ≈5.** γ=10 at half budget is flat-to-worse than γ=5 on
+  every axis (sRSA 0.716 vs 0.743, shown 0.97 vs 0.93, recall equal) at
+  ~1.5x the background cost (0.63 vs 0.43). Sweep closed.
+- **Operating point: γ=5, full budget.** Best sRSA measured in the project
+  (0.762 / 0.731, n=2 seeds, protocol v2), best landmark surprisal (0.71),
+  best miss rate (~11%). Background ~0.35 nats - a real cost, well under
+  chance, and SWdist/pooled sRSA show no damage from it.
+- **Recall is plateauing under γ at ~65-68% shown.** γ2full → γ5full bought
+  +0.06-0.10 sRSA but only ~+2pts recall. The remaining reconstruction
+  deficit (a third of landmark tiles wrong; ~1 in 8 frames missing the
+  landmark) is not a gradient-allocation problem any more - the readout /
+  capacity thread is the ranked next lever, with budget-under-focal (still
+  paying: γ5 half→full moved recall 51→66) as the cheap alternative.
+
+## Next (queued, not launched)
+
+- Readout thread: the linear 343-wide head off 500 hidden units is now the
+  suspect for the ~0.46-nat single-room focal floor and the recall plateau.
+- Double-budget γ=5 (the budget lever is repaired under focal; untried
+  past full).
+- Hidden-state analysis can start on `focal5full` s3 for SPATIAL questions
+  (sRSA 0.762 is the best representation yet); landmark-BINDING analysis
+  should still wait on recall.
