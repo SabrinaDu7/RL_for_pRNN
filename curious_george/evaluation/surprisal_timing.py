@@ -45,7 +45,11 @@ TIME_BIN = 16
 
 @dataclass(frozen=True)
 class SurprisalTiming:
-    """Per-tile surprisal (nats) split landmark/background along two clocks."""
+    """Per-tile surprisal (nats) split landmark/background along two clocks,
+    plus the blunter argmax view: recall = fraction of landmark tiles whose
+    argmax class is right, miss = fraction of landmark-bearing frames whose
+    prediction contains NO landmark class at all. Surprisal rewards
+    calibration; recall is what a rendered figure shows."""
 
     landmark_by_bin: Float[np.ndarray, "T/16"]  # episode time, TIME_BIN bins
     background_by_bin: Float[np.ndarray, "T/16"]
@@ -53,6 +57,10 @@ class SurprisalTiming:
     blind_step_mean: float  # landmark surprisal at obs-masked steps
     shown_step_mean: float  # ... at steps with the obs in the input
     chance: float  # ln C for the committed palette
+    recall_shown: float  # landmark-tile argmax recall at shown steps
+    recall_masked: float
+    miss_shown: float  # frames with the landmark entirely absent
+    miss_masked: float
 
 
 def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
@@ -69,7 +77,15 @@ def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
     lm_n, bg_n = np.zeros(T), np.zeros(T)
     since_sum, since_n = np.zeros(SINCE_GLIMPSE_MAX), np.zeros(SINCE_GLIMPSE_MAX)
     blind, shown_vals = [], []
+    recall: dict = {"s": [], "m": []}
+    miss: dict = {"s": [], "m": []}
     rng = np.random.default_rng(11)
+    # The pRNN's additive state noise draws from torch's GLOBAL stream, which
+    # this offline tool may enter in any state - unseeded, repeated
+    # invocations wobbled by ~0.01 nats (found 2026-08-31 when the recall
+    # numbers would not reproduce exactly). An offline CLI may seed globally;
+    # the training-path probes must NOT (see spatial._probe_rng).
+    torch.manual_seed(11)
 
     with eval_mode([adapter.pN]), torch.no_grad():
         for room_index, layout in enumerate(layouts):
@@ -87,9 +103,10 @@ def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
                     obss, np.array(acts), obs, target_offset=1
                 )
                 per, classes = per_tile_errors(pred, target, ce=True)
-                is_lm = torch.isin(
-                    classes, torch.tensor(sorted(LANDMARK_CLASS_IDS))
-                )
+                lm_ids = torch.tensor(sorted(LANDMARK_CLASS_IDS))
+                is_lm = torch.isin(classes, lm_ids)
+                argmax = pred.reshape(pred.shape[0], classes.shape[1], -1).argmax(-1)
+                correct = argmax == classes
                 since = np.inf
                 for t in range(T):
                     lm_mask = is_lm[t]
@@ -98,6 +115,11 @@ def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
                         lm_n[t] += int(lm_mask.sum())
                         step_mean = float(per[t][lm_mask].mean())
                         (shown_vals if shown[t] else blind).append(step_mean)
+                        key = "s" if shown[t] else "m"
+                        recall[key].append(float(correct[t][lm_mask].float().mean()))
+                        miss[key].append(
+                            0.0 if bool(torch.isin(argmax[t], lm_ids).any()) else 1.0
+                        )
                         if since < SINCE_GLIMPSE_MAX:
                             since_sum[int(since)] += step_mean
                             since_n[int(since)] += 1
@@ -116,6 +138,10 @@ def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
         blind_step_mean=float(np.mean(blind)),
         shown_step_mean=float(np.mean(shown_vals)),
         chance=float(np.log(len(TILE_CLASS_NAMES))),
+        recall_shown=float(np.mean(recall["s"])),
+        recall_masked=float(np.mean(recall["m"])),
+        miss_shown=float(np.mean(miss["s"])),
+        miss_masked=float(np.mean(miss["m"])),
     )
 
 
@@ -188,6 +214,9 @@ def main() -> None:
           + " ".join(f"{v:.2f}" for v in result.background_by_bin))
     print(f"blind-step landmark mean {result.blind_step_mean:.3f} | "
           f"shown-step {result.shown_step_mean:.3f} | chance {result.chance:.3f}")
+    print(f"landmark argmax recall shown {result.recall_shown:.3f} / masked "
+          f"{result.recall_masked:.3f} | entirely missing shown "
+          f"{result.miss_shown:.3f} / masked {result.miss_masked:.3f}")
     plot(result, out_path=args.out,
          title_note=f"{args.ckpt}, eval_mode, {len(args.positions)} rooms "
                     f"x {EPISODES_PER_ROOM} episodes, fwd-biased walker")

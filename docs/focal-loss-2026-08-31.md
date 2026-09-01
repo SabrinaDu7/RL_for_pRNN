@@ -130,6 +130,34 @@ comparators were run. Surprisal numbers are protocol-stable throughout.)
 | 10612308/09 | focal γ=5, FULL budget, s2/s3 - the new best-candidate config | `focal5full` |
 | 10612310 | focal γ=10, half budget, s2 - where does the γ curve turn? | `focal10` |
 
+## The honest view: argmax recall (added after the gallery discussion)
+
+The landmark gallery (`docs/figures/focal2full_s3_landmark_gallery.png`) is
+the BEST case twice over: shown steps only, frames chosen for landmark
+pixels. The user's read - "the pRNN doesn't learn predictions that well for
+most of the predictions" - is correct, and `surprisal_timing` now reports
+the blunt version alongside surprisal: recall = fraction of landmark tiles
+whose argmax class is right; miss = fraction of landmark-bearing frames
+whose prediction contains no landmark class at all. (torch stream now
+seeded in `measure` - unseeded, repeat invocations wobbled ~0.01 nats;
+values elsewhere in this doc are single draws inside that wobble.)
+
+| arm | recall shown | recall masked | miss shown | miss masked |
+|---|---|---|---|---|
+| focal γ=2 HALF s2 | 0.394 | 0.352 | 0.310 | 0.396 |
+| focal γ=5 HALF s2 | 0.513 | 0.434 | 0.216 | 0.277 |
+| plain CE FULL s3 | 0.494 | 0.448 | 0.234 | 0.267 |
+| focal γ=2 FULL s3 | **0.649** | **0.578** | **0.127** | **0.171** |
+
+Readings (matched cells only): γ curvature holds on recall too (γ=5 > γ=2
+at half/s2, +12pts); focal+budget compound to the best cell; but even the
+best arm gets ~35% of landmark tiles wrong and misses the landmark
+entirely in ~1 of 7 landmark-bearing frames. The shown-vs-masked gap is
+consistently small (~6pts): the bottleneck is reconstruction, not memory
+across masked steps. Hidden-state analysis on landmark binding should wait
+for (or condition on) better recall; spatial/sRSA analysis is already
+well-supported.
+
 ## Read-out plan when they land
 
 - focal5full vs focal2full: does γ=5's half-budget lead survive full budget,
