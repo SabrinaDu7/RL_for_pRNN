@@ -63,6 +63,35 @@ class SurprisalTiming:
     miss_masked: float
 
 
+def walk_episodes(
+    *, env, layouts: list, episodes_per_room: int,
+    seed_base: int = 100, walker_seed: int = 11,
+):
+    """The probe walk, one home: yields (room_index, obss, acts, last_obs).
+
+    Env reset seeds are `seed_base + 10*room_index + episode`; the walker is
+    the project's forward-biased categorical, one Generator consumed across
+    the whole walk. The DEFAULTS are the published protocol (`measure` uses
+    them; its numbers are pinned in docs/focal-loss-2026-08-31.md); other
+    seeds give disjoint episodes on the same distribution - what
+    `readout_probe` trains on.
+    """
+    T = EPISODE_STEPS
+    rng = np.random.default_rng(walker_seed)
+    for room_index, layout in enumerate(layouts):
+        env.env.unwrapped.landmarks = list(layout.landmarks)
+        for ep in range(episodes_per_room):
+            out = env.reset(seed=seed_base + 10 * room_index + ep)
+            obs = out[0] if isinstance(out, tuple) else out
+            obss, acts = [], []
+            for _ in range(T):
+                a = int(rng.choice(4, p=list(RAND_ACT_PROBA)))
+                obss.append(obs)
+                acts.append(a)
+                obs = env.step(a)[0]
+            yield room_index, obss, acts, obs
+
+
 def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
     """Walk each layout with the forward-biased walker and decompose.
 
@@ -79,7 +108,6 @@ def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
     blind, shown_vals = [], []
     recall: dict = {"s": [], "m": []}
     miss: dict = {"s": [], "m": []}
-    rng = np.random.default_rng(11)
     # The pRNN's additive state noise draws from torch's GLOBAL stream, which
     # this offline tool may enter in any state - unseeded, repeated
     # invocations wobbled by ~0.01 nats (found 2026-08-31 when the recall
@@ -88,44 +116,36 @@ def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
     torch.manual_seed(11)
 
     with eval_mode([adapter.pN]), torch.no_grad():
-        for room_index, layout in enumerate(layouts):
-            env.env.unwrapped.landmarks = list(layout.landmarks)
-            for ep in range(EPISODES_PER_ROOM):
-                out = env.reset(seed=100 + 10 * room_index + ep)
-                obs = out[0] if isinstance(out, tuple) else out
-                obss, acts = [], []
-                for _ in range(T):
-                    a = int(rng.choice(4, p=list(RAND_ACT_PROBA)))
-                    obss.append(obs)
-                    acts.append(a)
-                    obs = env.step(a)[0]
-                pred, target, _, _ = adapter.episode_prediction_rows(
-                    obss, np.array(acts), obs, target_offset=1
-                )
-                per, classes = per_tile_errors(pred, target, ce=True)
-                lm_ids = torch.tensor(sorted(LANDMARK_CLASS_IDS))
-                is_lm = torch.isin(classes, lm_ids)
-                argmax = pred.reshape(pred.shape[0], classes.shape[1], -1).argmax(-1)
-                correct = argmax == classes
-                since = np.inf
-                for t in range(T):
-                    lm_mask = is_lm[t]
-                    if lm_mask.any():
-                        lm_sum[t] += float(per[t][lm_mask].sum())
-                        lm_n[t] += int(lm_mask.sum())
-                        step_mean = float(per[t][lm_mask].mean())
-                        (shown_vals if shown[t] else blind).append(step_mean)
-                        key = "s" if shown[t] else "m"
-                        recall[key].append(float(correct[t][lm_mask].float().mean()))
-                        miss[key].append(
-                            0.0 if bool(torch.isin(argmax[t], lm_ids).any()) else 1.0
-                        )
-                        if since < SINCE_GLIMPSE_MAX:
-                            since_sum[int(since)] += step_mean
-                            since_n[int(since)] += 1
-                    bg_sum[t] += float(per[t][~lm_mask].sum())
-                    bg_n[t] += int((~lm_mask).sum())
-                    since = 0 if (shown[t] and lm_mask.any()) else since + 1
+        for _room, obss, acts, obs in walk_episodes(
+            env=env, layouts=layouts, episodes_per_room=EPISODES_PER_ROOM
+        ):
+            pred, target, _, _ = adapter.episode_prediction_rows(
+                obss, np.array(acts), obs, target_offset=1
+            )
+            per, classes = per_tile_errors(pred, target, ce=True)
+            lm_ids = torch.tensor(sorted(LANDMARK_CLASS_IDS))
+            is_lm = torch.isin(classes, lm_ids)
+            argmax = pred.reshape(pred.shape[0], classes.shape[1], -1).argmax(-1)
+            correct = argmax == classes
+            since = np.inf
+            for t in range(T):
+                lm_mask = is_lm[t]
+                if lm_mask.any():
+                    lm_sum[t] += float(per[t][lm_mask].sum())
+                    lm_n[t] += int(lm_mask.sum())
+                    step_mean = float(per[t][lm_mask].mean())
+                    (shown_vals if shown[t] else blind).append(step_mean)
+                    key = "s" if shown[t] else "m"
+                    recall[key].append(float(correct[t][lm_mask].float().mean()))
+                    miss[key].append(
+                        0.0 if bool(torch.isin(argmax[t], lm_ids).any()) else 1.0
+                    )
+                    if since < SINCE_GLIMPSE_MAX:
+                        since_sum[int(since)] += step_mean
+                        since_n[int(since)] += 1
+                bg_sum[t] += float(per[t][~lm_mask].sum())
+                bg_n[t] += int((~lm_mask).sum())
+                since = 0 if (shown[t] and lm_mask.any()) else since + 1
 
     bins = np.arange(0, T, TIME_BIN)
     binned = lambda s, n: np.array(
