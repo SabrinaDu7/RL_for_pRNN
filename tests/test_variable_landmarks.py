@@ -90,3 +90,43 @@ def test_the_default_design_is_untouched() -> None:
     """Three kinds, exactly as every existing checkpoint trained."""
     c = EnvContent()
     assert c.n_landmarks == 3 and c.stencils == SHAPES
+
+
+def test_keep_landmarks_expresses_the_mixed_count_design() -> None:
+    from curious_george.envs.layouts import Selected
+
+    rooms = resolve_rooms(
+        shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
+        source=Selected(n=8, impassable=True, positions=(0, 1, 2, 3, 5, 6, 7, 8),
+                        keep_landmarks=("012", "012", "012", "12", "01", "0", "2", "-")),
+        set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})),
+    )
+    assert [len(r.landmarks) for r in rooms] == [3, 3, 3, 2, 2, 1, 1, 0]
+    from collections import Counter
+
+    colours = Counter(lm.color for r in rooms for lm in r.landmarks)
+    assert colours == {"blue": 5, "green": 5, "red": 5}
+
+
+def test_keep_landmarks_misalignment_and_bad_digits_fail_loudly() -> None:
+    from curious_george.envs.layouts import Selected
+
+    kw = dict(shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
+              set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})))
+    with pytest.raises(ValueError, match="align by position"):
+        resolve_rooms(source=Selected(n=8, impassable=True,
+                                      positions=(0, 1, 2, 3, 5, 6, 7, 8),
+                                      keep_landmarks=("012",)), **kw)
+    with pytest.raises(ValueError, match="invalid or repeated"):
+        resolve_rooms(source=Selected(n=1, impassable=True, positions=(0,),
+                                      keep_landmarks=("03",)), **kw)
+
+
+def test_keep_landmarks_parses_from_the_command_line() -> None:
+    from curious_george.configs import cli
+
+    cfg = cli(["multienv-fast", "--run.no-wandb", "env.source:selected",
+               "--env.source.n", "8", "--env.source.impassable",
+               "--env.source.positions", "0", "1", "2", "3", "5", "6", "7", "8",
+               "--env.source.keep-landmarks", "012", "012", "012", "12", "01", "0", "2", "-"])
+    assert cfg.env.source.keep_landmarks == ("012", "012", "012", "12", "01", "0", "2", "-")

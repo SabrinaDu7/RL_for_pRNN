@@ -958,6 +958,19 @@ class Selected:
     n: int = 5
     impassable: bool = True
 
+    keep_landmarks: tuple[str, ...] | None = None
+    """Per-room OBJECT SUBSET, aligned with the rooms this source resolves
+    (2026-09-01, the mixed-count design). One entry per room: the kept
+    landmark indices as digits, order-insensitive ('012' = all three, '12' =
+    drop landmark 0, '-' = the landmark-free room). None keeps every
+    landmark, the historical meaning. EXPLICIT digits rather than counts
+    plus a hidden rotation rule: which objects survive is a design choice
+    that must be readable in the provenance, and colour/shape balance across
+    the set is the caller's responsibility, not an accident.
+
+        --env.source.keep-landmarks 012 012 012 12 01 0 2 -
+    """
+
     positions: tuple[int, ...] | None = None
     """Which `ROOMS_SELECTED` entries, by POSITION in that tuple (NOT by the
     source-pool index in the per-row comments - position 4 is source index
@@ -1243,6 +1256,23 @@ def resolve_rooms(
             else ROOMS_SELECTED[: source.n]
         )
         rooms = with_affordance(chosen, impassable=source.impassable)
+        if source.keep_landmarks is not None:
+            if len(source.keep_landmarks) != len(rooms):
+                raise ValueError(
+                    f"keep_landmarks has {len(source.keep_landmarks)} entries "
+                    f"for {len(rooms)} rooms - they align by position"
+                )
+            kept_rooms = []
+            for room, spec in zip(rooms, source.keep_landmarks):
+                digits = () if spec == "-" else tuple(spec)
+                idxs = sorted({int(d) for d in digits})
+                if any(i >= len(room.landmarks) for i in idxs) or len(idxs) != len(digits):
+                    raise ValueError(
+                        f"keep spec {spec!r} names invalid or repeated landmark "
+                        f"indices for a {len(room.landmarks)}-landmark room"
+                    )
+                kept_rooms.append(Layout(tuple(room.landmarks[i] for i in idxs)))
+            rooms = kept_rooms
     else:
         placements = admissible_placements(shape, content, room_rules)
         seed = source.seed
