@@ -85,6 +85,11 @@ LANDMARK_COLORS: tuple[str, ...] = ("blue", "green", "red", "yellow")
 # 63 distinct separation signatures against 13.
 OFFSET_RADIUS = 3
 
+#: What a pairwise room rule evaluates to when the room holds fewer than two
+#: landmarks: larger than any real distance, so "no pair" always PASSES a
+#: minimum-separation rule instead of crashing a min() over nothing.
+UNCONSTRAINED = 10**6
+
 
 def walkable_cells(*, env) -> frozenset[tuple[int, int]]:
     """World cells the agent can occupy, read from the grid itself."""
@@ -223,18 +228,24 @@ class Layout:
 
     @property
     def min_anchor_separation(self) -> int:
+        """UNCONSTRAINED below two landmarks: no pair exists to violate it."""
         return min(
-            _chebyshev(a, b) for a, b in permutations(self.anchors, 2)
+            (_chebyshev(a, b) for a, b in permutations(self.anchors, 2)),
+            default=UNCONSTRAINED,
         )
 
     def min_cell_gap(self) -> int:
-        """Smallest Chebyshev distance between cells of two DIFFERENT landmarks."""
+        """Smallest Chebyshev distance between cells of two DIFFERENT landmarks.
+        UNCONSTRAINED below two landmarks: no pair exists to violate it."""
         return min(
-            _chebyshev(p, q)
-            for i, a in enumerate(self.landmarks)
-            for b in self.landmarks[i + 1:]
-            for p in a.cells
-            for q in b.cells
+            (
+                _chebyshev(p, q)
+                for i, a in enumerate(self.landmarks)
+                for b in self.landmarks[i + 1:]
+                for p in a.cells
+                for q in b.cells
+            ),
+            default=UNCONSTRAINED,
         )
 
     def min_wall_distance(self, *, walkable: frozenset[tuple[int, int]]) -> int:
@@ -246,7 +257,8 @@ class Layout:
         throwaway/ported/docs_exp_instructions/instructions-OVC.md.
         """
         return min(
-            _wall_distance(cell=c, walkable=walkable) for c in self.cells
+            (_wall_distance(cell=c, walkable=walkable) for c in self.cells),
+            default=UNCONSTRAINED,
         )
 
     def n_testable_offsets(self, *, walkable: frozenset[tuple[int, int]]) -> int:
@@ -340,6 +352,12 @@ def enumerate_anchor_triples(
     # walkable set, and that depends on whether the landmarks take cells away.
     impassable = impassable or (False,) * len(stencils)
 
+    # ZERO landmarks: the design admits exactly one placement - nothing,
+    # nowhere. Returned as the one empty AnchorSet so the pool machinery
+    # (select, dress, key) runs unchanged on a single landmark-free room.
+    if not stencils:
+        return [()]
+
     anchors = {
         s: np.array(
             valid_anchors(walkable=walkable, shape=s, min_wall_distance=min_wall_distance),
@@ -356,10 +374,12 @@ def enumerate_anchor_triples(
     def cheb(a, b):
         return np.maximum(np.abs(a[:, 0] - b[:, 0]), np.abs(a[:, 1] - b[:, 1]))
 
-    sep = np.min(
-        [cheb(picks[i], picks[j]) for i in range(len(stencils)) for j in range(i + 1, len(stencils))],
-        axis=0,
-    )
+    pair_seps = [
+        cheb(picks[i], picks[j])
+        for i in range(len(stencils)) for j in range(i + 1, len(stencils))
+    ]
+    # ONE landmark: no pair, so separation cannot reject anything.
+    sep = np.min(pair_seps, axis=0) if pair_seps else np.full(len(picks[0]), np.inf)
 
     out = []
     seen_orbits: set = set()
@@ -788,8 +808,11 @@ class EnvContent:
         return len(self.kinds)
 
     def __post_init__(self) -> None:
-        if not self.kinds:
-            raise ValueError("a room needs at least one landmark kind")
+        # Zero kinds is a LEGAL design since 2026-09-01: the landmark-free
+        # room, a pool of exactly one placement (the empty tuple). Every
+        # within-room rule is about pairs or cells, so with nothing placed
+        # there is nothing to violate; sources asking that pool for more than
+        # one room fail in `select_rooms` with the count spelled out.
         if len(self.palette) < self.n_landmarks:
             raise ValueError(
                 f"{self.n_landmarks} landmarks need at least that many colours; "
