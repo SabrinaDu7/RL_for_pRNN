@@ -158,11 +158,14 @@ across masked steps. Hidden-state analysis on landmark binding should wait
 for (or condition on) better recall; spatial/sRSA analysis is already
 well-supported.
 
-*(Bookkeeping, ~23:30: rounds 1-2 were launched without the
-`--run.wandb-project` flag the earlier waves carried, so their runs logged
-to the default `curious-george` project; all nine were moved to
-`curious-george-multienv` via the API, and the launcher now bakes the
-project in so it cannot be forgotten again.)*
+*(Bookkeeping, ~23:30: rounds 1-2 and the mlp pair were launched without
+the `--run.wandb-project` flag the earlier waves carried, so those eleven
+runs logged to the default `curious-george` project - run names
+`mx-impassable-*` dated 26-08-31 21:42 onward. An API move was attempted
+and silently no-ops (`run.update()` ignores project changes - verified:
+the runs stayed put), so moving them needs the UI: select them in the
+curious-george runs table -> Move -> curious-george-multienv. The launcher
+now bakes the project in so this cannot recur.)*
 
 ## Results - round 2 (landed ~22:45, all COMPLETED 0:0)
 
