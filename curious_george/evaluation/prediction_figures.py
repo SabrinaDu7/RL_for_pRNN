@@ -219,6 +219,68 @@ def plot_landmark_gallery(
     return fig
 
 
+def best_contiguous_window(room: RoomPrediction, *, steps: int = 6) -> int:
+    """Start index of the landmark-richest contiguous window that OPENS on a
+    shown step. With the 1-of-6 input mask, steps=6 is exactly one cycle:
+    the glimpse, then five blind steps - the window that shows whether the
+    model HOLDS a landmark it just saw."""
+    from curious_george.envs.layouts import LANDMARK_COLORS
+    from curious_george.envs.palette import TILE_VOCABULARY
+
+    colours = np.stack([
+        np.array(TILE_VOCABULARY[n], dtype=np.float32) / 255 for n in LANDMARK_COLORS
+    ])
+    T = room.observed.shape[0]
+    lm_px = np.array([
+        (np.abs(room.observed[t].reshape(-1, 1, 3) - colours).sum(-1) < 1e-3).sum()
+        for t in range(T)
+    ])
+    starts = [t for t in range(T - steps) if room.shown[t]]
+    return max(starts, key=lambda t: lm_px[t : t + steps].sum())
+
+
+def plot_contiguous(
+    rooms: list[RoomPrediction], *, steps: int = 6, path: Path | str | None = None
+):
+    """Obs/pred pairs over one CONTIGUOUS window per room, true step labels.
+
+    Border colours as in `plot_predictions`: blue = the observation reached
+    the network, grey = zeroed by inMask (the prediction there is memory +
+    dynamics, not reconstruction)."""
+    import matplotlib.pyplot as plt
+
+    n = len(rooms)
+    fig, axes = plt.subplots(
+        2 * n, steps, figsize=(1.6 * steps, 3.2 * n), squeeze=False,
+        gridspec_kw={"hspace": 0.15, "wspace": 0.05},
+    )
+    for r, room in enumerate(rooms):
+        t0 = best_contiguous_window(room, steps=steps)
+        for col in range(steps):
+            t = t0 + col
+            for row, source in enumerate((room.observed, room.predicted)):
+                ax = axes[2 * r + row][col]
+                ax.imshow(source[t], vmin=0.0, vmax=1.0, interpolation="nearest")
+                ax.set_xticks([]); ax.set_yticks([])
+                for sp in ax.spines.values():
+                    sp.set_color("#1d6fb8" if room.shown[t] else "#9a988f")
+                    sp.set_linewidth(2.2 if room.shown[t] else 1.0)
+                if row == 0:
+                    ax.set_title(
+                        f"t={t}\n{'SHOWN' if room.shown[t] else 'masked'}", fontsize=8
+                    )
+        axes[2 * r][0].set_ylabel(f"{room.key}\nobservation", fontsize=8)
+        axes[2 * r + 1][0].set_ylabel("prediction", fontsize=8)
+    fig.suptitle(
+        "One contiguous mask cycle per room: glimpse, then blind steps\n"
+        "blue border = obs given to the network; grey = obs zeroed (prediction from memory)",
+        fontsize=11,
+    )
+    if path is not None:
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+    return fig
+
+
 def plot_run_predictions(
     *, run_dir: Path | str, path: Path | str | None = None, steps: int = 12, step: int | None = None
 ):
