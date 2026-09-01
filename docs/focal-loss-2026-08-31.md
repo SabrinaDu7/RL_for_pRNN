@@ -158,6 +158,12 @@ across masked steps. Hidden-state analysis on landmark binding should wait
 for (or condition on) better recall; spatial/sRSA analysis is already
 well-supported.
 
+*(Bookkeeping, ~23:30: rounds 1-2 were launched without the
+`--run.wandb-project` flag the earlier waves carried, so their runs logged
+to the default `curious-george` project; all nine were moved to
+`curious-george-multienv` via the API, and the launcher now bakes the
+project in so it cannot be forgotten again.)*
+
 ## Results - round 2 (landed ~22:45, all COMPLETED 0:0)
 
 | arm | landmark shown | recall shown/masked | miss shown/masked | background | mean room sRSA |

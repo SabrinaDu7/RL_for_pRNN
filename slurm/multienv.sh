@@ -2,6 +2,11 @@
 # Multi-room training on the 5 (or 10) selected rooms, either affordance.
 #
 #   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent] [norm] [entropy] [positions] [label] [extra flags...]
+#
+#   Every run this launcher submits logs to wandb project
+#   `curious-george-multienv` - IN the invocation below, not a per-launch
+#   flag: it was a flag once, ten arms forgot it on 2026-08-31, and they all
+#   landed in the default project.
 #     impassable : "true" | "false"   (default false, i.e. the walkable arm)
 #     n          : rooms, 1..10       (default 5)
 #     seed       : run.seed           (default 2)
@@ -140,7 +145,8 @@ trap save EXIT
 # `tests/test_slurm_invocations.py` parses this exact line so the next reorder
 # fails at gate time instead of after a GPU allocation.
 uv run python main_train.py multienv-fast \
-    --run.seed "$SEED" --run.exp-name "$NAME" $BUDGET $AGENTFLAG $NORMFLAG $ENTFLAG "${EXTRA[@]}" \
+    --run.seed "$SEED" --run.exp-name "$NAME" --run.wandb-project curious-george-multienv \
+    $BUDGET $AGENTFLAG $NORMFLAG $ENTFLAG "${EXTRA[@]}" \
     env.source:selected --env.source.n "$N" "$FLAG" $POSFLAG \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback
