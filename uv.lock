@@ -1122,7 +1122,7 @@ wheels = [
 [[package]]
 name = "prnn"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/LevensteinLab/pRNN.git?branch=sdu%2Fce-loss#1939006e5216f164318889600aede5e6475ce132" }
+source = { git = "ssh://git@github.com/LevensteinLab/pRNN.git?branch=sdu%2Fce-loss#852cc7d2a01fc86704a1bbe482b13a3f1b804527" }
 dependencies = [
     { name = "gym" },
     { name = "gymnasium" },

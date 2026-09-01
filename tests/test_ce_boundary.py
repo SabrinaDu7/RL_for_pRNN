@@ -14,7 +14,7 @@ import dataclasses
 import pytest
 import torch
 
-from curious_george.configs import ArchPrnnCfg, PredLoss
+from curious_george.configs import ArchPrnnCfg, PredLoss, PredReadout
 from curious_george.envs.palette import TILE_CLASS_NAMES, TILE_VOCABULARY, vocab_tensor
 from curious_george.log_and_store.storage import prediction_loss_kwargs
 
@@ -160,3 +160,17 @@ def test_render_round_trips_one_hot_logits():
     rendered = loss.render(onehot.reshape(5, -1))
     assert torch.allclose(rendered, pixels, atol=1e-6)
     assert tuple(TILE_VOCABULARY) == TILE_CLASS_NAMES
+
+
+def test_mlp_readout_is_refused_under_mse():
+    with pytest.raises(ValueError, match="readout"):
+        ArchPrnnCfg(readout=PredReadout.MLP)
+
+
+def test_mlp_readout_threads_to_the_upstream_kwarg():
+    kw = prediction_loss_kwargs(
+        ArchPrnnCfg(loss=PredLoss.CE, readout=PredReadout.MLP), _ObsSize(147)
+    )
+    assert kw["readout"] == "mlp"
+    kw = prediction_loss_kwargs(ArchPrnnCfg(loss=PredLoss.CE), _ObsSize(147))
+    assert kw["readout"] == "logits"

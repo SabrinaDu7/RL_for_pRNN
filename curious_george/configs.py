@@ -107,6 +107,20 @@ class PredLoss(str, enum.Enum):
     CE = "ce"
 
 
+class PredReadout(str, enum.Enum):
+    """How h becomes prediction logits under the CE loss.
+
+    LINEAR is the historical single map (`readout="logits"` upstream). MLP is
+    grid-predict's decode stack replicated upstream (ResidualMLP -> LayerNorm
+    -> Linear, `readout="mlp"`) - added 2026-08-31 after the frozen-h probe
+    showed an MLP extracts strictly more than the linear ceiling
+    (docs/readout-probe-2026-08-31.md). CE-only: the MSE net is the
+    historical architecture, pinned bitwise by the goldens."""
+
+    LINEAR = "linear"
+    MLP = "mlp"
+
+
 class CompileMode(str, enum.Enum):
     """`torch.compile` on the recurrent cell. Was typed `bool` in YAML and read
     as `bool | str` in code, because a launcher passes the string `layer`."""
@@ -374,6 +388,7 @@ class ArchPrnnCfg:
     existed (same kwargs, same RNG stream - the goldens gate it bitwise)."""
 
     focal_gamma: float | None = None
+    readout: PredReadout = PredReadout.LINEAR
     """Focal reweighting ((1-pt)^gamma * ce) for the CE TRAINING loss only -
     the curiosity reward stays plain surprisal (information is information;
     only the gradient allocation changes). CE-only; refused under MSE.
@@ -423,6 +438,12 @@ class ArchPrnnCfg:
             raise ValueError(
                 f"action_offset is which action shares a row with obs[t]; "
                 f"only 0 and 1 mean anything, got {self.action_offset}"
+            )
+        if self.readout is not PredReadout.LINEAR and self.loss is not PredLoss.CE:
+            raise ValueError(
+                f"readout={self.readout.value} decodes logits; it means "
+                f"nothing under {self.loss} (the MSE net is the pinned "
+                "historical architecture)"
             )
         if self.focal_gamma is not None:
             if self.loss is not PredLoss.CE:

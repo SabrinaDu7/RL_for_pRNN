@@ -134,12 +134,14 @@ def prediction_loss_kwargs(arch_prnn, env) -> dict:
     assert env.getObsSize() % 3 == 0, (
         f"CE tiles assume RGB rows; obs size {env.getObsSize()} is not /3"
     )
+    from curious_george.configs import PredReadout
+
     n_tiles = env.getObsSize() // 3
     return dict(
         losstype="predCE",
         loss_kwargs=loss_kwargs,
         output_size=n_tiles * len(TILE_VOCABULARY),
-        readout="logits",
+        readout="mlp" if arch_prnn.readout is PredReadout.MLP else "logits",
     )
 
 
