@@ -221,8 +221,10 @@ bitwise unchanged; only the update and what follows it moved (17 leaves).
 **How to tell which side an artifact is on.** Before: `37aaa1b` and earlier. After:
 `d275149` and later.
 
-**Fixtures.** `tests/golden/golden_v1.pt` is valid up to `37aaa1b`; `golden_v2.pt` is
-the baseline from `d275149` on. `../experiment-curiousgeorge/tests/golden_omt/golden_omt_v1.pt` was re-captured at
+**Fixtures.** The training-path fixture `golden_v1` was valid up to `37aaa1b`;
+`golden_v2` became the baseline from `d275149` on (both superseded since and removed
+on 2026-09-06; `tests/golden/capture_golden.py` carries the version ledger).
+`../experiment-curiousgeorge/tests/golden_omt/golden_omt_v1.pt` was re-captured at
 the time; the training-path fixture was missed and stayed stale for three days because
 no test ran it. `tests/golden/test_golden.py` now does.
 

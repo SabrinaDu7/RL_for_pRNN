@@ -1,0 +1,23 @@
+Processing: 100%|██████████| 131072/131072 [01:22<00:00, 1597.29it/s]
+Device: cuda
+multi-room: 8 layouts, resampled per episode
+action_offset: 0
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-31-09/ 
+[step4] prod: 87.2 s; eval: ['rooms sRSA [0.106 0.072 0.073 0.065 0.049] mean=0.0730 pooled=0.0440 remapping=+0.0290 SWdist=0.0141 episodes/room [65, 64, 55, 66, 70, 59, 63, 70] [5/8 rooms scored]', 'rooms sRSA [0.041 0.036 0.046 0.077 0.034] mean=0.0468 pooled=0.0373 remapping=+0.0095 SWdist=0.0082 episodes/room [91, 102, 89, 102, 94, 94, 101, 95] [5/8 rooms scored]']
+Processing: 100%|██████████| 131072/131072 [01:02<00:00, 2108.10it/s]
+Device: cuda
+multi-room: 5 layouts, resampled per episode
+action_offset: 0
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-32-36/ 
+[step4] walkable: 67.1 s; eval: ['rooms sRSA [0.006 0.029 0.031 0.032 0.044] mean=0.0285 pooled=0.0206 remapping=+0.0079 SWdist=0.0085 episodes/room [101, 95, 108, 97, 111]', 'rooms sRSA [0.053 0.034 0.052 0.025 0.045] mean=0.0417 pooled=0.0302 remapping=+0.0114 SWdist=0.0066 episodes/room [150, 151, 155, 152, 160]']
+Processing: 100%|██████████| 131072/131072 [00:13<00:00, 9845.32it/s] 
+Device: cuda
+action_offset: 0
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-33-43/ 
+[step4] parity: 16.0 s; eval: ['onPolicy sRSA=0.0245 SWdist=0.0160', 'onPolicy sRSA=0.0421 SWdist=0.0097']
+Processing: 100%|██████████| 4096/4096 [00:14<00:00, 283.23it/s]
+Device: cuda
+action_offset: 0
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-33-58/ 
+[step4] reference: 15.9 s; eval: ['onPolicy sRSA=0.0507 SWdist=0.0330', 'onPolicy sRSA=0.0215 SWdist=0.0278']
+exit 0

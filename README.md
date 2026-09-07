@@ -85,14 +85,15 @@ uv sync
 ### Launching a training run
 ```bash
 uv run python main_train.py reference                    # the serial static L-room baseline
-uv run python main_train.py multienv --run.seed 3        # a preset, with one field overridden
+uv run python main_train.py multienv-fast --run.seed 3   # a preset, with one field overridden
 uv run python main_train.py ultra --train-prnn.total-grad-steps 1000
 uv run python main_train.py reference --help             # every field, typed
 ```
 
 `curious_george/configs.py` owns the schema. A run is one typed `Config`; presets
-(`reference`, `multienv`, `ultra`) are named `Config` instances, so a mistake in one
-fails at import rather than at compose time. The two gradient-step budgets are what you
+(`PRESETS` there; `main_train.py --help` lists them with their one-line purpose) are
+named `Config` instances, so a mistake in one fails at import rather than at compose
+time. The two gradient-step budgets are what you
 set — environment steps, episode counts and `ppo_batch_size` are derived from them, and
 the resolved schedule is printed at startup.
 
@@ -157,11 +158,13 @@ Both pRNN and policy networks live here, plus the device machinery they share.
 - `models/policy.py` — `ACModel` / `ACModelSR`, the actor–critic. `ACModelSR` is the one
   this project runs: it concatenates the pRNN's hidden state into the embedding, so the
   policy acts on the world model's representation rather than on pixels alone.
-- **`models/prnn_adapter.py` is the boundary.** `PRNNAdapter` is the only module that
-  imports `prnn`; everything else talks to it. It owns the hidden-state trackers, the
-  action and observation encoding, the training step, and the prediction-error computation
-  the curiosity reward is built from. If the upstream pRNN API changes, this is the file
-  that changes. The prediction loss itself is one config switch (`arch_prnn.loss`):
+- **`models/prnn_adapter.py` is the boundary the RL loop talks through.** `PRNNAdapter`
+  owns the hidden-state trackers, the action and observation encoding, the training step,
+  and the prediction-error computation the curiosity reward is built from. If the upstream
+  pRNN API changes, this is the file that changes first. It is not the only importer of
+  `prnn`: construction (`training/setup.py`), the fork's own spatial metrics
+  (`evaluation/spatial.py`, `probe.py`) and the checkpoint helpers import it for what
+  they own (`grep -rl "from prnn" curious_george` is the current list). The prediction loss itself is one config switch (`arch_prnn.loss`):
   MSE on pixels, or CE classifying each tile over `envs/palette.py`'s vocabulary —
   curiosity is the summed per-step error either way (surprisal, in nats, under CE).
 - `models/device.py` — `on_device` / `eval_mode`, the context managers that move models
