@@ -1,0 +1,16 @@
+training schedule
+  351,488 episodes x 256 steps = 89,980,928 environment steps
+  pRNN   gradient steps: 43,936 (32/rollout, 8 episodes each) = 1 per 2,048 env steps
+  policy gradient steps: 175,744 (128/rollout, batch 2,048 x 4 epochs) = 1 per 512 env steps (fresh)
+source=Selected(positions=(0, 1, 2, 3, 5, 6, 7, 8), impassable=True, keep_landmarks=None) loss=ce readout=mlp gamma=5.0 seed=2 entropy=0.035 whiten=True rewnorm=True backend=device graphs=(True,True,True)
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/outputs/clean-sept-mx-impassable-n8-s2-focal5mlp_curious_26-09-07-05-16-40/ 
+wandb: Syncing run clean-sept-mx-impassable-n8-s2-focal5mlp_curious_26-09-07-05-16-40
+training schedule
+  351,488 episodes x 256 steps = 89,980,928 environment steps
+  pRNN   gradient steps: 43,936 (32/rollout, 8 episodes each) = 1 per 2,048 env steps
+  policy gradient steps: 175,744 (128/rollout, batch 2,048 x 4 epochs) = 1 per 512 env steps (fresh)
+rooms sRSA [0.568 0.539 0.622 0.480 0.642] mean=0.5704 pooled=0.3070 remapping=+0.2634 SWdist=0.0812 episodes/room [7369, 7413, 7405, 7305, 7356, 7246, 7385, 7401] [5/8 rooms scored]
+rooms sRSA [0.711 0.756 0.690 0.677 0.728] mean=0.7124 pooled=0.4228 remapping=+0.2896 SWdist=0.0890 episodes/room [14784, 14563, 14709, 14645, 14673, 14708, 14688, 14734] [5/8 rooms scored]
+rooms sRSA [0.715 0.796 0.753 0.716 0.719] mean=0.7398 pooled=0.4651 remapping=+0.2747 SWdist=0.1319 episodes/room [22052, 21829, 22083, 21810, 21980, 22234, 21968, 22172] [5/8 rooms scored]
+rooms sRSA [0.804 0.825 0.779 0.820 0.749] mean=0.7952 pooled=0.4565 remapping=+0.3387 SWdist=0.0694 episodes/room [29421, 29258, 29506, 29069, 29113, 29516, 29441, 29428] [5/8 rooms scored]
+rooms sRSA [0.770 0.820 0.800 0.807 0.781] mean=0.7956 pooled=0.4322 remapping=+0.3634 SWdist=0.0871 episodes/room [36616, 36588, 36926, 36263, 36441, 36903, 36870, 36769] [5/8 rooms scored]

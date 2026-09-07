@@ -1,0 +1,37 @@
+training schedule
+  351,488 episodes x 256 steps = 89,980,928 environment steps
+  pRNN   gradient steps: 43,936 (32/rollout, 8 episodes each) = 1 per 2,048 env steps
+  policy gradient steps: 175,744 (128/rollout, batch 2,048 x 4 epochs) = 1 per 512 env steps (fresh)
+source=EnvDefault() loss=mse readout=linear gamma=None seed=2 entropy=0.035 whiten=True rewnorm=False backend=device graphs=(True,True,True)
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/outputs/clean-sept-parity-s2-mseB_curious_26-09-07-04-51-25/ 
+wandb: Syncing run clean-sept-parity-s2-mseB_curious_26-09-07-04-51-25
+training schedule
+  351,488 episodes x 256 steps = 89,980,928 environment steps
+  pRNN   gradient steps: 43,936 (32/rollout, 8 episodes each) = 1 per 2,048 env steps
+  policy gradient steps: 175,744 (128/rollout, batch 2,048 x 4 epochs) = 1 per 512 env steps (fresh)
+onPolicy sRSA=0.2996 SWdist=0.0809
+onPolicy sRSA=0.4785 SWdist=0.0758
+onPolicy sRSA=0.5770 SWdist=0.0709
+onPolicy sRSA=0.5367 SWdist=0.0662
+onPolicy sRSA=0.5411 SWdist=0.0780
+onPolicy sRSA=0.5722 SWdist=0.1380
+onPolicy sRSA=0.6213 SWdist=0.1434
+onPolicy sRSA=0.6501 SWdist=0.1240
+onPolicy sRSA=0.7295 SWdist=0.1417
+onPolicy sRSA=0.6609 SWdist=0.1306
+onPolicy sRSA=0.6666 SWdist=0.1676
+onPolicy sRSA=0.6670 SWdist=0.1042
+Processing:  48%|████▊     | 43450368/89980928 [12:09<11:53, 65254.58it/s]onPolicy sRSA=0.6466 SWdist=0.1440
+Processing:  52%|█████▏    | 46792704/89980928 [13:05<10:24, 69114.86it/s]onPolicy sRSA=0.7334 SWdist=0.1910
+Processing:  56%|█████▌    | 50135040/89980928 [14:00<10:13, 64962.86it/s]onPolicy sRSA=0.7903 SWdist=0.2034
+Processing:  59%|█████▉    | 53477376/89980928 [14:55<08:53, 68391.29it/s]onPolicy sRSA=0.5721 SWdist=0.1359
+Processing:  63%|██████▎   | 56819712/89980928 [15:51<08:28, 65179.42it/s]onPolicy sRSA=0.5916 SWdist=0.1867
+Processing:  67%|██████▋   | 60162048/89980928 [16:46<07:15, 68469.18it/s]onPolicy sRSA=0.6553 SWdist=0.2070
+Processing:  71%|███████   | 63504384/89980928 [17:42<06:47, 64908.22it/s]onPolicy sRSA=0.6187 SWdist=0.1691
+Processing:  74%|███████▍  | 66846720/89980928 [18:37<05:37, 68519.24it/s]onPolicy sRSA=0.6581 SWdist=0.2122
+Processing:  78%|███████▊  | 70189056/89980928 [19:33<04:51, 67959.84it/s]onPolicy sRSA=0.6325 SWdist=0.1723
+onPolicy sRSA=0.8337 SWdist=0.1527
+Processing:  85%|████████▌ | 76873728/89980928 [21:24<03:19, 65722.63it/s]onPolicy sRSA=0.6562 SWdist=0.2042
+Processing:  89%|████████▉ | 80216064/89980928 [22:18<02:21, 69005.60it/s]onPolicy sRSA=0.5923 SWdist=0.2826
+onPolicy sRSA=0.7690 SWdist=0.1849
+Processing:  97%|█████████▋| 86900736/89980928 [24:09<00:46, 66068.05it/s]onPolicy sRSA=0.5831 SWdist=0.1746

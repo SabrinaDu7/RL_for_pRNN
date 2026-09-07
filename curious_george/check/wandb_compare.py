@@ -69,7 +69,12 @@ DEFAULT_METRICS = (
 
 
 def resolve(api, ident: str, *, entity: str = ENTITY, project: str = PROJECT):
-    """A wandb run from either its id or its display name."""
+    """A wandb run from its id, its display name, or a full `entity/project/id`
+    path - the last is how a run compares against a reference in ANOTHER
+    project (multi-room runs log to curious-george-multienv; the 2026-08-31
+    focal5mlp references landed in curious-george)."""
+    if ident.count("/") == 2:
+        return api.run(ident)
     try:
         return api.run(f"{entity}/{project}/{ident}")
     except Exception:
