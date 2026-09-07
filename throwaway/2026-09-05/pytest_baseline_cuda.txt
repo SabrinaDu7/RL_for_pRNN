@@ -1,0 +1,73 @@
+........................................................................ [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 34%]
+........................................................................ [ 45%]
+........................................................................ [ 57%]
+........................................................................ [ 68%]
+........................................................................ [ 80%]
+........................................................................ [ 91%]
+....................................................                     [100%]
+=============================== warnings summary ===============================
+tests/golden/test_golden_eval.py::test_the_fixture_is_the_circuit_it_claims[1]
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/prnn/analysis/representationalGeometryAnalysis.py:312: RuntimeWarning: invalid value encountered in divide
+    hist2 = hist2/np.sum(hist2,axis=0)
+
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/plotly/io/_kaleido.py:528: DeprecationWarning:
+  
+  
+  Support for the 'engine' argument is deprecated and will be removed after September 2025.
+  Kaleido will be the only supported engine at that time.
+
+tests/test_spatial_eval.py::test_pooled_eval_returns_finite_metrics
+tests/test_spatial_eval.py::test_si_coverage_describes_the_units_prnn_zeroed
+tests/test_spatial_eval.py::test_si_coverage_raises_the_mean_when_units_are_zeroed
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning:
+  
+  invalid value encountered in divide
+
+tests/test_spatial_eval.py::test_pooled_eval_returns_finite_metrics
+tests/test_spatial_eval.py::test_si_coverage_describes_the_units_prnn_zeroed
+tests/test_spatial_eval.py::test_si_coverage_raises_the_mean_when_units_are_zeroed
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning:
+  
+  invalid value encountered in divide
+
+tests/test_spatial_eval.py::test_pooled_eval_returns_finite_metrics
+tests/test_spatial_eval.py::test_si_coverage_raises_the_mean_when_units_are_zeroed
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/prnn/analysis/representationalGeometryAnalysis.py:312: RuntimeWarning:
+  
+  invalid value encountered in divide
+
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning:
+  
+  divide by zero encountered in divide
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 5 durations ==============================
+49.71s call     tests/test_checkpoint_series.py::test_every_config_read_resolves[uniform-squareroom]
+18.66s call     tests/test_count_bonus.py::test_bonus_changes_advantages_and_nothing_else_in_the_rollout
+17.84s call     tests/test_checkpoint_series.py::test_every_config_read_resolves[uniform-lroom]
+17.81s call     tests/test_env_layouts.py::test_max_coverage_is_inert_by_default
+17.33s setup    tests/test_checkpoint_exploration.py::test_points_pair_the_two_series_by_step
+628 passed, 1 deselected, 29 warnings in 254.04s (0:04:14)
+exit=0
