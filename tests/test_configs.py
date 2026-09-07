@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from curious_george.envs.layouts import ROOMS_RUN1
+from curious_george.envs.layouts import ROOMS_RUN1, Committed
 from curious_george.configs import (
     PRESETS,
     AgentType,
@@ -20,7 +20,6 @@ from curious_george.configs import (
     EnvBackend,
     EvalCfg,
     EvalKind,
-    Committed,
     EnvCfg,
     RunCfg,
     TrainPolicyCfg,
@@ -97,8 +96,6 @@ def test_rollout_size_does_not_change_the_training_budget():
         # random-agent multi-room BASELINE unrepresentable. Random actions now
         # go through `collect_rollout` like any other; see
         # tests/test_random_agent_baseline.py.
-        ("intrinsic needs one instance",
-         lambda: Config(train_policy=TrainPolicyCfg(intrinsic=True))),
         ("early_stop needs measurable return",
          lambda: Config(collect=CollectCfg(backend=EnvBackend.DEVICE), run=RunCfg(early_stop=True))),
         ("grad-step group must divide the rollout",

@@ -234,9 +234,8 @@ def main() -> None:
     """
     import dataclasses
 
-    from curious_george.configs import PRESETS
+    from curious_george.configs import PRESETS, RAND_ACT_PROBA
     from curious_george.envs.layouts import Selected, base_walkable, resolve_rooms
-    from curious_george.log_and_store.storage import RAND_ACT_PROBA
 
     steps, n_random, n_sweeps = 256, 2000, 40
     entry = PRESETS["multienv-fast"]

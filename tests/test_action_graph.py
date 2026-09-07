@@ -15,7 +15,6 @@ import pytest
 from curious_george.configs import PRESETS
 from curious_george.envs.action_graph import (
     ActionGraph,
-    FORWARD,
     categorical_walk,
     layout_tables,
     spawn_states,

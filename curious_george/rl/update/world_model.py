@@ -1,6 +1,5 @@
 """World-model (pRNN) training schedule: one gradient step per episode segment."""
 
-import numpy as np
 
 from curious_george.models.prnn_adapter import PRNNAdapter
 from curious_george.utils.timing import timer
@@ -53,12 +52,7 @@ def train_world_model_on_episodes(
         seg_lengths = {
             done_indices[i] - done_indices[i - 1] for i in range(1, len(done_indices))
         }
-        if (
-            batched
-            and adapter.fast_speedhd
-            and len(done_indices) > 2
-            and len(seg_lengths) == 1
-        ):
+        if batched and len(done_indices) > 2 and len(seg_lengths) == 1:
             adapter.train_on_episodes_batched(
                 exps, done_indices, last_observations, group=pool_group
             )

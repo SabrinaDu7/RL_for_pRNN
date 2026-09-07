@@ -68,7 +68,7 @@ def _run(policy_cuda_graph: bool, index_sets, *, capturable_eager: bool = False)
     and graphed arms see identical data and the comparison is about the
     mechanism rather than about the shuffle."""
     from curious_george.rl.update.policy import _index_policy_batch
-    from curious_george.rl.update.losses import LOSSES
+    from curious_george.rl.update.losses import ppo_clip_loss
 
     algo, acmodel, cfg = _algo(policy_cuda_graph)
     exps, _ = algo.collect_experiences()
@@ -84,7 +84,7 @@ def _run(policy_cuda_graph: bool, index_sets, *, capturable_eager: bool = False)
         from curious_george.rl.update.policy_graph import GraphPolicyTrainer
 
         trainer = GraphPolicyTrainer(
-            acmodel, algo.optimizer, loss_fn=LOSSES[algo.loss_name],
+            acmodel, algo.optimizer, loss_fn=ppo_clip_loss,
             loss_kwargs=loss_kwargs, max_grad_norm=algo.max_grad_norm,
         )
         trainer.bind(exps)
@@ -99,7 +99,7 @@ def _run(policy_cuda_graph: bool, index_sets, *, capturable_eager: bool = False)
         idx = torch.as_tensor(inds, device=dev, dtype=torch.long)
         sb = _index_policy_batch(exps, idx, acmodel)
         dist, value = acmodel(sb.obs, SR=sb.SR)
-        loss, _ = LOSSES[algo.loss_name](dist, value, sb, **loss_kwargs)
+        loss, _ = ppo_clip_loss(dist, value, sb, **loss_kwargs)
         algo.optimizer.zero_grad(set_to_none=False)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(acmodel.parameters(), algo.max_grad_norm)
@@ -183,7 +183,7 @@ def test_graphed_policy_survives_spatial_evals():
     holds all of them by address. Asserting "finite" would not catch it - the
     weights must move EXACTLY as eager moves them, across the eval.
     """
-    from curious_george.rl.update.losses import LOSSES
+    from curious_george.rl.update.losses import ppo_clip_loss
     from curious_george.rl.update.policy import _index_policy_batch
     from curious_george.models.device import on_device
 
@@ -203,7 +203,7 @@ def test_graphed_policy_survives_spatial_evals():
             from curious_george.rl.update.policy_graph import GraphPolicyTrainer
 
             trainer = GraphPolicyTrainer(
-                acmodel, algo.optimizer, loss_fn=LOSSES[algo.loss_name],
+                acmodel, algo.optimizer, loss_fn=ppo_clip_loss,
                 loss_kwargs=lk, max_grad_norm=algo.max_grad_norm,
             )
             trainer.bind(exps)
@@ -220,7 +220,7 @@ def test_graphed_policy_survives_spatial_evals():
             else:
                 sb = _index_policy_batch(exps, idx, acmodel)
                 dist, value = acmodel(sb.obs, SR=sb.SR)
-                loss, _ = LOSSES[algo.loss_name](dist, value, sb, **lk)
+                loss, _ = ppo_clip_loss(dist, value, sb, **lk)
                 algo.optimizer.zero_grad(set_to_none=False)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(acmodel.parameters(), algo.max_grad_norm)

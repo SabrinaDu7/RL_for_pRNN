@@ -1,14 +1,10 @@
 import numpy as np
 from jaxtyping import Integer
-import torch
 import plotly
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 
-from curious_george.rl.collect.format import get_obss_preprocessor
-from curious_george.utils.common import get_device
 from curious_george.rl.algo import PredictivePPOAlgo
 
 SCALES = {
@@ -143,201 +139,6 @@ def plot_heatmaps(feature, title="", zmin=None, zmax=None, HDs=True, scale="defa
     return fig
 
 
-class EnvironmentFeaturesAnalysis:
-    """
-    Class for analyzing the features of the environment learned or used by RL agent.
-    """
-
-    def __init__(self, env, agent, rl_model=None, prnn_model=None, timesteps=10000):
-        self.env = env
-        self.agent = agent  # agent to collect observations
-        self.rl_model = rl_model
-        self.prnn = prnn_model
-        self.timesteps = timesteps
-        _, self.preprocess_obss = get_obss_preprocessor(self.env.observation_space)
-
-        self.data = self.collect_data()
-        if rl_model:
-            self.act_probs, self.values = self.get_values_actions()
-
-    def collect_data(self):
-        """
-        Collect data from the environment (and pRNN).
-        """
-        data = {}
-
-        if self.prnn:
-            print("Collecting pRNN observations...")
-            prnn_obs, prnn_act, data["state"], _, data["obs"] = (
-                self.env.collectObservationSequence(
-                    self.agent, self.timesteps, save_env=True
-                )
-            )
-            with torch.no_grad():
-                _, _, data["h"] = self.prnn.predict(
-                    prnn_obs.to(get_device()), prnn_act.to(get_device())
-                )
-
-        else:
-            print("Collecting environment observations...")
-            data["obs"], _, data["state"], _ = self.agent.getObservations(
-                self.env, self.timesteps
-            )
-
-        print("Collected {} steps for analysis".format(len(data["obs"]) - 1))
-
-        return data
-
-    def get_values_actions(self):
-        """
-        Get the values and actions from the RL model.
-        """
-        probs = []
-        values = []
-
-        for t in range(self.timesteps):
-            preprocessed_obs = self.preprocess_obss(
-                [self.data["obs"][t + 1]], device=get_device()
-            )
-            with torch.no_grad():
-                if self.prnn:
-                    dist, value = self.rl_model(
-                        preprocessed_obs, SR=self.data["h"][:, t]
-                    )
-                else:
-                    dist, value = self.rl_model(preprocessed_obs)
-
-            prob = dist.probs
-            probs.append(prob.to("cpu").numpy().squeeze())
-            values.append(value.to("cpu").numpy())
-
-        return np.array(probs), np.array(values)
-
-    def values_map(self, zmin=None, zmax=None, HDs=True, scale="default"):
-        """
-        Plot the heatmaps of values.
-        """
-        instances_map = np.zeros((4, self.env.width - 2, self.env.height - 2))
-        values_map = np.zeros((4, self.env.width - 2, self.env.height - 2))
-        for t in range(self.timesteps):
-            values_map[
-                self.data["state"]["agent_dir"][t + 1],
-                self.data["state"]["agent_pos"][t + 1, 0] - 1,
-                self.data["state"]["agent_pos"][t + 1, 1] - 1,
-            ] += self.values[t]
-
-            instances_map[
-                self.data["state"]["agent_dir"][t + 1],
-                self.data["state"]["agent_pos"][t + 1, 0] - 1,
-                self.data["state"]["agent_pos"][t + 1, 1] - 1,
-            ] += 1
-
-        values_map /= instances_map
-
-        return plot_heatmaps(values_map, "Values", zmin, zmax, HDs, scale)
-
-    def policy_map(self):
-        """
-        Plot the heatmap of values.
-        """
-        instances_map = np.zeros((4, self.env.width - 2, self.env.height - 2, 4))
-        probs_map = np.zeros((4, self.env.width - 2, self.env.height - 2, 4))
-        for t in range(self.timesteps):
-            probs_map[
-                self.data["state"]["agent_dir"][t + 1],
-                self.data["state"]["agent_pos"][t + 1, 0] - 1,
-                self.data["state"]["agent_pos"][t + 1, 1] - 1,
-            ] += self.act_probs[t]
-
-            instances_map[
-                self.data["state"]["agent_dir"][t + 1],
-                self.data["state"]["agent_pos"][t + 1, 0] - 1,
-                self.data["state"]["agent_pos"][t + 1, 1] - 1,
-            ] += 1
-
-        probs_map[0, :, :, 2] += probs_map[1, :, :, 0] + probs_map[3, :, :, 1]
-        probs_map[1, :, :, 2] += probs_map[2, :, :, 0] + probs_map[0, :, :, 1]
-        probs_map[2, :, :, 2] += probs_map[1, :, :, 1] + probs_map[3, :, :, 0]
-        probs_map[3, :, :, 2] += probs_map[0, :, :, 0] + probs_map[2, :, :, 1]
-
-        instances_map[0, :, :, 2] += (
-            instances_map[1, :, :, 0] + instances_map[3, :, :, 1]
-        )
-        instances_map[1, :, :, 2] += (
-            instances_map[2, :, :, 0] + instances_map[0, :, :, 1]
-        )
-        instances_map[2, :, :, 2] += (
-            instances_map[1, :, :, 1] + instances_map[3, :, :, 0]
-        )
-        instances_map[3, :, :, 2] += (
-            instances_map[0, :, :, 0] + instances_map[2, :, :, 1]
-        )
-
-        probs_map /= instances_map
-
-        probs_map = np.argmax(probs_map[:, :, :, 2], axis=0)
-        probs_map = probs_map.astype(float)
-
-        instances_map = instances_map.sum(axis=(0, 3))
-        probs_map[instances_map == 0] = np.nan
-
-        act_map = np.zeros((self.env.width - 2, self.env.height - 2), dtype=str)
-        act_map[probs_map == 0] = "→"
-        act_map[probs_map == 1] = "↓"
-        act_map[probs_map == 2] = "←"
-        act_map[probs_map == 3] = "↑"
-
-        fig = go.Figure(data=go.Heatmap(z=probs_map.T))
-        fig.update_yaxes(autorange="reversed")
-        fig.update_traces(
-            text=act_map.T, textfont_size=26, texttemplate="%{text}", showscale=False
-        )
-        fig.update_xaxes(showticklabels=False)
-        fig.update_yaxes(showticklabels=False)
-        fig.update_layout(height=500, width=600,
-                        title_text='Policy',
-                        title_x=0.5)
-        # fig.show()
-        return fig
-
-    def error_map(
-        self, xref=7, yref=7, zmin=None, zmax=None, HDs=True, scale="plasma"
-    ):
-        """
-        Plot the heatmap of h_{ref} errors.
-        """
-        instances_map = np.zeros((4, self.env.width - 2, self.env.height - 2))
-        errors_map = np.zeros((4, self.env.width - 2, self.env.height - 2))
-
-        ref_ts = []
-        for t, pos in enumerate(self.data["state"]["agent_pos"]):
-            if pos[0] == xref and pos[1] == yref:
-                ref_ts.append(t)
-
-        h_ref = np.zeros_like(self.data["h"][0, 0].to("cpu").numpy())
-        for t in ref_ts:
-            h_ref += self.data["h"][0, t].to("cpu").numpy()
-        h_ref /= len(ref_ts)
-
-        for t in range(self.timesteps):
-            error = cosine(self.data["h"][0, t].to("cpu").numpy(), h_ref)
-            errors_map[
-                self.data["state"]["agent_dir"][t + 1],
-                self.data["state"]["agent_pos"][t + 1, 0] - 1,
-                self.data["state"]["agent_pos"][t + 1, 1] - 1,
-            ] += error
-
-            instances_map[
-                self.data["state"]["agent_dir"][t + 1],
-                self.data["state"]["agent_pos"][t + 1, 0] - 1,
-                self.data["state"]["agent_pos"][t + 1, 1] - 1,
-            ] += 1
-
-        errors_map /= instances_map
-
-        return plot_heatmaps(errors_map, "Errors", zmin, zmax, HDs, scale)
-
-
 class OnPolicyAnalysis:
     """
     Class for analyzing the on-policy representations of the environment learned or used by RL agent.
@@ -358,7 +159,6 @@ class OnPolicyAnalysis:
             self.timesteps = PPOalgo.num_frames
             self.joint_probs = PPOalgo.last_joint_dist
             self.mi = mutual_info_policy(self.joint_probs)
-            self._compute_deltas()
             return
 
         self.timesteps = timesteps
@@ -378,11 +178,7 @@ class OnPolicyAnalysis:
                 max_grad_norm=PPOalgo.max_grad_norm,
                 preprocess_obss=PPOalgo.preprocess_obss,
                 train_pN=PPOalgo.train_pN,
-                noise_mu=PPOalgo.noise_mu,
-                noise_std=PPOalgo.noise_std,
                 prnn_seqdur=PPOalgo.prnn_seqdur,
-                intrinsic=PPOalgo.intrinsic,
-                k_int=PPOalgo.k_int,
                 action_offset=PPOalgo.action_offset,
                 curious_agent=PPOalgo.curious_agent,
                 k_curious=PPOalgo.k_curious,
@@ -410,8 +206,6 @@ class OnPolicyAnalysis:
                 "gae_lambda",
                 "prnn_seqdur",
                 "preprocess_obss",
-                "intrinsic",
-                "k_int",
                 "action_offset",
                 "curious_agent",
                 "k_curious",
@@ -424,21 +218,6 @@ class OnPolicyAnalysis:
         _, logs = self.algo.collect_experiences()
         self.joint_probs = logs["joint_dist"]
         self.mi = mutual_info_policy(self.joint_probs)
-        self._compute_deltas()
-
-    def _compute_deltas(self):
-        self.deltas = (
-            (
-                self.algo.advantages[:-1]
-                - self.algo.discount
-                * self.algo.gae_lambda
-                * self.algo.advantages[1:]
-                * self.algo.masks[1:]
-            )
-            .cpu()
-            .numpy()
-        )
-        self.deltas = np.append(self.deltas, self.algo.advantages[-1].cpu().numpy())
 
     def plot_advantages(self, zmin=None, zmax=None, HDs=True, scale="default"):
         """
@@ -462,29 +241,6 @@ class OnPolicyAnalysis:
         adv_map /= np.maximum(instances_map, 1e-6)
 
         return plot_heatmaps(adv_map, "Advantages", zmin, zmax, HDs, scale)
-
-    def plot_deltas(self, zmin=None, zmax=None, HDs=True, scale="default"):
-        """
-        Plot the heatmaps of advantage deltas.
-        """
-        instances_map = np.zeros((4, self.algo.env.width - 2, self.algo.env.height - 2))
-        delta_map = np.zeros((4, self.algo.env.width - 2, self.algo.env.height - 2))
-        for t in range(self.timesteps):
-            delta_map[
-                self.algo.directions[t],
-                self.algo.locs[t][0] - 1,
-                self.algo.locs[t][1] - 1,
-            ] += self.deltas[t]
-
-            instances_map[
-                self.algo.directions[t],
-                self.algo.locs[t][0] - 1,
-                self.algo.locs[t][1] - 1,
-            ] += 1
-
-        delta_map /= np.maximum(instances_map, 1e-6)
-
-        return plot_heatmaps(delta_map, "Deltas", zmin, zmax, HDs, scale)
 
     def plot_values(self, zmin=None, zmax=None, HDs=True, scale="default"):
         """

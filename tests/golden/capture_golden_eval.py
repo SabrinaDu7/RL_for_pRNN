@@ -150,8 +150,8 @@ def build_fixture(action_offset: int = 0) -> dict:
         env, acmodel, pN, DEVICE,
         num_frames=FRAMES, discount=0.98, lr=3e-4, gae_lambda=0.95, entropy_coef=0.0,
         value_loss_coef=1, max_grad_norm=0.5, adam_eps=1e-8, clip_eps=0.2, epochs=4,
-        batch_size=256, preprocess_obss=preprocess_obss, train_pN=True, noise_mu=0,
-        noise_std=0.05, prnn_seqdur=SEQDUR, intrinsic=False, k_int=1,
+        batch_size=256, preprocess_obss=preprocess_obss, train_pN=True,
+        prnn_seqdur=SEQDUR,
         action_offset=action_offset,
         # ⚠️ THE TWO ROWS DIFFER IN TWO THINGS, DELIBERATELY. Offset 0 keeps
         # `PredictivePPOAlgo`'s own default of "legacy", which is what the

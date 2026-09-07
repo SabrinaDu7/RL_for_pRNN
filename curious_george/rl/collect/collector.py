@@ -4,7 +4,7 @@ One loop serves both cases: at B=1 the SR tracker delegates to the exact
 predict_single/reset_state path and every RNG-consuming call happens in the
 historical order (sample -> env.step -> SR noise -> [reset noise -> env.reset]),
 so the collected rollout is bitwise-identical to the pre-unification serial
-collector (gated by tests/golden/golden_v0.pt). At B>1 the tracker steps all
+collector (gated by tests/golden/test_golden.py). At B>1 the tracker steps all
 streams in one batched forward.
 
 Flat layout is env-major: index = b*T + t with T = num_frames // B. Episode
@@ -19,13 +19,8 @@ import numpy as np
 import torch
 from torch_ac.utils import DictList
 
-from curious_george.envs.access import get_subroom_id
-from curious_george.envs.vector import AsyncShellPool, DeviceTableShellPool
-from curious_george.rl.collect.diagnostics import (
-    LocationStats,
-    check_large_jump,
-    new_joint_probabilities,
-)
+from curious_george.envs.vector import DeviceTableShellPool
+from curious_george.rl.collect.diagnostics import LocationStats, new_joint_probabilities
 from curious_george.rl.collect.rollout_graph import RolloutBuffers
 from curious_george.rl.update.advantage import compute_gae
 from curious_george.rl.update.rewards import (
@@ -101,24 +96,21 @@ class RolloutConfig:
     prnn_seqdur: int = 0
     action_offset: int = 0
     random_actions: bool = False
-    """Draw actions from `RANDOM_ACTION_PROBS` instead of the policy.
+    """Draw actions from `random_action_probs` instead of the policy.
 
     The BASELINE, and it goes through this same function on purpose: the point
     of "how would a random walker do" is that everything except action selection
     is held fixed - same backend, same batch, same rooms, same world-model
-    training. A separate serial routine (the retired
-    `randomAgent_collect_exp_and_update`) answered a different question and
-    forced `num_envs == 1` for reasons that were about that routine, not about
-    random actions."""
+    training. (`PredictivePPOAlgo.randomAgent_collect_exp_and_update` is a
+    separate serial routine that forces `num_envs == 1`; the training loop
+    stopped using it 2026-08-30 and only the Object Memory Task still does.)"""
     random_action_probs: tuple[float, float, float, float] | None = None
     """The distribution `random_actions` samples; None = the project default
     (`configs.RAND_ACT_PROBA`). Uniform makes the OTHER random baseline."""
     curious_agent: bool = False
     reward_alignment: str = "legacy"
-    intrinsic: bool = False
     discount: float = 0.99
     gae_lambda: float = 0.95
-    k_int: float = 1.0
     k_curious: float = 1.0
     k_count: float = 0.0
 
@@ -148,7 +140,6 @@ class CollectResult:
     # flat (B*T) views kept for analysis code that reads algo attributes
     directions: np.ndarray
     locs: list
-    subroom_ids: list
     actions: torch.Tensor
     values: torch.Tensor
     rewards: torch.Tensor
@@ -157,7 +148,6 @@ class CollectResult:
     log_probs: torch.Tensor
     advantages: torch.Tensor
     curious_rewards: torch.Tensor
-    int_rewards: torch.Tensor
     done_indices: list
     last_observations: list
     joint_dist: np.ndarray
@@ -180,41 +170,26 @@ def collect_rollout(
     state: CollectorState,
     cfg: RolloutConfig,
     loc_stats: LocationStats,
-    subroom_size_: int | None,
-    intrinsic_ref=None,  # IntrinsicReference (B=1 only) or None
-    rollout_graph=None,  # GraphRolloutStepper (exp.rollout_cuda_graph) or None
+    rollout_graph=None,  # GraphRolloutStepper (collect.rollout_cuda_graph) or None
     count_bonus=None,  # rewards.CountBonus (train_policy.k_count > 0) or None
     reward_normalizer=None,  # advantage.RewardNormalizer (train_policy.normalize_reward) or None
 ) -> CollectResult:
-    pool = envs if isinstance(envs, AsyncShellPool) else None
     device_pool = envs if isinstance(envs, DeviceTableShellPool) else None
     B = len(envs)
     T = cfg.num_frames // B
     device = cfg.device
 
     if rollout_graph is not None and device_pool is None:
-        raise ValueError("exp.rollout_cuda_graph requires the device env table")
+        raise ValueError("collect.rollout_cuda_graph requires the DEVICE backend")
 
     if device_pool is not None:
         if cfg.prnn_seqdur <= 0 or T % cfg.prnn_seqdur:
             raise ValueError(
-                "device_env requires positive synchronized prnn_seqdur cuts "
-                "that divide frames/num_envs"
-            )
-        if intrinsic_ref is not None:
-            raise ValueError(
-                "device_env does not carry the single-env intrinsic reference"
+                "the DEVICE backend requires positive synchronized episode cuts "
+                "(collect.episode_steps) that divide frames/num_envs"
             )
 
-    if pool is not None and cfg.action_offset:
-        raise ValueError(
-            "action_offset=1 builds h[0] from the observation the tracker is "
-            "handed, and AsyncShellPool resets its environments only after the "
-            "timestep loop - so that observation would be the finished "
-            "episode's. Use the device or serial backend."
-        )
-
-    diagnostics_env = envs if pool is not None or device_pool is not None else envs[0]
+    diagnostics_env = envs if device_pool is not None else envs[0]
     joint = new_joint_probabilities(diagnostics_env, getattr(acmodel, "act_dim"))
 
     # Built once per rollout, never inside the timestep loop.
@@ -226,7 +201,6 @@ def collect_rollout(
 
     obss = None if device_pool is not None else [[None] * T for _ in range(B)]
     locs = None if device_pool is not None else [[None] * T for _ in range(B)]
-    subroom_ids: list = []
     done_indices_b = (
         [list(range(0, T + 1, cfg.prnn_seqdur)) for _ in range(B)]
         if device_pool is not None
@@ -298,7 +272,6 @@ def collect_rollout(
         # position) for one synchronized segment, all still on-device.
         device_last_batches: list[tuple[torch.Tensor, ...]] = []
 
-    last_post_obs = None  # final pre-reset obs (intrinsic tail, action_offset=1)
 
     def _close_device_segment(post_images, post_directions) -> None:
         """End a synchronized device segment: bank its tail, reset, re-observe.
@@ -401,12 +374,12 @@ def collect_rollout(
                 )
             with timer("collect/policy/action_to_host"):
                 # The device table consumes the sampled tensor directly.
-                # CPU/async environments still require this synchronizing D2H.
+                # CPU environments still require this synchronizing D2H.
                 det_np = None if device_pool is not None else action.cpu().numpy()
 
         # The device path still needs the episode's first positions; the serial
-        # and async paths recorded theirs only for `dist_travelled`, which is no
-        # longer logged.
+        # path recorded its own only for `dist_travelled`, which is no longer
+        # logged.
         if cfg.prnn_seqdur > 0 and t % cfg.prnn_seqdur == 0 and device_pool is not None:
             device_segment_initial = device_pool.positions.clone()
 
@@ -434,8 +407,8 @@ def collect_rollout(
             # tensor `Categorical.log_prob` gathers from and `Categorical.probs`
             # softmaxes, so deriving them later reproduces the same floats. The
             # naive `log_softmax(logits).gather(...)` does NOT - verified - and
-            # would break the bitwise oracle in tests/golden_omt/, which
-            # models.py's redundant log_softmax exists to protect.
+            # would break the bitwise oracles in tests/golden/, which
+            # models/policy.py's redundant log_softmax exists to protect.
             policy_logits[t] = dist.logits.detach()
 
         # --- environment stepping ----------------------------------------
@@ -453,28 +426,6 @@ def collect_rollout(
                 device_obs = (post_images, post_directions)
                 rewards[t].copy_(step_rewards)
                 state.mask_b.fill(1 - seq_done)
-        elif pool is not None:
-            with timer("collect/env_step"):
-                # one parallel step for all B envs (positions ride the infos)
-                obs_next_b, step_rewards, _, loc_next_b = pool.step(det_np)
-                done_b = [seq_done] * B
-                for b in range(B):
-                    if check_large_jump(state.loc_b[b], loc_next_b[b]) and t % cfg.prnn_seqdur != 0:
-                        print("====== DEBUG START ======")
-                        print(f"Large jump detected at step {t} (env {b}): from {state.loc_b[b]} to {loc_next_b[b]}")
-                        print("====== DEBUG END ======")
-                    obss[b][t] = pre_obs_b[b]
-                    locs[b][t] = state.loc_b[b]
-                    rewards[t, b] = step_rewards[b]
-
-                    state.ep_return[b] += float(step_rewards[b])
-                    state.ep_reshaped[b] += float(step_rewards[b])
-                    state.ep_frames[b] += 1
-
-                    state.obs_b[b] = obs_next_b[b]
-                    state.loc_b[b] = loc_next_b[b]
-                    state.mask_b[b] = 1 - seq_done
-                    last_post_obs = obs_next_b[b]
         else:
             done_b = [False] * B
             with timer("collect/env_step"):
@@ -490,18 +441,6 @@ def collect_rollout(
                         done = True
                     done_b[b] = done
 
-                    # DEBUG (historical: modulo only evaluated when a jump is seen)
-                    if (
-                        check_large_jump(state.loc_b[b], loc)
-                        and t % cfg.prnn_seqdur != 0
-                    ):
-                        print("====== DEBUG START ======")
-                        print(
-                            f"Large jump detected at step {t} (env {b}): "
-                            f"from {state.loc_b[b]} to {loc}"
-                        )
-                        print("====== DEBUG END ======")
-
                     obss[b][t] = pre_obs_b[b]
                     locs[b][t] = state.loc_b[b]
                     rewards[t, b] = reward
@@ -513,7 +452,6 @@ def collect_rollout(
                     state.obs_b[b] = obs_next
                     state.loc_b[b] = loc
                     state.mask_b[b] = 1 - done
-                    last_post_obs = obs_next
 
         # --- SR step (batched; before any reset, matching serial order) ---
         with timer("collect/sr_step"):
@@ -548,8 +486,6 @@ def collect_rollout(
         for b in range(B):
             if not done_b[b]:
                 continue
-            if intrinsic_ref is not None and rewards[t, b].item() > 1e-5:
-                intrinsic_ref.update_on_done(state, det_np)
             state.done_counter += 1
             state.finished_returns.append(state.ep_return[b])
             state.finished_reshaped.append(state.ep_reshaped[b])
@@ -560,9 +496,8 @@ def collect_rollout(
             last_obs_b[b].append(state.obs_b[b])
 
             def restart_env() -> None:
-                if pool is None:
-                    state.obs_b[b] = envs[b].reset()  # completely new position
-                    state.loc_b[b] = _agent_pos(envs[b])
+                state.obs_b[b] = envs[b].reset()  # completely new position
+                state.loc_b[b] = _agent_pos(envs[b])
 
             # ORDER IS THE CIRCUIT, not a style choice. `reset_env` builds h[0]
             # from the observation it is handed, so under action_offset=1 the
@@ -585,15 +520,6 @@ def collect_rollout(
             state.ep_reshaped[b] = 0.0
             state.ep_frames[b] = 0
             done_indices_b[b].append(t + 1)
-
-        # pool resets are synchronized (seqdur cuts fire for every env at the
-        # same t); one round-trip after the per-env bookkeeping above
-        if pool is not None and any(done_b):
-            assert all(done_b), "pool episode cuts must be synchronized"
-            obs_reset_b, loc_reset_b = pool.reset_all()
-            for b in range(B):
-                state.obs_b[b] = obs_reset_b[b]
-                state.loc_b[b] = loc_reset_b[b]
 
     if rollout_graph is not None:
         # Replays write the SR into the tracker's state buffer and nowhere
@@ -684,11 +610,6 @@ def collect_rollout(
     with timer("collect/flat_locs"):
         flat_locs = [tuple(map(int, position)) for position in positions]
 
-    if subroom_size_ is not None:
-        # one batched call; (t, b) order matches the historical per-step appends
-        step_locs = meta_tb[:, :, 1:].reshape(B * T, 2)
-        subroom_ids = get_subroom_id(torch.from_numpy(step_locs), subroom_size_).tolist()
-
     def flat(x):  # (T, B, ...) -> (B*T, ...)
         return x.permute(1, 0, *range(2, x.dim())).reshape(B * T, *x.shape[2:])
 
@@ -700,7 +621,6 @@ def collect_rollout(
         f_masks = flat(masks)
         f_SRs = flat(SRs)
     curious_rewards = torch.zeros(B * T, device=device)
-    int_rewards = torch.zeros(B * T, device=device)
 
     done_indices: list[int] = []
     if device_pool is None:
@@ -760,10 +680,6 @@ def collect_rollout(
                 directions_tb=device_directions,
             )
 
-    # --- intrinsic tail (B=1 only, historical code path) --------------------
-    if intrinsic_ref is not None:
-        int_rewards = intrinsic_ref.tail(state, f_SRs, last_post_obs)
-
     # --- bootstrap value + GAE per env stream -------------------------------
     if device_pool is not None:
         preprocessed = _device_policy_obss(device_obs[0], device_obs[1], acmodel)
@@ -776,7 +692,6 @@ def collect_rollout(
     with timer("collect/gae"):
         advantages_tb = compute_gae(
             rewards=rewards,
-            int_rewards=int_rewards.reshape(B, T).transpose(0, 1),
             curious_rewards=curious_rewards.reshape(B, T).transpose(0, 1),
             values=values,
             masks=masks,
@@ -784,7 +699,6 @@ def collect_rollout(
             final_masks=state.mask_b,
             discount=cfg.discount,
             gae_lambda=cfg.gae_lambda,
-            k_int=cfg.k_int,
             k_curious=cfg.k_curious,
             count_rewards=count_rewards_tb,
             k_count=cfg.k_count,
@@ -849,7 +763,6 @@ def collect_rollout(
             # numpy arrays, not Python lists: consumers only run synthesize()
             # (mean/std) on these, and .tolist() on 2048-long GPU tensors was
             # a measurable per-update sync cost.
-            "intrinsic_rewards": int_rewards.cpu().numpy(),
             "curious_rewards": curious_np,
             "values": f_values.cpu().numpy(),
             "advantages": adv_np,
@@ -857,7 +770,6 @@ def collect_rollout(
             "loc_entropy_5": loc_entropy_5,
             "joint_dist": joint,
             "locs": flat_locs,
-            "subroom_ids": subroom_ids,
             **{f"avg_adv_{k}": v for k, v in adv_by_action.items()},
         })
 
@@ -870,7 +782,6 @@ def collect_rollout(
         logs=logs,
         directions=directions,
         locs=flat_locs,
-        subroom_ids=subroom_ids,
         actions=f_actions,
         values=f_values,
         rewards=f_rewards,
@@ -879,7 +790,6 @@ def collect_rollout(
         log_probs=f_log_probs,
         advantages=advantages,
         curious_rewards=curious_rewards,
-        int_rewards=int_rewards,
         done_indices=done_indices,
         last_observations=last_observations,
         joint_dist=joint,

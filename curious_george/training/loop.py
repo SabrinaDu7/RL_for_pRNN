@@ -17,7 +17,7 @@ from curious_george.evaluation.spatial import (
 )
 from curious_george.log_and_store.storage import save_analysis_of_agent_behav, save_policy
 from curious_george.training import logging as train_log
-from curious_george.configs import EvalKind, SpatialEvalPath
+from curious_george.configs import EvalKind
 from curious_george.utils.enums import AgentType
 from curious_george.training.schedule import (
     EntropySchedule,
@@ -100,8 +100,6 @@ def run_spatial_analysis(cfg, comps: TrainingComponents, wandb_log: bool) -> Non
             sleepstd=cfg.eval.sleep_std, wandb_nameext=nameext,
             n_trajs=cfg.eval.n_trajs,
             traj_timesteps=cfg.collect.episode_steps,  # eval trajs match training trajs
-            trainDecoder=cfg.eval.spatial_path is SpatialEvalPath.LEGACY_DECODER,
-            legacy_timesteps=cfg.eval.legacy_decoder_timesteps,
             probe_seed=cfg.eval.probe_seed,
         )
         print(
@@ -121,11 +119,7 @@ def run_behavior_analysis(
     # dropped reward_alignment (an assertion error under action_offset=1) and
     # random_actions (the "random" analysis rollout sampled the POLICY) - it
     # cost four cluster jobs before this ran for the first time.
-    opa = OnPolicyAnalysis(
-        comps.algo,
-        timesteps=cfg.eval.behaviour_timesteps,
-        reuse_last_rollout=True,
-    )
+    opa = OnPolicyAnalysis(comps.algo, reuse_last_rollout=True)
     if run_ctx.wandb_log:
         train_log.log_behavior(opa, with_figures=with_figures)
     else:

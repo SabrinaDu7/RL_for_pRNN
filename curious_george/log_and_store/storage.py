@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Callable, Type
 
 import numpy as np
 import torch
@@ -12,22 +11,17 @@ from prnn.utils import (
 )
 from prnn.utils.Shell import FaramaMinigridShell
 
-from curious_george.envs.access import get_new_obj_pos as access_get_goal_loc
+from curious_george.configs import RAND_ACT_PROBA
 from curious_george.models.policy import ACModel, ACModelSR
-from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.agent import ActorCriticAgent
 from curious_george.utils.checkpoints import (
+    POLICY_CKPT_FILENAME,
+    PRNN_CKPT_FILENAME,
     StatusCkptKeys,
 )
 from curious_george.utils.common import get_device
-from curious_george.utils.dev_env import PRNN_CKPT_FILENAME, get_env_var
+from curious_george.utils.dev_env import get_env_var
 from curious_george.utils.enums import AgentType
-
-# The value's ONE home is `configs.RAND_ACT_PROBA`; this is the same constant
-# as the ndarray `get_agent` consumes, not a second spelling.
-from curious_george.configs import RAND_ACT_PROBA as _RAND_ACT_PROBA_CFG
-
-RAND_ACT_PROBA = np.asarray(_RAND_ACT_PROBA_CFG)
 
 
 def create_folders_if_necessary(path: str):
@@ -55,32 +49,11 @@ def get_model_dir(model_name: str | Path):
     return os.path.join(get_storage_dir(), model_name)
 
 
-def get_video_dir(model_name: str):
-    """Videos beside the run that produced them, under RL_STORAGE.
-
-    Was $HOME/pRNN-RL/RLvideos/<run>, which is not the storage root and so was
-    invisible to every rsync in slurm/ - a cluster run's videos never left the
-    node. Inert until logging.video_log_freq > 0, wrong either way.
-    """
-    return os.path.join(get_model_dir(model_name), "videos")
-
-
-def get_tmp_dir():
-    if "TMPDIR" in os.environ:
-        return os.environ["TMPDIR"]
-    return "tmp"
-
-
-def get_tmp_model_dir(model_name: str | Path):
-    return os.path.join(get_tmp_dir(), model_name)
-
-
-#: What the policy checkpoint is called. Renamed from `status.pt` on 2026-08-28:
-#: the file holds the actor-critic's weights and its optimizer, and "status"
-#: named none of that. The KEYS inside it are unchanged - `StatusCkptKeys` is
-#: the on-disk schema of the dict, and renaming its VALUES would make every
-#: existing checkpoint unreadable.
-POLICY_CKPT_FILENAME = "policy.pt"
+#: The policy checkpoint was `status.pt` until 2026-08-28: the file holds the
+#: actor-critic's weights and its optimizer, and "status" named none of that.
+#: The KEYS inside it are unchanged - `StatusCkptKeys` is the on-disk schema of
+#: the dict, and renaming its VALUES would make every existing checkpoint
+#: unreadable. The current names live in `utils/checkpoints.py`.
 LEGACY_POLICY_CKPT_FILENAME = "status.pt"
 
 
@@ -208,14 +181,10 @@ def get_SR_acmodel(
     return acmodel.to(device)
 
 
-def get_goal_loc(env: FaramaMinigridShell) -> list[int]:
-    return access_get_goal_loc(env)
-
-
 def get_agent(
     env: FaramaMinigridShell,
     agent_Type: AgentType,
-    rand_act_prob: np.ndarray = RAND_ACT_PROBA,
+    rand_act_prob: np.ndarray | tuple[float, ...] = RAND_ACT_PROBA,
     prnn: PredictiveNet | None = None,
     device: torch.device | None = None,
     ac_model: ACModel | None = None,
@@ -223,7 +192,7 @@ def get_agent(
     action_offset: int = 0,
 ) -> ActorCriticAgent | RandomActionAgent:
     if agent_Type == AgentType.RANDOM:
-        agent = RandomActionAgent(env.action_space, rand_act_prob)
+        agent = RandomActionAgent(env.action_space, np.asarray(rand_act_prob))
     elif agent_Type == AgentType.AC:
         assert ac_model is not None, "ACModel must be provided for ActorCriticAgent"
         assert prnn is not None, "PredictiveNet must be provided for ActorCriticAgent"

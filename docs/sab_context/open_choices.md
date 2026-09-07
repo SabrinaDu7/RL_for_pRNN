@@ -199,7 +199,7 @@ or do we require the learning curve to match the old one?
 With `predNet.batched_wm`, one update is exactly ONE world-model gradient step, so
 `num_envs` *is* the gradient-step budget: `steps = episodes_total / num_envs`. And
 `trainStep` is flat in batch on this GPU (~0.19 s from batch 1 to 256,
-`tests/perf/results/trainstep_batch_cuda_4060.json`), so gradient steps and wall-clock both
+`throwaway/2026-09-06/perf/results/trainstep_batch_cuda_4060.json`), so gradient steps and wall-clock both
 scale as `1/num_envs`:
 
 ```

@@ -92,8 +92,8 @@ class ACModel(nn.Module, torch_ac.ACModel):
         x = self.actor(embedding)
         # The explicit log_softmax is redundant - Categorical normalizes logits
         # itself - but removing it changes float rounding in the policy log-probs,
-        # which perturbs actor gradients by ~6e-8 and breaks the bitwise oracle in
-        # tests/golden_omt/. Kept deliberately; the cost is one softmax over (B, 4).
+        # which perturbs actor gradients by ~6e-8 and breaks the bitwise oracles in
+        # tests/golden/. Kept deliberately; the cost is one softmax over (B, 4).
         dist = Categorical(logits=F.log_softmax(x, dim=1))
 
         x = self.critic(embedding)
@@ -141,10 +141,6 @@ class ACModelSR(ACModel):
             self.image_embedding_size = 0
 
     def forward(self, obs, SR, **kwargs):
-        # TODO: Must handle this case with thcycRNN where multiple SRs (e.g., shape is (6, 1, 500))
-        if SR.ndim > 2:
-            SR = SR.mean(dim=0)
-
         if self.with_CV:
             x = obs.image.transpose(1, 3).transpose(2, 3)
             if self.rgb:
@@ -170,8 +166,8 @@ class ACModelSR(ACModel):
         x = self.actor(embedding)
         # The explicit log_softmax is redundant - Categorical normalizes logits
         # itself - but removing it changes float rounding in the policy log-probs,
-        # which perturbs actor gradients by ~6e-8 and breaks the bitwise oracle in
-        # tests/golden_omt/. Kept deliberately; the cost is one softmax over (B, 4).
+        # which perturbs actor gradients by ~6e-8 and breaks the bitwise oracles in
+        # tests/golden/. Kept deliberately; the cost is one softmax over (B, 4).
         dist = Categorical(logits=F.log_softmax(x, dim=1))
 
         x = self.critic(embedding)

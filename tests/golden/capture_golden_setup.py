@@ -43,6 +43,15 @@ size.
 `wandb_log=False` is forced on every composition: it reaches
 `PredictiveNet(wandb_log=...)` and would otherwise open a network connection
 during a test. It is identical on both sides of the migration, so it cancels.
+
+RE-PINNED A SECOND TIME, on 2026-09-06, for five kwargs that stopped EXISTING:
+    intrinsic, k_int, noise_mu, noise_std, loss
+deleted from `PredictivePPOAlgo.__init__` by the audit cleanup (the B=1
+reference-SR intrinsic reward, two noise parameters the algo stored and never
+read, and a loss selector with one option). Both weight hashes and the whole
+derived schedule were identical in all four compositions - the fixture shrank,
+nothing it measures moved. The gate that shows this is the comparison output
+before the recapture, recorded in docs/claude_logs/cleanup-2026-09-06.md.
 """
 
 import hashlib

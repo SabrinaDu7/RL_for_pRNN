@@ -1,0 +1,325 @@
+...............................FFFF.............FF...................... [ 11%]
+........................................................................ [ 22%]
+................................................................F....... [ 33%]
+........................................................................ [ 45%]
+........................................................................ [ 56%]
+........................................................................ [ 67%]
+........................................................................ [ 79%]
+............................F........................................... [ 90%]
+................................................F...........             [100%]
+=================================== FAILURES ===================================
+_________________ test_composition_builds_identically[default] _________________
+
+reference_and_fresh = ({'default': {'action_offset': 0, 'kwargs': {'action_offset': 0, 'adam_betas': [0.9, 0.999], 'adam_eps': 1e-08, 'batch...ded212d646c5e7f7b8002bb38da710238', 'prnn': '48f1717ba36aa4bd4b6f5bdf6b0096f6758984f1f2d343f79aa5d9649bfa8e3d'}}, ...})
+composition = 'default'
+
+    @pytest.mark.parametrize("composition", sorted(COMPOSITIONS))
+    def test_composition_builds_identically(reference_and_fresh, composition):
+        """Constructor kwargs, module weights and derived budget, per composition."""
+        reference, fresh = reference_and_fresh
+        bad = compare(
+            {composition: reference[composition]}, {composition: fresh[composition]}
+        )
+>       assert not bad, "\n".join(f"  {b}" for b in bad[:20])
+E       AssertionError:   default.kwargs.intrinsic: False -> '<absent>'
+E           default.kwargs.k_int: 1.0 -> '<absent>'
+E           default.kwargs.loss: 'ppo_clip' -> '<absent>'
+E           default.kwargs.noise_mu: 0.0 -> '<absent>'
+E           default.kwargs.noise_std: 0.05 -> '<absent>'
+E       assert not ["default.kwargs.intrinsic: False -> '<absent>'", "default.kwargs.k_int: 1.0 -> '<absent>'", "default.kwargs.loss: 'ppo_clip' -> '<absent>'", "default.kwargs.noise_mu: 0.0 -> '<absent>'", "default.kwargs.noise_std: 0.05 -> '<absent>'"]
+
+tests/golden/test_golden_setup.py:40: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+Device: cuda
+
+action_offset: 0
+  captured default: 33 kwargs, 80,000 pRNN grad steps
+Device: cuda
+
+action_offset: 0
+  captured parity: 33 kwargs, 43,936 pRNN grad steps
+Device: cuda
+
+multi-room: 3 layouts, resampled per episode
+action_offset: 0
+  captured multienv: 33 kwargs, 240,000 pRNN grad steps
+Device: cuda
+
+action_offset: 0
+  captured ultra: 33 kwargs, 625 pRNN grad steps
+________________ test_composition_builds_identically[multienv] _________________
+
+reference_and_fresh = ({'default': {'action_offset': 0, 'kwargs': {'action_offset': 0, 'adam_betas': [0.9, 0.999], 'adam_eps': 1e-08, 'batch...ded212d646c5e7f7b8002bb38da710238', 'prnn': '48f1717ba36aa4bd4b6f5bdf6b0096f6758984f1f2d343f79aa5d9649bfa8e3d'}}, ...})
+composition = 'multienv'
+
+    @pytest.mark.parametrize("composition", sorted(COMPOSITIONS))
+    def test_composition_builds_identically(reference_and_fresh, composition):
+        """Constructor kwargs, module weights and derived budget, per composition."""
+        reference, fresh = reference_and_fresh
+        bad = compare(
+            {composition: reference[composition]}, {composition: fresh[composition]}
+        )
+>       assert not bad, "\n".join(f"  {b}" for b in bad[:20])
+E       AssertionError:   multienv.kwargs.intrinsic: False -> '<absent>'
+E           multienv.kwargs.k_int: 1.0 -> '<absent>'
+E           multienv.kwargs.loss: 'ppo_clip' -> '<absent>'
+E           multienv.kwargs.noise_mu: 0.0 -> '<absent>'
+E           multienv.kwargs.noise_std: 0.05 -> '<absent>'
+E       assert not ["multienv.kwargs.intrinsic: False -> '<absent>'", "multienv.kwargs.k_int: 1.0 -> '<absent>'", "multienv.kwargs.loss: 'ppo_clip' -> '<absent>'", "multienv.kwargs.noise_mu: 0.0 -> '<absent>'", "multienv.kwargs.noise_std: 0.05 -> '<absent>'"]
+
+tests/golden/test_golden_setup.py:40: AssertionError
+_________________ test_composition_builds_identically[parity] __________________
+
+reference_and_fresh = ({'default': {'action_offset': 0, 'kwargs': {'action_offset': 0, 'adam_betas': [0.9, 0.999], 'adam_eps': 1e-08, 'batch...ded212d646c5e7f7b8002bb38da710238', 'prnn': '48f1717ba36aa4bd4b6f5bdf6b0096f6758984f1f2d343f79aa5d9649bfa8e3d'}}, ...})
+composition = 'parity'
+
+    @pytest.mark.parametrize("composition", sorted(COMPOSITIONS))
+    def test_composition_builds_identically(reference_and_fresh, composition):
+        """Constructor kwargs, module weights and derived budget, per composition."""
+        reference, fresh = reference_and_fresh
+        bad = compare(
+            {composition: reference[composition]}, {composition: fresh[composition]}
+        )
+>       assert not bad, "\n".join(f"  {b}" for b in bad[:20])
+E       AssertionError:   parity.kwargs.intrinsic: False -> '<absent>'
+E           parity.kwargs.k_int: 1.0 -> '<absent>'
+E           parity.kwargs.loss: 'ppo_clip' -> '<absent>'
+E           parity.kwargs.noise_mu: 0.0 -> '<absent>'
+E           parity.kwargs.noise_std: 0.05 -> '<absent>'
+E       assert not ["parity.kwargs.intrinsic: False -> '<absent>'", "parity.kwargs.k_int: 1.0 -> '<absent>'", "parity.kwargs.loss: 'ppo_clip' -> '<absent>'", "parity.kwargs.noise_mu: 0.0 -> '<absent>'", "parity.kwargs.noise_std: 0.05 -> '<absent>'"]
+
+tests/golden/test_golden_setup.py:40: AssertionError
+__________________ test_composition_builds_identically[ultra] __________________
+
+reference_and_fresh = ({'default': {'action_offset': 0, 'kwargs': {'action_offset': 0, 'adam_betas': [0.9, 0.999], 'adam_eps': 1e-08, 'batch...ded212d646c5e7f7b8002bb38da710238', 'prnn': '48f1717ba36aa4bd4b6f5bdf6b0096f6758984f1f2d343f79aa5d9649bfa8e3d'}}, ...})
+composition = 'ultra'
+
+    @pytest.mark.parametrize("composition", sorted(COMPOSITIONS))
+    def test_composition_builds_identically(reference_and_fresh, composition):
+        """Constructor kwargs, module weights and derived budget, per composition."""
+        reference, fresh = reference_and_fresh
+        bad = compare(
+            {composition: reference[composition]}, {composition: fresh[composition]}
+        )
+>       assert not bad, "\n".join(f"  {b}" for b in bad[:20])
+E       AssertionError:   ultra.kwargs.intrinsic: False -> '<absent>'
+E           ultra.kwargs.k_int: 1.0 -> '<absent>'
+E           ultra.kwargs.loss: 'ppo_clip' -> '<absent>'
+E           ultra.kwargs.noise_mu: 0.0 -> '<absent>'
+E           ultra.kwargs.noise_std: 0.05 -> '<absent>'
+E       assert not ["ultra.kwargs.intrinsic: False -> '<absent>'", "ultra.kwargs.k_int: 1.0 -> '<absent>'", "ultra.kwargs.loss: 'ppo_clip' -> '<absent>'", "ultra.kwargs.noise_mu: 0.0 -> '<absent>'", "ultra.kwargs.noise_std: 0.05 -> '<absent>'"]
+
+tests/golden/test_golden_setup.py:40: AssertionError
+_______________ test_boundary_bootstrap_reads_the_new_episode[0] _______________
+
+offset = 0
+
+    @pytest.mark.parametrize("offset", (0, 1))
+    def test_boundary_bootstrap_reads_the_new_episode(offset):
+        """At an episode cut the policy's first SR must come from the NEW episode.
+    
+        `collect_rollout` used to reset the tracker BEFORE the environment. Under
+        offset 0 that is invisible - `init_sr` returns zeros and never reads the
+        observation - but under offset 1 it silently built h[0] from the finished
+        episode's last view, at a position the agent had already left.
+        """
+        torch.manual_seed(SEED)
+        np.random.seed(SEED)
+        env = _env(seed=SEED + 1)
+        pN = _net(env)
+        obs_space, pre = get_obss_preprocessor(env.observation_space)
+        ac = ACModelSR(obs_space, env.action_space, HIDDEN, False, True, True)
+>       algo = PredictivePPOAlgo(
+            env, ac, pN, torch.device("cpu"), num_frames=2 * L, prnn_seqdur=L,
+            action_offset=offset, curious_agent=True, reward_alignment="next_obs",
+            train_pN=False, epochs=1, batch_size=2 * L, preprocess_obss=pre, noise_std=0.0,
+        )
+E       TypeError: PredictivePPOAlgo.__init__() got an unexpected keyword argument 'noise_std'
+
+tests/test_action_offset.py:146: TypeError
+_______________ test_boundary_bootstrap_reads_the_new_episode[1] _______________
+
+offset = 1
+
+    @pytest.mark.parametrize("offset", (0, 1))
+    def test_boundary_bootstrap_reads_the_new_episode(offset):
+        """At an episode cut the policy's first SR must come from the NEW episode.
+    
+        `collect_rollout` used to reset the tracker BEFORE the environment. Under
+        offset 0 that is invisible - `init_sr` returns zeros and never reads the
+        observation - but under offset 1 it silently built h[0] from the finished
+        episode's last view, at a position the agent had already left.
+        """
+        torch.manual_seed(SEED)
+        np.random.seed(SEED)
+        env = _env(seed=SEED + 1)
+        pN = _net(env)
+        obs_space, pre = get_obss_preprocessor(env.observation_space)
+        ac = ACModelSR(obs_space, env.action_space, HIDDEN, False, True, True)
+>       algo = PredictivePPOAlgo(
+            env, ac, pN, torch.device("cpu"), num_frames=2 * L, prnn_seqdur=L,
+            action_offset=offset, curious_agent=True, reward_alignment="next_obs",
+            train_pN=False, epochs=1, batch_size=2 * L, preprocess_obss=pre, noise_std=0.0,
+        )
+E       TypeError: PredictivePPOAlgo.__init__() got an unexpected keyword argument 'noise_std'
+
+tests/test_action_offset.py:146: TypeError
+_______________ test_pooled_graphed_bitwise_equals_eager_no_rng ________________
+
+    def test_pooled_graphed_bitwise_equals_eager_no_rng():
+        """Noise+dropout off: N sequential pooled replays == N eager pooled steps.
+    
+        Bitwise, because with no RNG the captured region is the same math. This is
+        the semantics gate for wm_pool_group: it fails if the in-graph optimizer
+        step does not advance the weights between replays.
+        """
+        pN_eager, _ = _run_pooled(cuda_graph=False, dropp=0.0, noise=(0.0, 0.0))
+>       pN_graph, _ = _run_pooled(cuda_graph=True, dropp=0.0, noise=(0.0, 0.0))
+
+tests/test_cuda_graph_wm.py:320: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _run_pooled(*, cuda_graph: bool, dropp: float, noise: tuple[float, float]):
+        dev = torch.device("cuda")
+        pN = _make_pN(dropp=dropp, noise=noise)
+        pN.pRNN.to(dev)
+        pN.pRNN.train()
+        adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=cuda_graph)
+        obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
+        if cuda_graph:
+>           assert adapter._use_graph_wm(), "pooled graph path not engaged"
+E           AttributeError: 'PRNNAdapter' object has no attribute '_use_graph_wm'
+
+tests/test_cuda_graph_wm.py:299: AttributeError
+____________________ test_every_referenced_path_is_tracked _____________________
+
+    def test_every_referenced_path_is_tracked():
+        """A path named in live code or docs resolves in a clean clone."""
+        tracked = set(_git("ls-files"))
+        dead = {p: sorted(set(src)) for p, src in _references().items() if p not in tracked}
+>       assert not dead, "referenced but not in git:\n" + "\n".join(
+            f"  {p}\n      named by: {', '.join(src)}" for p, src in sorted(dead.items())
+        )
+E       AssertionError: referenced but not in git:
+E           tests/perf/results/trainstep_batch_cuda_4060.json
+E               named by: docs/sab_context/open_choices.md
+E       assert not {'tests/perf/results/trainstep_batch_cuda_4060.json': ['docs/sab_context/open_choices.md']}
+
+tests/test_references_resolve.py:85: AssertionError
+__________ test_pairwise_rules_are_unconstrained_below_two_landmarks ___________
+
+    def test_pairwise_rules_are_unconstrained_below_two_landmarks() -> None:
+        for n in (0, 1):
+            room = _rooms(n, pool=1)[0]
+            assert room.min_anchor_separation == UNCONSTRAINED
+>           assert room.min_cell_gap() == UNCONSTRAINED
+E           TypeError: 'int' object is not callable
+
+tests/test_variable_landmarks.py:69: TypeError
+=============================== warnings summary ===============================
+tests/golden/test_golden_eval.py::test_the_fixture_is_the_circuit_it_claims[1]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/prnn/analysis/representationalGeometryAnalysis.py:312: RuntimeWarning: invalid value encountered in divide
+    hist2 = hist2/np.sum(hist2,axis=0)
+
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+    fxfr = fx / fr
+
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+    fxfr = fx / fr
+
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[None]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+tests/test_audit_2026_09_fixes.py::test_c15_the_multi_room_eval_leaves_the_shell_as_it_found_it[7]
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+    SI = SI / fr[:, 0, 0]
+
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+tests/test_random_agent_baseline.py::test_the_behaviour_analysis_runs_for_the_random_baseline
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/plotly/io/_kaleido.py:528: DeprecationWarning:
+  
+  
+  Support for the 'engine' argument is deprecated and will be removed after September 2025.
+  Kaleido will be the only supported engine at that time.
+
+tests/test_spatial_eval.py::test_pooled_eval_returns_finite_metrics
+tests/test_spatial_eval.py::test_si_coverage_describes_the_units_prnn_zeroed
+tests/test_spatial_eval.py::test_si_coverage_raises_the_mean_when_units_are_zeroed
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning:
+  
+  invalid value encountered in divide
+
+tests/test_spatial_eval.py::test_pooled_eval_returns_finite_metrics
+tests/test_spatial_eval.py::test_si_coverage_describes_the_units_prnn_zeroed
+tests/test_spatial_eval.py::test_si_coverage_raises_the_mean_when_units_are_zeroed
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning:
+  
+  invalid value encountered in divide
+
+tests/test_spatial_eval.py::test_pooled_eval_returns_finite_metrics
+tests/test_spatial_eval.py::test_si_coverage_raises_the_mean_when_units_are_zeroed
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/prnn/analysis/representationalGeometryAnalysis.py:312: RuntimeWarning:
+  
+  invalid value encountered in divide
+
+tests/test_spatial_eval.py::test_pooled_eval_restores_device_placement
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_leaves_the_training_streams_untouched
+tests/test_spatial_eval.py::test_seeded_probe_restores_the_cuda_stream
+  /home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning:
+  
+  divide by zero encountered in divide
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 5 durations ==============================
+49.73s call     tests/test_checkpoint_series.py::test_every_config_read_resolves[uniform-squareroom]
+18.87s call     tests/test_count_bonus.py::test_bonus_changes_advantages_and_nothing_else_in_the_rollout
+17.56s call     tests/test_env_layouts.py::test_max_coverage_is_inert_by_default
+17.51s call     tests/test_checkpoint_series.py::test_every_config_read_resolves[uniform-lroom]
+17.33s setup    tests/test_checkpoint_exploration.py::test_points_pair_the_two_series_by_step
+=========================== short test summary info ============================
+FAILED tests/golden/test_golden_setup.py::test_composition_builds_identically[default]
+FAILED tests/golden/test_golden_setup.py::test_composition_builds_identically[multienv]
+FAILED tests/golden/test_golden_setup.py::test_composition_builds_identically[parity]
+FAILED tests/golden/test_golden_setup.py::test_composition_builds_identically[ultra]
+FAILED tests/test_action_offset.py::test_boundary_bootstrap_reads_the_new_episode[0]
+FAILED tests/test_action_offset.py::test_boundary_bootstrap_reads_the_new_episode[1]
+FAILED tests/test_cuda_graph_wm.py::test_pooled_graphed_bitwise_equals_eager_no_rng
+FAILED tests/test_references_resolve.py::test_every_referenced_path_is_tracked
+FAILED tests/test_variable_landmarks.py::test_pairwise_rules_are_unconstrained_below_two_landmarks
+9 failed, 627 passed, 1 deselected, 53 warnings in 254.02s (0:04:14)
+exit=1

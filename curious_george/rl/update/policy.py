@@ -3,8 +3,8 @@
 Named for what it updates, like `world_model.py` beside it - the directory
 already says `update`, so a verb in the filename would only stutter.
 
-Which objective is optimized is a `loss_fn` argument; see `losses.py` for the
-available losses and their shared signature.
+The objective is `losses.ppo_clip_loss`, passed in so the graphed and eager
+paths share one signature.
 """
 
 from dataclasses import dataclass
@@ -14,7 +14,7 @@ import torch
 from jaxtyping import Int
 from torch_ac.utils import DictList
 
-from curious_george.rl.update.losses import LOSSES, ppo_clip_loss
+from curious_george.rl.update.losses import ppo_clip_loss
 from curious_george.utils.timing import timer
 
 
@@ -93,9 +93,6 @@ def update_policy(
     captured step instead of dispatching one. It updates parameters by
     construction, so it is ignored when `update_params` is False.
     """
-    if isinstance(loss_fn, str):
-        loss_fn = LOSSES[loss_fn]
-
     with timer("update/policy"):
         if graph_trainer is not None and update_params:
             return _update_policy_epochs_graphed(

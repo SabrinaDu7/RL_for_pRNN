@@ -296,7 +296,7 @@ def _run_pooled(*, cuda_graph: bool, dropp: float, noise: tuple[float, float]):
     adapter = PRNNAdapter(pN, dev, action_offset=0, cuda_graph=cuda_graph)
     obs_b, act_b = _pooled_batch(pN, adapter, GROUP)
     if cuda_graph:
-        assert adapter._use_graph_wm(), "pooled graph path not engaged"
+        assert adapter.cuda_graph, "pooled graph path not engaged"
         adapter._graph_trainer = None
     for _ in range(STEPS):
         if cuda_graph:

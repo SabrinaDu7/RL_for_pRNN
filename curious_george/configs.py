@@ -17,32 +17,25 @@ curve to justify them, not a benchmark.
 
 from __future__ import annotations
 
-import abc
 import enum
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 from prnn.utils import ActionEncodingsEnum, pRNNtypes
 
 from curious_george.envs.layouts import (
     MULTI_ROOM_ID,
-    Committed,
-    Curated,
     EnvContent,
     Frozen,
     EnvDefault,
     Selected,
     EnvShape,
-    LandmarkKind,
     RoomRules,
     RoomSetRules,
     RoomSource,
-    Symmetry,
-    Uniform,
-    Vary,
 )
-from curious_george.utils.enums import AgentInputType, AgentType
+from curious_george.utils.enums import AgentType
 
 #: The project's random-action distribution over (left, right, forward, pickup).
 #: Forward-weighted: a uniform walker mostly spins on the spot and covers little
@@ -55,34 +48,23 @@ RAND_ACT_PROBA: tuple[float, float, float, float] = (0.15, 0.15, 0.6, 0.1)
 # ---------------------------------------------------------------------------
 # Enums
 
-class MinigridEnv(str, enum.Enum):
-    """Registered gymnasium ids. The registry in minigrid is the authority;
-    this mirrors the subset this project runs."""
-
-    LROOM = "MiniGrid-LRoom-v0"
-    LROOM_MULTI = "MiniGrid-LRoom-Multi-v0"
-    SQUAREROOM = "MiniGrid-SquareRoom-v0"
-    SQUAREROOM_MULTI = "MiniGrid-SquareRoom-Multi-v0"
-    FOURROOMS_OBJECTS = "MiniGrid-FourRooms-Objects-v0"
-
-
 class EnvBackend(str, enum.Enum):
     """How environment steps execute. ONE axis, so no combination is invalid.
 
-    Replaces `table_env`, `device_env` and `async_envs` - three booleans whose
-    eight states held four legal ones, with "device implies table" spelled as an
-    `or` and "device needs more than one instance" as a raise.
+    Replaces `table_env` and `device_env` - booleans whose combinations held
+    fewer legal states than they could spell, with "device implies table"
+    written as an `or` and "device needs more than one instance" as a raise.
+    (A process-parallel pair of members was deleted 2026-09-06: no preset, no
+    launcher, one test.)
     """
 
     SERIAL = "serial"  # in-process instances, observations rendered per step
     SERIAL_TABLE = "serial_table"  # in-process, static transition/observation tables
-    ASYNC = "async"  # worker processes, rendered observations
-    ASYNC_TABLE = "async_table"  # worker processes, table observations
     DEVICE = "device"  # one batched accelerator-resident table state machine
 
     @property
     def tabled(self) -> bool:
-        return self in (EnvBackend.SERIAL_TABLE, EnvBackend.ASYNC_TABLE, EnvBackend.DEVICE)
+        return self in (EnvBackend.SERIAL_TABLE, EnvBackend.DEVICE)
 
     @property
     def batched(self) -> bool:
@@ -159,54 +141,8 @@ class EvalKind(str, enum.Enum):
     TRAJECTORY_PLOT = "trajectory_plot"
 
 
-class SpatialEvalPath(str, enum.Enum):
-    """Which spatial-evaluation implementation runs."""
-
-    POOLED = "pooled"  # n_trajs trajectories of episode_steps, pooled
-    LEGACY_DECODER = "legacy_decoder"  # prnn's own rollout plus a decoder fit
-
-
 # ---------------------------------------------------------------------------
-# Layouts: a union, so the pool's parameters cannot exist without the pool.
-
-
-@dataclass(frozen=True)
-class SingleLayout:
-    """One room. The control for every multi-room number: same environment
-    class, same landmarks, one room instead of several - so a change in sRSA is
-    attributable to room COUNT rather than to scale or schedule.
-    """
-
-    index: int = 0 # selects the room in `envs/layouts.py`
-
-    def __post_init__(self) -> None:
-        if self.index < 0:
-            raise ValueError(f"index must be >= 0, got {self.index}")
-
-
-@dataclass(frozen=True)
-class FrozenLayouts:
-    """The frozen set for the base room (envs/layouts.py)."""
-
-
-@dataclass(frozen=True)
-class LayoutPool:
-    """A seeded uniform sample of the admissible set. `seed` names the pool, so
-    a run is reproducible from it alone."""
-
-    size: int = 500
-    seed: int = 20260813
-
-
-#: Which rooms a multi-room run trains on. A UNION, not a mode string plus two
-#: orphan fields: `size` and `seed` exist only under `LayoutPool`, so asking for
-#: a pool size on a frozen set is not expressible. The old config carried both
-#: on every env and raised AttributeError when `layouts` was not "pool".
-EnvLayoutSpec = Union[SingleLayout, FrozenLayouts, LayoutPool]
-
-
-# ---------------------------------------------------------------------------
-# pRNN
+# The world
 
 
 @dataclass(frozen=True)
@@ -324,8 +260,7 @@ class CollectCfg:
 
     num_envs: int = 8
     """(SPEED) Environment instances stepped in parallel. NOT the number of
-    distinct environment configurations - that is `MultiRoomEnvCfg.layouts`, and
-    the two are orthogonal."""
+    distinct rooms - that is `EnvCfg.source`, and the two are orthogonal."""
 
     episodes_per_env: int = 1
     """(SPEED) Episodes each instance runs per rollout."""
@@ -402,7 +337,6 @@ class ArchPrnnCfg:
     original one-off measured 1.78 through train-mode dropout; the audit's
     eval-mode rerun moved the number, not the conclusion.)"""
 
-    action_encoding: ActionEncodingsEnum = ActionEncodingsEnum.SpeedHD
     n_timescale: int = 2
     dropout: float = 0.15
     noise_mean: float = 0.0
@@ -432,6 +366,15 @@ class ArchPrnnCfg:
         """Fixed. The prevAct variant is retired; it is still named here because
         prnn's loader reads it and it belongs in provenance."""
         return pRNNtypes.masked
+
+    @property
+    def action_encoding(self) -> ActionEncodingsEnum:
+        """Fixed. Every vectorized path in `models/prnn_adapter.py` - the batched
+        tracker, the device curiosity pass, the pooled training step, offset 1's
+        row 0 - encodes SpeedHD directly; the per-call fallbacks for the fork's
+        other encodings had no caller and went 2026-09-06. A field that only one
+        value can hold is a property."""
+        return ActionEncodingsEnum.SpeedHD
 
     def __post_init__(self) -> None:
         if self.action_offset not in (0, 1):
@@ -464,10 +407,11 @@ class ArchPolicyCfg:
     """Actor-critic on the pRNN's spatial representation.
 
     The plain actor-critic on raw observations is retired, so the boolean that
-    chose between them has nothing left to choose and is gone.
+    chose between them has nothing left to choose and is gone; so is the
+    `input_type` field that selected among nine observation wrappers, of which
+    one was ever built (2026-09-06).
     """
 
-    input_type: AgentInputType = AgentInputType.H
     with_obs: bool = False
     with_head_direction: bool = True
     rgb: bool = True
@@ -608,8 +552,6 @@ class TrainPolicyCfg:
 
     curious: bool = True
     k_curious: float = 1.0
-    intrinsic: bool = False
-    k_intrinsic: float = 1.0
     normalize_reward: bool = False
     """Divide the combined reward by a running std before GAE. The curiosity
     reward is the world model's own loss, which the world model is minimising,
@@ -737,10 +679,7 @@ class EvalCfg:
     """Pooled trajectories of `CollectCfg.episode_steps` each, so evaluation
     statistics match training trajectory statistics."""
 
-    spatial_path: SpatialEvalPath = SpatialEvalPath.POOLED
-    legacy_decoder_timesteps: int = 15_000
     sleep_std: float = 0.03
-    behaviour_timesteps: int = 25_000
 
     # Cadences are in ENVIRONMENT STEPS. A rollout is not a fixed amount of
     # experience - it scales with num_envs - so a rollout-counted interval
@@ -772,7 +711,6 @@ class RunCfg:
     wandb: bool = True
     wandb_entity: str = "blake-richards"
     wandb_project: str = "curious-george"
-    video_every_episodes: int = 0
 
     save_every_steps: int = 245_760
     """Rolling checkpoint, overwritten. On its own a run leaves exactly ONE
@@ -809,12 +747,13 @@ class Config:
     CROSS-SECTION PRECONDITIONS live here and nowhere else, because everything
     expressible inside one section is already a type error. What survives:
 
-      1. intrinsic rewards need num_envs == 1
-      2. early_stop needs a backend that measures return
-      3. episodes_per_grad_step divides episodes_per_rollout
-      4. SPATIAL_MULTIROOM iff the environment is multi-room
-      5. the derived ppo_batch_size is a positive integer dividing the rollout
-      6. a multi-room environment needs the DEVICE backend
+      1. early_stop needs a backend that measures return
+      2. episodes_per_grad_step divides episodes_per_rollout
+      3. SPATIAL_MULTIROOM iff the environment is multi-room
+      4. the derived ppo_batch_size is a positive integer dividing the rollout
+      5. a multi-room environment needs the DEVICE backend
+      6. the rollout divides the budget, so the loop cannot overshoot it
+      7. a resumed learner is not CUDA-graphed (its optimizer state is not empty)
 
     Typed away, so absent: device implies table; device needs more than one
     instance; rollout graphs need device; the base room matching the environment
@@ -872,11 +811,6 @@ class Config:
     def __post_init__(self) -> None:
         has_rooms = self.env.has_room_set
 
-        if self.train_policy.intrinsic and self.collect.num_envs != 1:
-            raise ValueError(
-                f"intrinsic rewards are only implemented for one instance; got "
-                f"num_envs == {self.collect.num_envs}"
-            )
         if self.run.early_stop and not self.collect.backend.measures_return:
             raise ValueError(
                 f"early_stop needs extrinsic return, which {self.collect.backend.value} "
@@ -954,9 +888,9 @@ def _jsonable(value: Any) -> Any:
         return value.value
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         out = {f.name: _jsonable(getattr(value, f.name)) for f in dataclasses.fields(value)}
-        # Subclass identity is the whole point of the env union, and a plain
-        # field dump would lose it - LRoomCfg and SquareRoomCfg have the same
-        # fields and different meanings.
+        # Subclass identity is the whole point of the `env.source` union, and a
+        # plain field dump would lose it - `Selected` and `Uniform` both carry an
+        # `n` and mean different rooms.
         out["_type"] = type(value).__name__
         return out
     if isinstance(value, (frozenset, set)):

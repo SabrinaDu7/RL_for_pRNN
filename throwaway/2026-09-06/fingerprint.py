@@ -165,6 +165,15 @@ def _flatten(d: dict, prefix: str = "") -> dict:
     return out
 
 
+#: Leaves the cleanup REMOVED on purpose, so their absence is not a difference.
+#: Each entry names the commit that removed it; nothing numeric belongs here.
+ACCEPTED_ABSENT = {
+    # cleanup 2: the B=1 intrinsic reward went, and with it the always-zero
+    # (B*T,) array the collector logged under this key.
+    "log_scalars.intrinsic_rewards",
+}
+
+
 def diff(a: str, b: str, cases: list[str]) -> int:
     bad = 0
     for case in cases:
@@ -175,7 +184,11 @@ def diff(a: str, b: str, cases: list[str]) -> int:
             continue
         fa, fb = _flatten(json.loads(pa.read_text())), _flatten(json.loads(pb.read_text()))
         skip = ("seconds", "argv")
-        keys = sorted((set(fa) | set(fb)) - {k for k in set(fa) | set(fb) if k.split(".")[0] in skip})
+        keys = sorted(
+            (set(fa) | set(fb))
+            - {k for k in set(fa) | set(fb) if k.split(".")[0] in skip}
+            - {k for k in ACCEPTED_ABSENT if k in fa and k not in fb}
+        )
         moved = [k for k in keys if fa.get(k, "<absent>") != fb.get(k, "<absent>")]
         if moved:
             bad += 1

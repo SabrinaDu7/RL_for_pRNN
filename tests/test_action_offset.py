@@ -146,7 +146,7 @@ def test_boundary_bootstrap_reads_the_new_episode(offset):
     algo = PredictivePPOAlgo(
         env, ac, pN, torch.device("cpu"), num_frames=2 * L, prnn_seqdur=L,
         action_offset=offset, curious_agent=True, reward_alignment="next_obs",
-        train_pN=False, epochs=1, batch_size=2 * L, preprocess_obss=pre, noise_std=0.0,
+        train_pN=False, epochs=1, batch_size=2 * L, preprocess_obss=pre,
     )
     exps, _ = algo.collect_experiences()
     ad = algo.adapter

@@ -40,7 +40,7 @@ from curious_george.evaluation.exploration import (
     distance_binned_coverage,
     visitation_by_room,
 )
-from curious_george.log_and_store.storage import RAND_ACT_PROBA
+from curious_george.configs import RAND_ACT_PROBA
 
 BASE = base_walkable(BASE_ROOM_ID)
 T = 256

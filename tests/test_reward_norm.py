@@ -17,7 +17,6 @@ def _gae(curious: torch.Tensor, normalizer: RewardNormalizer | None) -> torch.Te
     T, B = curious.shape
     return compute_gae(
         rewards=torch.zeros(T, B),
-        int_rewards=torch.zeros(T, B),
         curious_rewards=curious,
         values=torch.linspace(0.1, 0.4, T * B).reshape(T, B),
         masks=torch.ones(T, B),
@@ -25,7 +24,6 @@ def _gae(curious: torch.Tensor, normalizer: RewardNormalizer | None) -> torch.Te
         final_masks=torch.ones(B),
         discount=0.98,
         gae_lambda=0.95,
-        k_int=0.0,
         k_curious=1.0,
         reward_normalizer=normalizer,
     )

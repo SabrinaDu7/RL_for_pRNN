@@ -55,7 +55,6 @@ class RewardNormalizer:
 def compute_gae(
     *,
     rewards: torch.Tensor,
-    int_rewards: torch.Tensor,
     curious_rewards: torch.Tensor,
     values: torch.Tensor,
     masks: torch.Tensor,
@@ -63,7 +62,6 @@ def compute_gae(
     final_masks,
     discount: float,
     gae_lambda: float,
-    k_int: float,
     k_curious: float,
     count_rewards: torch.Tensor | None = None,
     k_count: float = 0.0,
@@ -78,10 +76,10 @@ def compute_gae(
     SEQUENTIALLY, on device. It is associative, so a Hillis-Steele prefix scan
     would evaluate it in ``ceil(log2(T))`` stages instead of ``T`` - but that
     reassociates the float32 sum and perturbs the result by ~6e-8, which is
-    below one ULP yet enough to break the bitwise oracle in
-    tests/golden_omt/. The scan was measured at ~1 ms/update against a
-    ~1.3 s update (throwaway/ported/docs_legacy/throughput_investigation_2026-07-23.md), so the
-    sequential form costs ~0.1% of wall-clock and keeps that gate meaningful.
+    below one ULP yet enough to break the bitwise oracles in `tests/golden/`
+    (and the Object Memory Task's, in ../experiment-curiousgeorge). The scan
+    was measured at ~1 ms against a ~1.3 s update, so the sequential form costs
+    ~0.1% of wall-clock and keeps those gates meaningful.
 
     Everything stays on device either way; the sequential loop launches T
     small kernels but never synchronizes to the host.
@@ -95,7 +93,9 @@ def compute_gae(
     next_values = torch.cat((values[1:], final_values.unsqueeze(0)), dim=0)
     next_masks = torch.cat((masks[1:], final_mask_tensor.unsqueeze(0)), dim=0)
 
-    reward = rewards + k_int * int_rewards + k_curious * curious_rewards
+    # `+ k_int * int_rewards`, an always-zero term from a retired B=1 intrinsic
+    # reward, was dropped 2026-09-06: x + 0.0 is x, so the goldens hold.
+    reward = rewards + k_curious * curious_rewards
     if count_rewards is not None:
         # Branched, not a zero tensor: the default path must stay bitwise
         # identical for the golden gate.

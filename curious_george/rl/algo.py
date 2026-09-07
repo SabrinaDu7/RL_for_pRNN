@@ -5,10 +5,10 @@
 `PredictivePPOAlgo` wires together:
 - rl.collect.collector  - the rollout loop (B=1 is bitwise-identical to the
   historical serial path via SingleSRTracker; B>1 batches the forwards)
-- rl.update.policy / losses - loss-agnostic policy updates (rl.loss config)
+- rl.update.policy / losses - the PPO-clip update
 - rl.update.rewards / advantage - reward terms and GAE
 - rl.update.world_model - per-episode pRNN training
-- world_model.adapter   - the only rollout-time prnn seam
+- models.prnn_adapter   - the rollout-time prnn seam
 
 Pass a single env or a list of envs as the first argument; num_frames is the
 TOTAL frames per update across all envs.
@@ -18,74 +18,22 @@ import math
 
 import numpy as np
 import torch
-from scipy.spatial.distance import cosine
 from scipy.stats import entropy
 from torch_ac.format import default_preprocess_obss
 
 from prnn.utils import PredictiveNet
-from curious_george.envs.access import get_subroom_id, grid_shape, subroom_size
+from curious_george.envs.access import grid_shape
 from curious_george.rl.collect.collector import (
     CollectorState,
     RolloutConfig,
     collect_rollout,
 )
 from curious_george.rl.collect.diagnostics import LocationStats
-from curious_george.rl.update.losses import LOSSES
+from curious_george.rl.update.losses import ppo_clip_loss
 from curious_george.rl.update.policy import update_policy
 from curious_george.rl.update.world_model import train_world_model_on_episodes
 from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
 from curious_george.utils.timing import timer
-
-
-def compare_trajs(traj1, traj2):
-    delta = (traj1 == traj2).cumprod()
-    return delta.sum() / len(delta)
-
-
-class IntrinsicReference:
-    """Reference-SR intrinsic reward (historical; B=1 only, off in mainline).
-
-    Preserved quirk: the first error is duplicated in `tail`, so
-    int_rewards[0] is always 0.
-    """
-
-    def __init__(self, algo: "PredictivePPOAlgo", sr_dim: int):
-        self.algo = algo
-        self.ref = torch.zeros((1, sr_dim), device=algo.device)
-        self.nrefs = 0
-
-    def update_ref(self, activations):
-        self.nrefs += 1
-        self.ref = self.ref + (activations - self.ref) / self.nrefs
-
-    def update_on_done(self, state: CollectorState, det_np):
-        algo = self.algo
-        sr = state.sr
-        if algo.action_offset == 0:
-            preprocessed = algo.preprocess_obss([state.obs_b[0]], device=algo.device)
-            with torch.no_grad():
-                dist, _ = algo.acmodel(preprocessed, SR=state.sr)
-            action = dist.sample()
-            sr = algo.adapter.next_sr(action.cpu().numpy(), state.obs_b[0])
-        self.update_ref(sr)
-
-    def tail(self, state: CollectorState, SRs: torch.Tensor, last_post_obs) -> torch.Tensor:
-        algo = self.algo
-        preprocessed = algo.preprocess_obss([state.obs_b[0]], device=algo.device)
-        with torch.no_grad():
-            dist, _ = algo.acmodel(preprocessed, SR=state.sr)
-        action = dist.sample()
-        det_np = action.cpu().numpy()
-        obs = state.obs_b[0] if algo.action_offset == 0 else last_post_obs
-        sr = algo.adapter.next_sr(det_np, obs)
-
-        all_SRs = torch.cat((SRs, sr), dim=0).cpu()
-        errors = torch.tensor(
-            [cosine(s, self.ref.squeeze().cpu()) for s in all_SRs[1:]],
-            device=algo.device,
-        )
-        errors = torch.cat((errors[0][None], errors), dim=0)
-        return errors[:-1] - errors[1:]
 
 
 class PredictivePPOAlgo:
@@ -109,11 +57,7 @@ class PredictivePPOAlgo:
         batch_size=256,
         preprocess_obss=None,
         train_pN=False,
-        noise_mu=0,
-        noise_std=0.03,
         prnn_seqdur=0,
-        intrinsic=False,
-        k_int=1,
         # NOT 0: preserved verbatim from the `pastSR=False` this replaced.
         # Only direct constructions see it; setup_algo always passes one.
         action_offset: int = 1,
@@ -125,7 +69,6 @@ class PredictivePPOAlgo:
         k_count=0.0,
         normalize_reward=False,
         reward_alignment="legacy",
-        loss="ppo_clip",
         batched_wm=False,
         cuda_graph=False,
         batched_curiosity=False,
@@ -137,14 +80,12 @@ class PredictivePPOAlgo:
         rollout_cuda_graph=False,
         curiosity_cuda_graph=False,
     ):
-        # env may be a single shell, a list of shells (parallel collection),
-        # or a batched shell pool (process-parallel or device-resident)
-        from curious_george.envs.vector import AsyncShellPool, DeviceTableShellPool
+        # env may be a single shell, a list of shells (serial collection), or
+        # the device-resident shell pool
+        from curious_george.envs.vector import DeviceTableShellPool
 
-        self.is_async = isinstance(env, AsyncShellPool)
         self.is_device_env = isinstance(env, DeviceTableShellPool)
-        self.is_pool = self.is_async or self.is_device_env
-        if self.is_pool:
+        if self.is_device_env:
             self.envs = env
             self.env = env.eval_shell  # shell services (encodeAction, grid, ...)
         else:
@@ -163,26 +104,21 @@ class PredictivePPOAlgo:
         self.value_loss_coef = value_loss_coef
         self.max_grad_norm = max_grad_norm
         self.preprocess_obss = preprocess_obss or default_preprocess_obss
-        self.intrinsic = intrinsic
-        self.k_int = k_int
         self.train_pN = train_pN
-        self.noise_mu = noise_mu
-        self.noise_std = noise_std
         self.prnn_seqdur = prnn_seqdur
         self.batched_wm = batched_wm
         self.wm_segment_stride = wm_segment_stride
         self.wm_pool_group = wm_pool_group
-        # rl.cuda_graph: replay a captured PPO minibatch step. Built lazily on
-        # first update so the acmodel is already on-device and the optimizer
-        # state is still empty (the capturable rebuild requires that).
+        # train_policy.cuda_graph: replay a captured PPO minibatch step. Built
+        # lazily on first update so the acmodel is already on-device and the
+        # optimizer state is still empty (the capturable rebuild requires that).
         self.policy_cuda_graph = bool(policy_cuda_graph) and device.type == "cuda"
         self._policy_graph = None
-        # exp.rollout_cuda_graph: replay a captured rollout timestep. Built
+        # collect.rollout_cuda_graph: replay a captured rollout timestep. Built
         # after the tracker exists, below; capture is deferred to the first
         # rollout so the models are on-device and warmed up.
         self.rollout_cuda_graph = bool(rollout_cuda_graph) and device.type == "cuda"
         self._rollout_graph = None
-        self.cuda_graph = cuda_graph
         self.action_offset = action_offset
         self.random_actions = random_actions
         # None = the project default (configs.RAND_ACT_PROBA); resolved by
@@ -194,11 +130,8 @@ class PredictivePPOAlgo:
         self.curious_agent = curious_agent
         self.k_curious = k_curious
         self.reward_alignment = reward_alignment
-        self.loss_name = loss
-        assert loss in LOSSES, f"unknown loss {loss!r}; available: {list(LOSSES)}"
         assert self.num_frames % self.num_envs == 0, "num_frames must divide by num_envs"
         if self.num_envs > 1:
-            assert not intrinsic, "intrinsic rewards not supported with num_envs > 1"
             T = self.num_frames // self.num_envs
             if prnn_seqdur > 0:
                 assert T % prnn_seqdur == 0, "per-env T must divide by prnn_seqdur"
@@ -216,7 +149,6 @@ class PredictivePPOAlgo:
             if self.pN
             else None
         )
-        self._subroom_size = subroom_size(self.env)
 
         self.loc_mask = self._location_mask()
 
@@ -228,7 +160,7 @@ class PredictivePPOAlgo:
         # Rollout machinery (env resets + initial SR happen here, in the
         # same order as the historical constructor: reset then init_SR)
         self.tracker = None
-        if self.is_pool:
+        if self.is_device_env:
             self._first_obs, first_locs = self.envs.reset_all()
             loc_b = [loc for loc in first_locs]
         else:
@@ -246,8 +178,8 @@ class PredictivePPOAlgo:
 
             if not self.is_device_env:
                 raise ValueError(
-                    "exp.rollout_cuda_graph captures the device environment "
-                    "table's timestep; it requires exp.device_env=True"
+                    "collect.rollout_cuda_graph captures the device environment "
+                    "table's timestep; it requires collect.backend=DEVICE"
                 )
             self._rollout_graph = GraphRolloutStepper(
                 acmodel=self.acmodel,
@@ -289,10 +221,6 @@ class PredictivePPOAlgo:
 
         self.reward_normalizer = RewardNormalizer() if normalize_reward else None
 
-        self.intrinsic_ref = (
-            IntrinsicReference(self, self.state.sr.shape[-1]) if intrinsic else None
-        )
-
         self.clip_eps = clip_eps
         self.epochs = epochs
         self.batch_size = batch_size
@@ -311,7 +239,6 @@ class PredictivePPOAlgo:
         # analysis code reads these off the algo after each collect
         self.directions = np.empty(0, dtype=np.int64)
         self.locs: list = []
-        self.subroom_ids: list = []
         self.last_joint_dist = None
         self.segment_layouts = None
         self.positions_episodes = None
@@ -438,16 +365,12 @@ class PredictivePPOAlgo:
                 random_action_probs=self.random_action_probs,
                 curious_agent=self.curious_agent,
                 reward_alignment=self.reward_alignment,
-                intrinsic=self.intrinsic,
                 discount=self.discount,
                 gae_lambda=self.gae_lambda,
-                k_int=self.k_int,
                 k_curious=self.k_curious,
                 k_count=self.k_count,
             ),
             loc_stats=self.loc_stats,
-            subroom_size_=self._subroom_size,
-            intrinsic_ref=self.intrinsic_ref,
             rollout_graph=self._rollout_graph,
             count_bonus=self.count_bonus,
             reward_normalizer=self.reward_normalizer,
@@ -456,7 +379,6 @@ class PredictivePPOAlgo:
         # expose the rollout on the algo for analysis/tasks that read attributes
         self.directions = result.directions
         self.locs = result.locs
-        self.subroom_ids = result.subroom_ids
         self.actions = result.actions
         self.values = result.values
         self.rewards = result.rewards
@@ -465,7 +387,6 @@ class PredictivePPOAlgo:
         self.log_probs = result.log_probs
         self.advantages = result.advantages
         self.curious_rewards = result.curious_rewards
-        self.int_rewards = result.int_rewards
         self.done_indices = result.done_indices
         self.last_observations = result.last_observations
         self.last_joint_dist = result.joint_dist
@@ -519,13 +440,12 @@ class PredictivePPOAlgo:
         del exps["last_observations"]
 
         if self.policy_cuda_graph and self._policy_graph is None and update_params:
-            from curious_george.rl.update.losses import LOSSES
             from curious_george.rl.update.policy_graph import GraphPolicyTrainer
 
             self._policy_graph = GraphPolicyTrainer(
                 self.acmodel,
                 self.optimizer,
-                loss_fn=LOSSES[self.loss_name] if isinstance(self.loss_name, str) else self.loss_name,
+                loss_fn=ppo_clip_loss,
                 loss_kwargs=dict(
                     clip_eps=self.clip_eps,
                     entropy_coef=self.entropy_coef,
@@ -541,7 +461,7 @@ class PredictivePPOAlgo:
             self.acmodel,
             self.optimizer,
             exps,
-            loss_fn=self.loss_name,
+            loss_fn=ppo_clip_loss,
             loss_kwargs=dict(
                 clip_eps=self.clip_eps,
                 entropy_coef=self.entropy_coef,
@@ -578,7 +498,6 @@ class PredictivePPOAlgo:
         numtrials = math.ceil(self.num_frames / self.prnn_seqdur)
 
         log_curr_seqdurs = []
-        subroom_ids = []
         locs = [None] * self.num_frames
         for bb in range(numtrials):
             curr_seqdur = min(
@@ -600,8 +519,6 @@ class PredictivePPOAlgo:
             # Collect location info
             locs_array = state["agent_pos"][:-1, :] # Shape np.ndarray [seqdur, 2]
             loc_list_current = [tuple(thisloc) for thisloc in locs_array]
-            if self._subroom_size is not None:
-                subroom_ids = (get_subroom_id(torch.tensor(state["agent_pos"]), self._subroom_size))
 
             startidx = bb * self.prnn_seqdur
             endidx = min(self.num_frames, (bb + 1) * self.prnn_seqdur)
@@ -620,5 +537,4 @@ class PredictivePPOAlgo:
             "loc_entropy": loc_entropy,
             "loc_entropy_5": loc_entropy_5,
             "locs": locs,
-            "subroom_ids": subroom_ids,
         }

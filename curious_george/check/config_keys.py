@@ -32,15 +32,12 @@ RENAMED: dict[str, str] = {
     "exp.num_envs": "collect.num_envs",
     "exp.rollout_cuda_graph": "collect.rollout_cuda_graph",
     "exp.see_through_walls": "env.see_through_walls",
-    "exp.input_type": "arch_policy.input_type",
     "exp.with_obs": "arch_policy.with_obs",
     "exp.with_HD": "arch_policy.with_head_direction",
     "exp.rgb": "arch_policy.rgb",
     "exp.random_init_control": "arch_policy.freeze_params",
-    "exp.intrinsic": "train_policy.intrinsic",
     "exp.curious_agent": "train_policy.curious",
     "exp.eval_trajs": "eval.n_trajs",
-    "exp.eval_timesteps": "eval.legacy_decoder_timesteps",
     "exp.eval_rooms_max": "eval.rooms_max",
     # rl.* -> train_policy
     "rl.discount": "train_policy.discount",
@@ -55,7 +52,6 @@ RENAMED: dict[str, str] = {
     "rl.ppo_epochs": "train_policy.ppo_epochs",
     "rl.ppo_clip_eps": "train_policy.clip_eps",
     "rl.cuda_graph": "train_policy.cuda_graph",
-    "rl.k_int": "train_policy.k_intrinsic",
     "rl.k_curious": "train_policy.k_curious",
     "rl.reward_alignment": "train_policy.reward_alignment",
     # predNet.* -> arch_prnn / train_prnn / collect
@@ -81,7 +77,6 @@ RENAMED: dict[str, str] = {
     "logging.wandb_log": "run.wandb",
     "logging.wandb_entity": "run.wandb_entity",
     "logging.wandb_project": "run.wandb_project",
-    "logging.video_log_freq": "run.video_every_episodes",
     "logging.save_every_steps": "run.save_every_steps",
     "logging.archive_every_steps": "run.archive_every_steps",
     "logging.early_stop": "run.early_stop",
@@ -97,12 +92,10 @@ RENAMED: dict[str, str] = {
 FOLDED: dict[str, tuple[str, str]] = {
     "exp.table_env": ("collect.backend", "one axis replaced three booleans"),
     "exp.device_env": ("collect.backend", "one axis replaced three booleans"),
-    "exp.async_envs": ("collect.backend", "one axis replaced three booleans"),
     "exp.random_action_agent": ("arch_policy.agent", "a boolean PAIR that could disagree"),
     "exp.onpolicy_prnn_eval": ("eval.evals", "four booleans became a set"),
     "exp.offpolicy_prnn_eval": ("eval.evals", "four booleans became a set"),
     "exp.analyze_agent_behav": ("eval.evals", "four booleans became a set"),
-    "exp.eval_decoder": ("eval.spatial_path", "a boolean became a named path"),
     "exp.layouts": ("env.source", "a mode string became a typed source"),
     "exp.layout_pool_size": ("env.source.size", "only exists under a pool now"),
     "exp.layout_seed": ("env.source.seed", "only exists under a pool now"),
@@ -114,6 +107,15 @@ FOLDED: dict[str, tuple[str, str]] = {
 
 #: No new key at all: derived from the budget, or dropped with the feature.
 GONE: dict[str, str] = {
+    # 2026-09-06 cleanup: config surfaces that did nothing, or selected paths
+    # nobody ran, were deleted rather than renamed (audit 2026-09-05, §3).
+    "exp.input_type": "dropped; the one observation wrapper anyone built is the only one",
+    "exp.intrinsic": "dropped with the B=1 reference-SR intrinsic reward",
+    "rl.k_int": "dropped with the B=1 reference-SR intrinsic reward",
+    "logging.video_log_freq": "dropped; it made a directory and never recorded a video",
+    "exp.eval_timesteps": "dropped with the legacy decoder-fit spatial eval",
+    "exp.eval_decoder": "dropped with the legacy decoder-fit spatial eval",
+    "exp.async_envs": "dropped; the process-parallel pool had no preset and no launcher",
     "rl.frames": "derived - collect.num_envs * episodes_per_env * episode_steps",
     "rl.episodes_total": "derived - train_prnn.total_grad_steps * episodes_per_grad_step",
     "rl.ppo_batch_size": "derived - ppo_epochs * env_steps / train_policy.total_grad_steps",

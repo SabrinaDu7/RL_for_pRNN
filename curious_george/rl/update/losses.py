@@ -1,12 +1,12 @@
-"""Policy-gradient loss functions.
+"""The policy-gradient loss: PPO-clip.
 
-Every loss has the same signature so `policy.py` is loss-agnostic:
-
-    loss_fn(dist, value, sb, **cfg_kwargs) -> (loss, LossTerms)
+    ppo_clip_loss(dist, value, sb, **cfg_kwargs) -> (loss, LossTerms)
 
 where `dist, value` are the model outputs on the minibatch `sb` (a DictList
-slice with .action, .log_prob, .advantage, .returnn, .value). Pick a loss by
-name via LOSSES / cfg key `rl.loss`.
+slice with .action, .log_prob, .advantage, .returnn, .value). It is the one
+objective this project has ever trained; the a2c alternative and the
+name-to-function table that selected between them had no caller and were
+deleted 2026-09-06.
 """
 
 import math
@@ -97,37 +97,3 @@ def ppo_clip_loss(
         value_loss=value_loss.detach(),
     )
     return loss, terms
-
-
-def a2c_loss(
-    dist,
-    value,
-    sb,
-    *,
-    entropy_coef: float,
-    value_loss_coef: float,
-    **_ignored,
-) -> tuple[torch.Tensor, LossTerms]:
-    """Vanilla advantage actor-critic (no ratio clipping, no value clipping)."""
-    policy_entropy = dist.entropy().mean()
-    policy_loss = -(dist.log_prob(sb.action) * sb.advantage).mean()
-    value_loss = (value - sb.returnn).pow(2).mean()
-
-    loss = (
-        policy_loss
-        - entropy_coef * policy_entropy
-        + value_loss_coef * value_loss
-    )
-    terms = LossTerms(
-        policy_entropy_bits=policy_entropy.detach() / _LOG2,
-        value_mean=value.detach().mean(),
-        policy_loss=policy_loss.detach(),
-        value_loss=value_loss.detach(),
-    )
-    return loss, terms
-
-
-LOSSES = {
-    "ppo_clip": ppo_clip_loss,
-    "a2c": a2c_loss,
-}

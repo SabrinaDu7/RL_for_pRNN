@@ -89,7 +89,7 @@ def plot_layouts(
             + [f"{lm.shape} · {lm.color} @ {lm.anchor}" for lm in layout.landmarks]
             + [
                 f"anchor separation ≥ {layout.min_anchor_separation} cells",
-                f"landmark gap ≥ {layout.min_cell_gap()} · "
+                f"landmark gap ≥ {layout.min_cell_gap} · "
                 f"wall clearance ≥ {layout.min_wall_distance(walkable=walkable)}",
                 f"{layout.n_testable_offsets(walkable=walkable)} testable offsets "
                 f"(Chebyshev ≤ {OFFSET_RADIUS})",
@@ -110,7 +110,7 @@ def plot_config_layouts(cfg, *, path: str | Path | None = None):
     """Draw the layout set a `Config` actually resolves to.
 
     The point of routing through `resolve_layouts` rather than taking a list: it
-    answers "what will THIS run train on", which for a `LayoutPool` is a
+    answers "what will THIS run train on", which for a `Uniform` pool is a
     function of its size and seed and cannot be read off the config by eye.
     """
     from curious_george.envs.layouts import resolve_layouts

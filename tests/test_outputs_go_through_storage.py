@@ -15,7 +15,8 @@ Two ways the rule was actually broken, both of which this gate catches:
   `wandb/` came from. The ported copy in the questions repo still omits it,
   under a comment claiming all task output lives under the storage root.
 
-SCOPE: the library and its entry point. `tests/perf/` writes benchmark results
+SCOPE: the library and its entry point. The perf scripts (now under
+`throwaway/2026-09-06/perf/`) write benchmark results
 to caller-supplied paths and `throwaway/` is reference-only, so neither is
 subject to this.
 """

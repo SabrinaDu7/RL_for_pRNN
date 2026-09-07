@@ -112,17 +112,8 @@ def run_config(*, room: str, source: str, hiddensize: int, impassable: bool = Fa
     """
     from dataclasses import replace
 
-    from curious_george.configs import (
-        Config,
-        EnvBackend,
-        EnvCfg,
-        EnvShape,
-        EvalCfg,
-        EvalKind,
-        Frozen,
-        Selected,
-        Uniform,
-    )
+    from curious_george.configs import Config, EnvBackend, EnvCfg, EvalCfg, EvalKind
+    from curious_george.envs.layouts import EnvShape, Frozen, Selected, Uniform
 
     # `Frozen` picks the committed set that belongs to THIS shape, so the room
     # and its set cannot disagree - handing the L-room's set to a square room
@@ -225,8 +216,9 @@ def fixed_probe(*, pN, env, layout, n_trajs: int, steps: int):
     single collection is valid for the whole series - which is what makes two
     checkpoints comparable rather than each carrying its own rollout noise.
     """
+    from curious_george.configs import RAND_ACT_PROBA
+    from curious_george.log_and_store.storage import get_agent
     from curious_george.utils.enums import AgentType
-    from curious_george.log_and_store.storage import RAND_ACT_PROBA, get_agent
 
     env.env.unwrapped.landmarks = list(layout.landmarks)
     env.env.reset(seed=PROBE_SEED)

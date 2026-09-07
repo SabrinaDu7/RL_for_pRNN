@@ -3,6 +3,13 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+#: The two files a finished run writes side by side. ONE home: `training/loop.py`
+#: writes them, `storage.py` and `dev_env.py` find them, `checkpoint_series`
+#: globs the step-tagged archive copies. The policy file was `status.pt` until
+#: 2026-08-28 (`storage.LEGACY_POLICY_CKPT_FILENAME` still reads it).
+PRNN_CKPT_FILENAME = "predictiveNet_state.pt"
+POLICY_CKPT_FILENAME = "policy.pt"
+
 # Data classes
 ACMODEL_STATUS = dict[str, Any] # Will follow StatusCkptKeys
 class StatusCkptKeys(str, Enum):

@@ -151,11 +151,7 @@ def build_fixture() -> dict:
         batch_size=16,  # frames=64 -> 4 minibatches
         preprocess_obss=preprocess_obss,
         train_pN=True,
-        noise_mu=0,
-        noise_std=0.05,
         prnn_seqdur=SEQDUR,
-        intrinsic=False,
-        k_int=1,
         action_offset=action_offset,
         curious_agent=True,
         k_curious=1,

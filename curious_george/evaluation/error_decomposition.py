@@ -16,7 +16,7 @@ collects nothing, and returns small typed results. Two questions it answers:
 from dataclasses import dataclass
 
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Float, Int
 
 from curious_george.envs.palette import TILE_CLASS_NAMES, vocab_tensor
 from curious_george.models.prnn_adapter import FORWARD_IDX as FORWARD

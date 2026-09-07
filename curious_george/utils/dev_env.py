@@ -3,6 +3,7 @@ import os
 
 from dotenv import load_dotenv
 
+from curious_george.utils.checkpoints import POLICY_CKPT_FILENAME, PRNN_CKPT_FILENAME
 from curious_george.utils.enums import AgentType
 from prnn.utils import MinigridEnvNames
 
@@ -22,14 +23,8 @@ def get_env_var(var_name: str) -> str:
     return value
 
 
-# A finished main_train.py run always writes these two filenames side by side
-# (storage.save_pN_and_acmodel / prnn.utils.checkpoints.save_pN), so pointing
-# at the run DIRECTORY is enough to locate both.
-PRNN_CKPT_FILENAME = "predictiveNet_state.pt"
-ACMODEL_CKPT_FILENAME = "policy.pt"  # see storage.POLICY_CKPT_FILENAME
-
 # Task checkpoints written before 2026-07-30 named the pRNN file after the
-# trajectory count instead of using the canonical name above.
+# trajectory count instead of using the canonical name.
 LEGACY_PRNN_CKPT_GLOB = "pN-*.pt"
 
 
@@ -121,23 +116,6 @@ def get_ckpt_env_vars(agent_type: AgentType = AgentType.AC, env_type: MinigridEn
     return get_env_var("PRNN_RAND_CKPT"), get_env_var("ACMODEL_RAND_CKPT")
 
 
-def get_wandb_env_vars(omt: bool) -> tuple[str, str]:
-    """Get and validate Weights & Biases environment variables.
-    """
-    wandb_entity = get_env_var("WANDB_ENTITY")
-    wandb_project = get_env_var("WANDB_PROJECT_OMT" if omt else "WANDB_PROJECT")
-    return wandb_entity, wandb_project
-
-
-def get_logdir_env_var() -> str:
-    """Get and validate RL storage directory environment variable.
-    """
-    logdir = get_env_var("RL_STORAGE")
-    return logdir
-
-
-def get_root_dir_env_var() -> str:
-    """Get and validate root directory environment variable.
-    """
-    root_dir = get_env_var("ROOT_DIR")
-    return root_dir
+#: Kept under its old name for `tests/test_ckpt_interop.py`; the one home is
+#: `utils/checkpoints.py`.
+ACMODEL_CKPT_FILENAME = POLICY_CKPT_FILENAME

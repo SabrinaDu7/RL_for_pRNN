@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float
 
 from curious_george.evaluation.error_decomposition import per_tile_errors
 from curious_george.evaluation.surprisal_timing import (

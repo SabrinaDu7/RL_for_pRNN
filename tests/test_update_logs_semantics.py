@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 import torch
 
-from curious_george.rl.update.losses import LOSSES
+from curious_george.rl.update.losses import ppo_clip_loss
 from curious_george.rl.update.policy import update_policy
 
 SEED = 5
@@ -53,7 +53,7 @@ def algo_and_exps():
 def _run_with_spy(algo, acmodel, exps):
     """One update, recording every minibatch's LossTerms in order."""
     recorded = []
-    base = LOSSES[algo.loss_name]
+    base = ppo_clip_loss
 
     def spy(dist, value, sb, **kwargs):
         loss, terms = base(dist, value, sb, **kwargs)

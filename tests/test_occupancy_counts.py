@@ -10,7 +10,7 @@ disagree, and that the two index conventions are what the docstrings say.
 import numpy as np
 import plotly.graph_objects as go
 
-from curious_george import get_occupancy_fig, occupancy_counts
+from curious_george.evaluation.on_policy import get_occupancy_fig, occupancy_counts
 
 
 class _Env:

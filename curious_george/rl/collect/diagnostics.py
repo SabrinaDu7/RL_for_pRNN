@@ -11,12 +11,6 @@ import numpy as np
 from scipy.stats import entropy
 
 
-def check_large_jump(loc0: tuple, loc1: tuple) -> bool:
-    x0, y0 = loc0
-    x1, y1 = loc1
-    return (x1 - x0) ** 2 > 1 or (y1 - y0) ** 2 > 1
-
-
 @dataclass
 class LocationStats:
     """Persistent location-visit state (loc_history is a 5-collect window)."""

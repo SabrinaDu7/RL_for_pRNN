@@ -24,7 +24,6 @@ import json
 import time
 from pathlib import Path
 
-import numpy as np
 
 
 def build(*, pool: int, seed: int, n_train: int, n_held_out: int, room: str) -> dict:

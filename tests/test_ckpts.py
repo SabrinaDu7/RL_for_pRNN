@@ -10,7 +10,8 @@ from prnn.utils import (
 )
 from prnn.utils.Shell import FaramaMinigridShell
 
-from curious_george import get_obss_preprocessor, make_env, get_pN, get_SR_acmodel, seed, DEVICE, ACModelSR, ActorCriticAgent
+from curious_george import get_obss_preprocessor, make_env, get_pN, seed, DEVICE, ACModelSR, ActorCriticAgent
+from curious_george.log_and_store.storage import get_SR_acmodel
 from curious_george import get_ckpt_env_vars, AgentInputType, AgentType
 
 seed(2)

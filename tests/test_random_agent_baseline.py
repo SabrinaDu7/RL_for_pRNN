@@ -39,7 +39,7 @@ def test_random_actions_follow_the_projects_distribution():
     Drawn from `RAND_ACT_PROBA`, the same distribution the evaluation probes use,
     so the baseline's behaviour matches what the eval machinery assumes.
     """
-    from curious_george.log_and_store.storage import RAND_ACT_PROBA
+    from curious_george.configs import RAND_ACT_PROBA
     from curious_george.rl.collect.collector import _random_actions, random_action_probs
 
     torch.manual_seed(0)
@@ -56,7 +56,7 @@ def test_a_uniform_random_baseline_is_expressible():
     whose default is the ONE home, `configs.RAND_ACT_PROBA` - the four
     independent spellings are gone."""
     from curious_george.configs import RAND_ACT_PROBA
-    from curious_george.log_and_store.storage import RAND_ACT_PROBA as stored
+    from curious_george.configs import RAND_ACT_PROBA as stored
 
     base = PRESETS["multienv-fast"][1]
     cfg = dataclasses.replace(

@@ -66,7 +66,7 @@ def test_pairwise_rules_are_unconstrained_below_two_landmarks() -> None:
     for n in (0, 1):
         room = _rooms(n, pool=1)[0]
         assert room.min_anchor_separation == UNCONSTRAINED
-        assert room.min_cell_gap() == UNCONSTRAINED
+        assert room.min_cell_gap == UNCONSTRAINED
 
 
 def test_two_landmark_pools_still_respect_separation() -> None:

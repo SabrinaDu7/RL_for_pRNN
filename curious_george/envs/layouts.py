@@ -234,6 +234,7 @@ class Layout:
             default=UNCONSTRAINED,
         )
 
+    @property
     def min_cell_gap(self) -> int:
         """Smallest Chebyshev distance between cells of two DIFFERENT landmarks.
         UNCONSTRAINED below two landmarks: no pair exists to violate it."""
@@ -396,7 +397,7 @@ def enumerate_anchor_triples(
         painted = [c for lm in layout.landmarks for c in lm.cells]
         if len(painted) != len(set(painted)):
             continue
-        if layout.min_cell_gap() < min_cell_gap:
+        if layout.min_cell_gap < min_cell_gap:
             continue
         # Against the layout's OWN walkable set, not the empty room's. With
         # impassable landmarks the agent cannot stand on an object, so an offset
@@ -412,61 +413,6 @@ def enumerate_anchor_triples(
                 continue
             seen_orbits.add(orbit)
         out.append(triple)
-    return out
-
-
-def generate_layouts(
-    *,
-    walkable: frozenset[tuple[int, int]],
-    n: int,
-    seed: int,
-    min_cell_gap: int = 2,
-    min_anchor_separation: int = 6,
-    min_wall_distance: int = 2,
-    min_testable_offsets: int = 40,
-    dedupe_d4: bool = False,
-    span: int = 14,
-) -> list[Layout]:
-    """`n` layouts drawn uniformly without replacement from the admissible set.
-
-    Deterministic in `seed`. Raises if the room admits fewer than `n`, rather
-    than returning a short pool - a silently smaller pool would change the
-    experiment without changing the config.
-    """
-    triples = enumerate_anchor_triples(
-        walkable=walkable,
-        min_cell_gap=min_cell_gap,
-        min_anchor_separation=min_anchor_separation,
-        min_wall_distance=min_wall_distance,
-        min_testable_offsets=min_testable_offsets,
-        dedupe_d4=dedupe_d4,
-        span=span,
-    )
-    if len(triples) < n:
-        raise ValueError(
-            f"the room admits {len(triples)} anchor assignments under these "
-            f"constraints, fewer than the {n} requested; relax min_cell_gap="
-            f"{min_cell_gap}, min_anchor_separation={min_anchor_separation}, "
-            f"min_wall_distance={min_wall_distance} or min_testable_offsets="
-            f"{min_testable_offsets}"
-        )
-
-    rng = np.random.default_rng(seed)
-    chosen = rng.choice(len(triples), size=n, replace=False)
-    out = []
-    for idx in chosen:
-        colors = [
-            LANDMARK_COLORS[i]
-            for i in rng.choice(len(LANDMARK_COLORS), len(SHAPES), replace=False)
-        ]
-        out.append(
-            Layout(
-                tuple(
-                    Landmark(shape, color, anchor)
-                    for shape, color, anchor in zip(SHAPES, colors, triples[idx])
-                )
-            )
-        )
     return out
 
 
@@ -773,22 +719,19 @@ class EnvShape:
 class LandmarkKind:
     """One landmark's identity, independent of where it goes.
 
-    `size` is DECLARED BUT INERT: the stencil table lives in the minigrid fork,
-    so a 2-cell landmark needs a change there first. It is here because the axis
-    is what makes a shape experiment a config change rather than a refactor, and
-    because a field that does nothing is better than one that silently does
-    something else.
+    `impassable` paints the landmark as the fork's `Obstacle` instead of
+    `Floor`. The two render identically at every tile size, so this changes
+    the affordance and nothing about the image - which is what makes
+    walkable-vs-impassable a single-variable contrast. It was called `solid`
+    while inert; renamed because the fork already uses "solid" for a FILLED
+    STENCIL (`block3`), and the two are unrelated.
 
-    `impassable` is LIVE as of 2026-08-27: it paints the landmark as the fork's
-    `Obstacle` instead of `Floor`. The two render identically at every tile size,
-    so this changes the affordance and nothing about the image - which is what
-    makes walkable-vs-impassable a single-variable contrast. It was called
-    `solid` while inert; renamed because the fork already uses "solid" for a
-    FILLED STENCIL (`block3`), and the two are unrelated.
+    A `size` field used to sit here, declared and inert (the stencil table
+    lives in the minigrid fork); a field that does nothing is a misleading
+    field, so it went 2026-09-06.
     """
 
     stencil: str
-    size: int = 3
     impassable: bool = False
 
 

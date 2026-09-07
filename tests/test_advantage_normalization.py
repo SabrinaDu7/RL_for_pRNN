@@ -13,7 +13,7 @@ import pytest
 import torch
 
 from curious_george.configs import EnvBackend
-from curious_george.rl.update.losses import LOSSES
+from curious_george.rl.update.losses import ppo_clip_loss
 
 
 class _Batch:
@@ -57,7 +57,7 @@ def _policy_grad_norm(scale: float, *, normalize: bool, n: int = 512, seed: int 
         value=torch.randn(n, generator=g) * scale,
         returnn=torch.randn(n, generator=g) * scale,
     )
-    loss, _ = LOSSES["ppo_clip"](
+    loss, _ = ppo_clip_loss(
         dist, torch.randn(n, generator=g) * scale, sb,
         clip_eps=0.2, entropy_coef=0.0, value_loss_coef=0.0,
         normalize_advantage=normalize,
@@ -70,8 +70,8 @@ def test_default_is_off_and_bitwise_unchanged():
     """A new field must not move the existing default path."""
     dist, value, sb = _inputs(1.0)
     kw = dict(clip_eps=0.2, entropy_coef=0.01, value_loss_coef=1.0)
-    a, _ = LOSSES["ppo_clip"](dist, value, sb, **kw)
-    b, _ = LOSSES["ppo_clip"](dist, value, sb, normalize_advantage=False, **kw)
+    a, _ = ppo_clip_loss(dist, value, sb, **kw)
+    b, _ = ppo_clip_loss(dist, value, sb, normalize_advantage=False, **kw)
     assert torch.equal(a, b)
 
 
@@ -99,9 +99,9 @@ def test_whitening_does_NOT_fix_the_value_term():
     So a fixed `value_loss_coef` still means different things over a run."""
     dist, value, sb = _inputs(1.0)
     kw = dict(clip_eps=0.2, entropy_coef=0.0, normalize_advantage=True)
-    big, _ = LOSSES["ppo_clip"](dist, value, sb, value_loss_coef=1.0, **kw)
+    big, _ = ppo_clip_loss(dist, value, sb, value_loss_coef=1.0, **kw)
     dist2, value2, sb2 = _inputs(0.2)
-    small, _ = LOSSES["ppo_clip"](dist2, value2, sb2, value_loss_coef=1.0, **kw)
+    small, _ = ppo_clip_loss(dist2, value2, sb2, value_loss_coef=1.0, **kw)
     assert abs(float(big)) > 5 * abs(float(small)), (
         "the value term no longer scales with the reward - if this fails, "
         "reward normalization may already be unnecessary"
@@ -120,7 +120,7 @@ def test_a_constant_advantage_does_not_divide_by_zero():
     standard deviation vanishes. It must degrade, not produce inf."""
     dist, value, sb = _inputs(1.0)
     sb.advantage = torch.full_like(sb.advantage, 0.7)
-    loss, _ = LOSSES["ppo_clip"](
+    loss, _ = ppo_clip_loss(
         dist, value, sb, clip_eps=0.2, entropy_coef=0.01,
         value_loss_coef=1.0, normalize_advantage=True,
     )

@@ -124,7 +124,6 @@ def log_run_constants(cfg) -> None:
 
 def log_update(logs: dict, stats: UpdateStats, mi_policy: float | None) -> None:
     wandb.log(build_update_log(logs, stats, mi_policy))
-    wandb.log({"subroom_ids": wandb.Histogram(logs["subroom_ids"])})
 
 
 def log_spatial(metrics: dict, nameext: str) -> None:

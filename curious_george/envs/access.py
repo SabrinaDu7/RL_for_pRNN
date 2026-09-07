@@ -1,7 +1,7 @@
 """Accessors for reaching into the wrapped MiniGrid environment.
 
 Single home for wrapper reach-ins so the rest of the code never spells
-`env.env.env...` (see refactor plan Phase 3 for the full accessor set).
+`env.env.env...`.
 """
 
 import torch
@@ -28,75 +28,10 @@ def grid_shape(shell: FaramaMinigridShell) -> tuple[int, int]:
     return grid.width, grid.height
 
 
-def subroom_size(shell: FaramaMinigridShell) -> int | None:
-    """FourRooms subroom size, or None for envs without subrooms."""
-    return getattr(base_env(shell), "subroom_size", None)
-
-
-def get_new_obj_pos(shell: FaramaMinigridShell) -> list[int] | None:
-    """Goal position of goal-bearing envs (e.g. LRoomGoal)."""
-    return base_env(shell).new_obj_pos
-
-
-def get_subroom_id(
-    agent_pos: Integer[torch.Tensor, "T 2"], subroom_size: int
-) -> Integer[torch.Tensor, "B"]:
-    """Helper method to get the subroom ID based on agent position and subroom size."""
-
-    col = (agent_pos[:, 0] > subroom_size).long()
-    row = (agent_pos[:, 1] > subroom_size).long()
-
-    return row * 2 + col + 1
-
-
-# ---------------------------------------------------------------------------
-# Visualization helpers (state / observation / prediction / hidden-state images)
-# ---------------------------------------------------------------------------
-
-ACTION_NAMES = ("left", "right", "forward", "stay")
-
-
-def render_env(shell) -> "np.ndarray":
-    """Current RGB frame of the full environment (agent pos/dir included)."""
-    return shell.render(mode=None)
-
-
-def obs_image(obs: dict, upscale: int = 24):
-    """Raw observation dict -> upscaled RGB array in [0, 1] for imshow."""
-    import numpy as np
-
-    img = np.asarray(obs["image"], dtype=float)
-    if img.max() > 1.0:
-        img = img / 255.0
-    return np.kron(img, np.ones((upscale, upscale, 1)))
-
-
-def pred_image(shell, row: torch.Tensor, upscale: int = 24):
-    """One prediction/target row (X,) -> upscaled RGB array in [0, 1].
-
-    Uses the shell's own pred2np decoding (expects a (phase, T, X) tensor).
-    """
-    import numpy as np
-
-    img = shell.pred2np(row.detach().cpu()[None, None, :])[0]
-    img = np.clip(np.asarray(img, dtype=float), 0.0, 1.0)
-    return np.kron(img, np.ones((upscale, upscale, 1)))
-
-
-def hidden_image(h: torch.Tensor, width: int = 25):
-    """Hidden-state / SR vector -> 2D heatmap array (pad to a width-column grid)."""
-    import numpy as np
-
-    v = h.detach().cpu().flatten().numpy()
-    pad = (-len(v)) % width
-    v = np.pad(v, (0, pad), constant_values=np.nan)
-    return v.reshape(-1, width)
-
-
 # --- walkable geometry -------------------------------------------------------
-# Promoted out of throwaway/ported/analysis_OMT.py 2026-08-25: ten call sites across the
-# probe, the task code and the figure scripts, so this is env geometry the
-# library owns, not analysis.
+# Promoted out of the OMT analysis 2026-08-25: ten call sites across the probe,
+# the task code and the figure scripts, so this is env geometry the library
+# owns, not analysis.
 
 def get_walkable_mask(env: FaramaMinigridShell) -> Integer[torch.Tensor, "W H"]:
     """Return a boolean mask of walkable positions, shape ``[W, H]``.

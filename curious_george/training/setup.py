@@ -18,7 +18,6 @@ from prnn.utils import PredictiveNet, load_pN
 from curious_george.log_and_store import provenance
 from curious_george.utils.common import get_device, seed as seed_everything
 from curious_george.envs.factory import make_env
-from curious_george.configs import EnvBackend
 from curious_george.models.policy import ACModelSR
 from curious_george.rl.algo import PredictivePPOAlgo
 from curious_george.rl.collect.format import get_obss_preprocessor
@@ -26,7 +25,6 @@ from curious_george.log_and_store.storage import (
     create_folders_if_necessary,
     get_agent,
     get_model_dir,
-    get_video_dir,
     prediction_loss_kwargs,
 )
 from curious_george.utils.checkpoints import (
@@ -34,7 +32,7 @@ from curious_george.utils.checkpoints import (
     load_statedict_from_acmodel_status,
     status_optimizer_matches,
 )
-from curious_george.utils.enums import AgentType
+from curious_george.utils.enums import AgentInputType, AgentType
 from curious_george.training.schedule import TrainingSchedule
 
 
@@ -42,7 +40,6 @@ from curious_george.training.schedule import TrainingSchedule
 class RunContext:
     run_name: str
     model_dir: str
-    video_dir: str
     wandb_log: bool
 
 
@@ -74,12 +71,6 @@ def setup_run(cfg) -> RunContext:
     model_dir = get_model_dir(f"{run_name}/")
     create_folders_if_necessary(model_dir)
 
-    if cfg.run.video_every_episodes != 0:
-        video_dir = get_video_dir(f"{run_name}/")
-        create_folders_if_necessary(video_dir)
-    else:
-        video_dir = ""
-
     # Before this, main_train.py only PRINTED the resolved config, so a finished
     # run carried no record of what produced it and could not be placed on any
     # of the timelines in docs/invalid-runs.md.
@@ -96,12 +87,7 @@ def setup_run(cfg) -> RunContext:
     )
 
     print("\n\n\nLOGGING TO: ", model_dir, "\n\n\n")
-    return RunContext(
-        run_name=run_name,
-        model_dir=model_dir,
-        video_dir=video_dir,
-        wandb_log=cfg.run.wandb,
-    )
+    return RunContext(run_name=run_name, model_dir=model_dir, wandb_log=cfg.run.wandb)
 
 
 def setup_env(cfg, seed_offset: int = 0, landmarks: list | None = None):
@@ -117,7 +103,7 @@ def setup_env(cfg, seed_offset: int = 0, landmarks: list | None = None):
     return make_env(
         **extra,
         env_key=cfg.env.env_name,
-        input_type=cfg.arch_policy.input_type.value,
+        input_type=AgentInputType.H.value,
         seed=cfg.run.seed + 10000 + seed_offset,
         act_enc=cfg.arch_prnn.action_encoding.value,
         agent_start_pos=None,
@@ -152,14 +138,6 @@ def setup_envs(cfg) -> list:
             layouts=layouts,
             layout_seed=cfg.run.seed,
         )
-    if num_envs > 1 and cfg.collect.backend in (EnvBackend.ASYNC, EnvBackend.ASYNC_TABLE):
-        from curious_george.envs.vector import AsyncShellPool
-
-        # workers use the same per-index seeds as the serial list; the eval
-        # shell (analysis/plotting/pRNN services) gets its own stream so eval
-        # rollouts no longer perturb training env streams
-        eval_shell = setup_env(cfg, seed_offset=1000 * num_envs)
-        return AsyncShellPool(cfg, eval_shell)
     return [setup_env(cfg, seed_offset=1000 * i) for i in range(num_envs)]
 
 
@@ -186,8 +164,6 @@ def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
         wandb_log=wandb_log,
         **prediction_loss_kwargs(cfg.arch_prnn, env),
     )
-    predictiveNet.env_shell.hd_trans = np.array([-1, 1, 0, 0])  # TODO: remove later
-    # (already the FaramaMinigridShell default; kept for parity)
 
     if cfg.run.prnn_ckpt is not None:
         load_pN(
@@ -260,8 +236,6 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         batch_size=schedule.ppo_batch_size,
         preprocess_obss=preprocess_obss,
         train_pN=cfg.train_prnn.train,
-        noise_mu=cfg.arch_prnn.noise_mean,
-        noise_std=cfg.arch_prnn.noise_std,
         prnn_seqdur=prnn_seqdur,
         batched_wm=cfg.train_prnn.batched,
         cuda_graph=cfg.train_prnn.cuda_graph,
@@ -276,8 +250,6 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         wm_pool_group=cfg.train_prnn.episodes_per_grad_step if cfg.train_prnn.batched else 0,
         policy_cuda_graph=cfg.train_policy.cuda_graph,
         rollout_cuda_graph=cfg.collect.rollout_cuda_graph,
-        intrinsic=cfg.train_policy.intrinsic,
-        k_int=cfg.train_policy.k_intrinsic,
         action_offset=cfg.arch_prnn.action_offset,
         random_actions=cfg.arch_policy.agent is AgentType.RANDOM,
         random_action_probs=cfg.arch_policy.random_action_probs,
@@ -287,7 +259,6 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         k_count=cfg.train_policy.k_count,
         normalize_reward=cfg.train_policy.normalize_reward,
         reward_alignment=cfg.train_policy.reward_alignment.value,
-        loss="ppo_clip",
         adam_betas=list(cfg.train_policy.optim_betas),
     )
 

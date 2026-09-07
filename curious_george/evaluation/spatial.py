@@ -12,12 +12,12 @@ long rollout never resets the pRNN state; training does, every seqdur steps).
 All trajectories are collected and pooled under ONE CPU device move, and each
 metric is computed once on the pooled activity.
 
-Logging: these are pRNN metrics and are logged by prnn, not by this repo
-(Sabrina, 2026-07-09). The pooled path computes them here TEMPORARILY and
-returns them without logging; moving computation+logging into prnn (on
-precomputed activity) is the next refactor phase. The legacy path
-(trainDecoder=True -> prnn's calculateSpatialRepresentation) still logs
-internally as always.
+Logging: these are pRNN metrics and are logged by prnn's `calculateSpatialMetrics`
+when the net was built with `wandb_log=True` (Sabrina, 2026-07-09); this
+module adds the coverage numbers `si_coverage` computes and the multi-room
+comparison. (A second path that ran prnn's own long rollout plus a decoder
+fit was deleted 2026-09-06: no preset selected it and its only test was
+`slow`-deselected.)
 """
 
 import numpy as np
@@ -25,53 +25,8 @@ import torch
 from jaxtyping import Float
 
 from prnn.utils import PredictiveNet
-from prnn.analysis.representationalGeometryAnalysis import (
-    representationalGeometryAnalysis as RGA,
-)
 
 from curious_george.models.device import eval_mode, on_device
-
-
-def compute_sleep_wake_dist(
-    pN: PredictiveNet,
-    env,
-    agent,
-    *,
-    sleepstd: float = 0.03,
-    wake_timesteps: int = 5000,
-    sleep_timesteps: int = 500,
-) -> float:
-    """Median cosine distance from each sleep frame to its nearest wake frame.
-
-    Standalone variant that collects its own wake rollout; the training loop
-    uses evaluate_spatial_representation, which derives SWdist from the shared
-    pooled rollouts instead. Expects pN on CPU (numpy interop).
-    """
-    obs, act, state, _ = pN.collectObservationSequence(env, agent, wake_timesteps)
-    with torch.no_grad():
-        _, _, h = pN.predict(obs, act)
-    wake_h = torch.mean(h, dim=0, keepdims=True)[0]
-    return _sleep_wake_dist(
-        pN, wake_h.detach().numpy(), sleepstd=sleepstd, sleep_timesteps=sleep_timesteps
-    )
-
-
-def _sleep_wake_dist(
-    pN: PredictiveNet,
-    wake_h: Float[np.ndarray, "N H"],
-    *,
-    sleepstd: float,
-    sleep_timesteps: int,
-) -> float:
-    """SWdist from precomputed wake activity (mirrors prnn predictiveNet.py's
-    internal computation: noise-driven spontaneous rollout + RGA distance)."""
-    with torch.no_grad():
-        _, sleep_h, _ = pN.spontaneous(sleep_timesteps, 0, sleepstd)
-    sleep_h = torch.mean(sleep_h, dim=0, keepdims=True)[0]
-    swdist, _, _ = RGA.calculateSleepWakeDist(
-        wake_h, sleep_h.detach().numpy(), metric="cosine"
-    )
-    return float(swdist)
 
 
 def collect_pooled_activity(
@@ -165,8 +120,6 @@ def evaluate_spatial_representation(
     *,
     n_trajs: int = 8,
     traj_timesteps: int = 256,
-    trainDecoder: bool = False,
-    legacy_timesteps: int = 15000,
     sleepstd: float = 0.03,
     sleep_timesteps: int = 500,
     onset_transient: int = 20,
@@ -175,13 +128,11 @@ def evaluate_spatial_representation(
     probe_seed: int | None = None,
     wandb_nameext: str = "",
 ) -> dict:
-    """Run the spatial eval on CPU and return {"sRSA", "SWdist", "SI"}.
+    """Run the spatial eval on CPU and return {"sRSA", "SWdist", "SI"} plus the
+    `si_coverage` numbers.
 
-    Default path: n_trajs trajectories of traj_timesteps steps (match
-    predNet.seqdur so eval statistics match training), pooled, one pass per
-    metric. trainDecoder=True selects the legacy prnn path (own rollout of
-    legacy_timesteps steps, decoder fit, prnn-internal wandb logging) plus a
-    second rollout for the returned SWdist.
+    n_trajs trajectories of traj_timesteps steps (match `collect.episode_steps`
+    so eval statistics match training), pooled, one pass per metric.
 
     Moves pN (and the agent's AC model, if any) to CPU for the duration and
     restores placement after.
@@ -194,7 +145,6 @@ def evaluate_spatial_representation(
         return _evaluate_spatial_inner(
             pN, env, agent, modules,
             n_trajs=n_trajs, traj_timesteps=traj_timesteps,
-            trainDecoder=trainDecoder, legacy_timesteps=legacy_timesteps,
             sleepstd=sleepstd, sleep_timesteps=sleep_timesteps,
             onset_transient=onset_transient,
             active_time_threshold=active_time_threshold, rng=rng,
@@ -203,9 +153,9 @@ def evaluate_spatial_representation(
 
 
 def _evaluate_spatial_inner(
-    pN, env, agent, modules, *, n_trajs, traj_timesteps, trainDecoder,
-    legacy_timesteps, sleepstd, sleep_timesteps, onset_transient,
-    active_time_threshold, rng, probe_seed, wandb_nameext,
+    pN, env, agent, modules, *, n_trajs, traj_timesteps, sleepstd,
+    sleep_timesteps, onset_transient, active_time_threshold, rng, probe_seed,
+    wandb_nameext,
 ) -> dict:
     if probe_seed is not None:
         # The env owns its OWN Generator (gymnasium `np_random`), which
@@ -234,27 +184,6 @@ def _evaluate_spatial_inner(
     # is the model's dynamics, and it is what generates the "sleep" activity
     # SWdist compares against.
     with eval_mode(modules), on_device(modules, "cpu"):
-        if trainDecoder:
-            # legacy path: prnn does its own rollout, figures, decoder fit and
-            # wandb logging; SWdist needs the second rollout
-            _, SI, _, sRSA = pN.calculateSpatialRepresentation(
-                env,
-                agent,
-                timesteps=legacy_timesteps,
-                trainDecoder=True,
-                trainHDDecoder=False,
-                saveTrainingData=False,
-                bitsec=False,
-                calculatesRSA=True,
-                sleepstd=sleepstd,
-                wandb_nameext=wandb_nameext,
-            )
-            swdist = compute_sleep_wake_dist(
-                pN, env, agent, sleepstd=sleepstd, wake_timesteps=legacy_timesteps
-            )
-            return {"sRSA": sRSA, "SWdist": swdist, "SI": SI}
-
-        # ---- pooled multi-trajectory path ----
         h_pool, pos_pool = collect_pooled_activity(
             pN, env, agent,
             n_trajs=n_trajs,
