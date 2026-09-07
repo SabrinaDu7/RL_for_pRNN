@@ -52,6 +52,13 @@ read, and a loss selector with one option). Both weight hashes and the whole
 derived schedule were identical in all four compositions - the fixture shrank,
 nothing it measures moved. The gate that shows this is the comparison output
 before the recapture, recorded in docs/claude_logs/cleanup-2026-09-06.md.
+
+RE-PINNED A THIRD TIME, on 2026-09-07, for one kwarg that stopped existing:
+    reward_alignment
+retired with the "legacy" alignment (rewards.py::REWARD_TARGET_OFFSET is the
+one home now). Exactly four leaves moved, `<composition>.kwargs.reward_alignment:
+'next_obs' -> '<absent>'` in each of the four compositions; both weight hashes
+and the whole derived schedule identical. Same log as the second re-pin.
 """
 
 import hashlib

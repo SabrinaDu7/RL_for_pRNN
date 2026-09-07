@@ -145,7 +145,7 @@ def test_boundary_bootstrap_reads_the_new_episode(offset):
     ac = ACModelSR(obs_space, env.action_space, HIDDEN, False, True, True)
     algo = PredictivePPOAlgo(
         env, ac, pN, torch.device("cpu"), num_frames=2 * L, prnn_seqdur=L,
-        action_offset=offset, curious_agent=True, reward_alignment="next_obs",
+        action_offset=offset, curious_agent=True,
         train_pN=False, epochs=1, batch_size=2 * L, preprocess_obss=pre,
     )
     exps, _ = algo.collect_experiences()
@@ -229,8 +229,8 @@ def test_batched_tracker_matches_two_serial_streams(offset):
 def test_device_backend_matches_the_cpu_table_at_either_offset(offset):
     """The fast path must compute the same rollout as the reference one.
 
-    `test_device_collector.py` makes this comparison across `reward_alignment`
-    but not across `action_offset`, and the A/B runs used the device backend -
+    `test_device_collector.py` makes this comparison at offset 0 only, and the
+    A/B runs used the device backend -
     so the combination that actually trained was the one nothing checked. The
     offset touches `prediction_errors_device`, `train_on_episodes_batched`,
     `step_device` and the captured rollout body, none of which the serial tests

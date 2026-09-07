@@ -65,7 +65,6 @@ def test_the_fixture_is_the_circuit_it_claims(reference_and_fresh):
     regression. Name the mismatch instead."""
     reference, fresh = reference_and_fresh
     assert reference["meta"]["action_offset"] == fresh["meta"]["action_offset"]
-    assert reference["meta"]["reward_alignment"] == fresh["meta"]["reward_alignment"]
 
 
 @pytest.mark.parametrize("metric", METRICS)

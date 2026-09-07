@@ -68,7 +68,6 @@ class PredictivePPOAlgo:
         k_curious=1,
         k_count=0.0,
         normalize_reward=False,
-        reward_alignment="legacy",
         batched_wm=False,
         cuda_graph=False,
         batched_curiosity=False,
@@ -129,7 +128,6 @@ class PredictivePPOAlgo:
         self.normalize_advantage = normalize_advantage
         self.curious_agent = curious_agent
         self.k_curious = k_curious
-        self.reward_alignment = reward_alignment
         assert self.num_frames % self.num_envs == 0, "num_frames must divide by num_envs"
         if self.num_envs > 1:
             T = self.num_frames // self.num_envs
@@ -364,7 +362,6 @@ class PredictivePPOAlgo:
                 random_actions=self.random_actions,
                 random_action_probs=self.random_action_probs,
                 curious_agent=self.curious_agent,
-                reward_alignment=self.reward_alignment,
                 discount=self.discount,
                 gae_lambda=self.gae_lambda,
                 k_curious=self.k_curious,

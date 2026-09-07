@@ -81,9 +81,20 @@ DEVICE = torch.device("cpu")
 
 REPO = Path(__file__).resolve().parents[2]
 # _v1 was captured under the pale (COLORS/2) rendering; _v2 from minigrid
-# 22ef960 (full-colour landmarks) on. Same reviewed line as golden_v5 - see
-# FIXTURE VERSIONS in capture_golden.py and docs/invalid-runs.md 2026-08-30.
-OUT = REPO / "tests" / "golden" / "golden_eval_v2.pt"
+# 22ef960 (full-colour landmarks) on (same reviewed line as golden_v5 - see
+# FIXTURE VERSIONS in capture_golden.py and docs/invalid-runs.md 2026-08-30);
+# _v3 from the retirement of the "legacy" reward alignment on (2026-09-07,
+# same line as golden_v6). Measured against _v2 before the recapture: the
+# offset-0 row moves in exactly three leaves - `rollout.curious_rewards` and
+# `prnn_loss` (its mean), because a[i] is now rewarded with row i+1 as every
+# configured run was, and `SWdist` in the fourth decimal (0.037325 ->
+# 0.037201), because the reward pass now runs one extra noisy step per
+# segment and the sleep simulation SWdist compares against draws from the
+# same torch stream afterwards (`rng=None` below) - actions, SRs, locs,
+# mi_policy, sRSA and every SI value are bitwise the _v2 numbers. The
+# offset-1 row is bitwise _v2 in every leaf (it always rewarded a[i] with
+# row i+1).
+OUT = REPO / "tests" / "golden" / "golden_eval_v3.pt"
 
 #: The circuits this fixture is captured for. `action_offset` is the whole
 #: circuit (configs.py::ArchPrnnCfg): 0 pairs obs[t] with the action chosen
@@ -96,7 +107,7 @@ OUT = REPO / "tests" / "golden" / "golden_eval_v2.pt"
 #: the Circuit refactor churns - had no pinned values at all: tests/
 #: test_action_offset.py pins EQUIVALENCES there (device == table, batched ==
 #: serial) but never a value.
-CIRCUIT_FIXTURES = {0: OUT, 1: REPO / "tests" / "golden" / "golden_eval_offset1_v2.pt"}
+CIRCUIT_FIXTURES = {0: OUT, 1: REPO / "tests" / "golden" / "golden_eval_offset1_v3.pt"}
 
 
 def fixture_path(action_offset: int) -> Path:
@@ -153,15 +164,8 @@ def build_fixture(action_offset: int = 0) -> dict:
         batch_size=256, preprocess_obss=preprocess_obss, train_pN=True,
         prnn_seqdur=SEQDUR,
         action_offset=action_offset,
-        # ⚠️ THE TWO ROWS DIFFER IN TWO THINGS, DELIBERATELY. Offset 0 keeps
-        # `PredictivePPOAlgo`'s own default of "legacy", which is what the
-        # historical fixture was captured under and what keeps it bitwise (note
-        # the CONFIG default is "next_obs" - algo.py:119 and configs.py differ).
-        # Offset 1 has no such choice: at that circuit row t's error is caused
-        # by the action row t encodes, so the reward for a[i] is row i+1, and
-        # `reward_pass_inputs` asserts it. Each row therefore gates its OWN
-        # path; never read one against the other.
-        **({"reward_alignment": "next_obs"} if action_offset else {}),
+        # Each row gates its OWN circuit; never read one against the other
+        # (CIRCUIT_FIXTURES). Both reward a[i] with row i+1 (rewards.py).
         curious_agent=True, k_curious=1,
     )
 
@@ -204,7 +208,6 @@ def build_fixture(action_offset: int = 0) -> dict:
         "meta": {
             "seed": SEED, "frames": FRAMES, "seqdur": SEQDUR,
             "action_offset": action_offset,
-            "reward_alignment": "next_obs" if action_offset else "legacy",
             "ckpt": CKPT_DIR.name, "torch": torch.__version__,
         },
         "metrics": {

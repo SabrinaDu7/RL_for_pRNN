@@ -258,7 +258,6 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
         k_curious=cfg.train_policy.k_curious,
         k_count=cfg.train_policy.k_count,
         normalize_reward=cfg.train_policy.normalize_reward,
-        reward_alignment=cfg.train_policy.reward_alignment.value,
         adam_betas=list(cfg.train_policy.optim_betas),
     )
 

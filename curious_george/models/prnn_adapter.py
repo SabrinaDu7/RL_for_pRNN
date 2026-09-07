@@ -657,14 +657,15 @@ class PRNNAdapter:
 
         ALIGNMENT CONTRACT (see throwaway/ported/docs_legacy/refactor_baseline.md flaw #1): with
         predOffset=0, prediction row t targets obss[t].
-        - target_offset=0 (legacy): MSEs[i] is the error reconstructing
-          obss[i], the observation BEFORE action i.
-        - target_offset=1 (next_obs): MSEs[i] is the error on the observation
-          action i PRODUCED. The episode's final observation gets a real
-          prediction row too: the pass is extended by one step that feeds
-          last_obs with a zeroed action row (the same zero-action convention
-          init_sr uses), so every action's reward is computed the same way -
-          no boundary special case.
+        - target_offset=1 (`rewards.REWARD_TARGET_OFFSET`, what training
+          uses): MSEs[i] is the error on the observation action i PRODUCED.
+          The episode's final observation gets a real prediction row too: the
+          pass is extended by one step that feeds last_obs with a zeroed
+          action row (the same zero-action convention init_sr uses), so every
+          action's reward is computed the same way - no boundary special case.
+        - target_offset=0: MSEs[i] is the error reconstructing obss[i], the
+          observation BEFORE action i - the unshifted pass, read only by
+          tests/test_reward_alignment.py as the oracle for the shift.
         """
         assert target_offset in (0, 1)
         segment_lengths = np.diff(done_indices)
@@ -838,8 +839,8 @@ class PRNNAdapter:
         if self.action_offset:
             assert target_offset == 1, (
                 "at action_offset=1 row t's error is caused by the action row t "
-                "encodes, a[t-1], so the reward for a[i] is row i+1 - that is "
-                f"reward_alignment='next_obs'; got target_offset={target_offset}"
+                "encodes, a[t-1], so the reward for a[i] is row i+1 - "
+                f"rewards.REWARD_TARGET_OFFSET; got target_offset={target_offset}"
             )
             return list(obss_ep) + [last_obs], acts_ep
         if target_offset == 0:
@@ -856,9 +857,9 @@ class PRNNAdapter:
         """One episode's reward-pass predictions, row i aligned to action i.
 
         Returns (pred_rows, target_rows, hidden_rows, mses), each with
-        len(acts_ep) rows: under target_offset=0 (legacy) row i targets
-        obss_ep[i]; under target_offset=1 (next_obs) row i targets the obs
-        action i produced (last row's target is last_obs, predicted via the
+        len(acts_ep) rows: under target_offset=1 (training) row i targets the
+        obs action i produced; under target_offset=0 (the tests' oracle) row i
+        targets obss_ep[i] (last row's target is last_obs, predicted via the
         appended zero-action step). hidden_rows are the pRNN states at each
         prediction row.
         """

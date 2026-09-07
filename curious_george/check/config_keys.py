@@ -53,7 +53,6 @@ RENAMED: dict[str, str] = {
     "rl.ppo_clip_eps": "train_policy.clip_eps",
     "rl.cuda_graph": "train_policy.cuda_graph",
     "rl.k_curious": "train_policy.k_curious",
-    "rl.reward_alignment": "train_policy.reward_alignment",
     # predNet.* -> arch_prnn / train_prnn / collect
     "predNet.hiddensize": "arch_prnn.hidden_size",
     "predNet.pRNNtype": "arch_prnn.prnn_type",
@@ -116,6 +115,8 @@ GONE: dict[str, str] = {
     "exp.eval_timesteps": "dropped with the legacy decoder-fit spatial eval",
     "exp.eval_decoder": "dropped with the legacy decoder-fit spatial eval",
     "exp.async_envs": "dropped; the process-parallel pool had no preset and no launcher",
+    "rl.reward_alignment": "dropped 2026-09-07; the curiosity reward credits an action with "
+                           "the error on the observation it produced (rewards.py::REWARD_TARGET_OFFSET)",
     "rl.frames": "derived - collect.num_envs * episodes_per_env * episode_steps",
     "rl.episodes_total": "derived - train_prnn.total_grad_steps * episodes_per_grad_step",
     "rl.ppo_batch_size": "derived - ppo_epochs * env_steps / train_policy.total_grad_steps",

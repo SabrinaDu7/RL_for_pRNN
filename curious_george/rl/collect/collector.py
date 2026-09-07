@@ -23,10 +23,7 @@ from curious_george.envs.vector import DeviceTableShellPool
 from curious_george.rl.collect.diagnostics import LocationStats, new_joint_probabilities
 from curious_george.rl.collect.rollout_graph import RolloutBuffers
 from curious_george.rl.update.advantage import compute_gae
-from curious_george.rl.update.rewards import (
-    REWARD_ALIGNMENTS,
-    compute_curious_rewards,
-)
+from curious_george.rl.update.rewards import REWARD_TARGET_OFFSET, compute_curious_rewards
 from curious_george.utils.timing import timer
 
 
@@ -108,7 +105,6 @@ class RolloutConfig:
     """The distribution `random_actions` samples; None = the project default
     (`configs.RAND_ACT_PROBA`). Uniform makes the OTHER random baseline."""
     curious_agent: bool = False
-    reward_alignment: str = "legacy"
     discount: float = 0.99
     gae_lambda: float = 0.95
     k_curious: float = 1.0
@@ -643,7 +639,7 @@ def collect_rollout(
                     directions_tb=device_directions,
                     actions_tb=actions,
                     last_batches=device_last_batches,
-                    target_offset=REWARD_ALIGNMENTS[cfg.reward_alignment],
+                    target_offset=REWARD_TARGET_OFFSET,
                 )
             else:
                 actions_np = f_actions.cpu().numpy()
@@ -654,7 +650,6 @@ def collect_rollout(
                     done_indices=done_indices,
                     last_observations=last_observations,
                     num_frames=B * T,
-                    alignment=cfg.reward_alignment,
                 )
 
     # Diagnostics and the serial world-model fallback consume NumPy actions;

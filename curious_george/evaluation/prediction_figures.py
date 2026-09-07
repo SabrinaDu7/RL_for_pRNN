@@ -467,7 +467,7 @@ def trace_circuit(
         policy_value=pad(np.asarray(values, dtype=np.float32), np.float32("nan")),
         # Row t's error is the surprise caused by the action row t encodes, and
         # that is a[t-1] for BOTH circuits - offset 0 reads it one row late
-        # (`reward_alignment="next_obs"`), offset 1 has it in the row itself.
+        # (`rewards.REWARD_TARGET_OFFSET`), offset 1 has it in the row itself.
         rewards_action=np.where(np.arange(T) - 1 >= 0, np.arange(T) - 1, -1),
         num_acts=adapter.num_acts,
         num_hd=adapter.num_hd,

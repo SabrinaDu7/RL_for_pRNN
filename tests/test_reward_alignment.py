@@ -1,7 +1,9 @@
 """Unit tests for curiosity-reward time alignment and world-model conventions.
 
-Uses stubs (no real pRNN/env) so the alignment contract is pinned at the
-rewards.py level: which buffer index each action's reward comes from.
+The contract (rewards.py): action i is rewarded with the prediction error on
+the observation it produced. A stub pins which target offset rewards.py asks
+the adapter for; the real-net tests pin what that offset MEANS, against the
+adapter's unshifted pass (`target_offset=0`, the oracle nothing else reads).
 """
 
 import numpy as np
@@ -16,39 +18,24 @@ from curious_george.models.device import on_device, eval_mode
 
 
 class StubAdapter:
-    """prediction_errors returns [0, 1, ...] (+100 when target_offset=1) so the
-    selected alignment is legible from the values."""
+    """prediction_errors returns [0, 1, ...] + 100 * target_offset, so the
+    offset rewards.py asked for is legible from the values."""
 
     def prediction_errors(self, *, obss, actions_np, done_indices,
                         last_observations, num_frames, target_offset=0):
         return torch.arange(num_frames, dtype=torch.float32) + 100 * target_offset
 
 
-def _rewards(alignment, done_indices, num_frames=8):
-    return compute_curious_rewards(
+def test_the_reward_is_the_error_on_the_observation_the_action_produced():
+    out = compute_curious_rewards(
         StubAdapter(),
-        obss=[None] * num_frames,
-        actions_np=np.zeros(num_frames),
-        done_indices=done_indices,
-        last_observations=[None] * (len(done_indices) - 1),
-        num_frames=num_frames,
-        alignment=alignment,
+        obss=[None] * 8,
+        actions_np=np.zeros(8),
+        done_indices=[0, 8],
+        last_observations=[None],
+        num_frames=8,
     )
-
-
-def test_legacy_selects_offset_0():
-    out = _rewards("legacy", done_indices=[0, 4, 8])
-    assert torch.equal(out, torch.arange(8, dtype=torch.float32))
-
-
-def test_next_obs_selects_offset_1():
-    out = _rewards("next_obs", done_indices=[0, 8])
     assert torch.equal(out, torch.arange(8, dtype=torch.float32) + 100)
-
-
-def test_unknown_alignment_raises():
-    with pytest.raises(AssertionError):
-        _rewards("bogus", done_indices=[0, 8])
 
 
 # ---------------------------------------------------------------------------
@@ -95,29 +82,29 @@ def _mses(adapter, obss, acts, done_indices, last_observations, offset):
     )
 
 
-def test_next_obs_is_shift_of_legacy_plus_real_final_target(episode_stream):
+def test_the_reward_is_the_unshifted_pass_shifted_plus_a_real_final_target(episode_stream):
     adapter, obss, acts, last_obs = episode_stream
-    legacy = _mses(adapter, obss, acts, [0, L], [last_obs], 0)
+    unshifted = _mses(adapter, obss, acts, [0, L], [last_obs], 0)
     nxt = _mses(adapter, obss, acts, [0, L], [last_obs], 1)
 
-    # causality: rows 0..L-1 of the extended pass equal the legacy rows,
-    # so next_obs[i] == legacy[i+1] for all but the final action
-    assert torch.allclose(nxt[:-1], legacy[1:], atol=1e-6)
+    # causality: rows 0..L-1 of the extended pass equal the unshifted rows,
+    # so reward[i] == unshifted[i+1] for all but the final action
+    assert torch.allclose(nxt[:-1], unshifted[1:], atol=1e-6)
     # the final action gets a REAL prediction error on last_obs (no duplicate)
     assert torch.isfinite(nxt[-1])
-    assert nxt.shape == legacy.shape
+    assert nxt.shape == unshifted.shape
 
 
-def test_next_obs_respects_episode_boundaries(episode_stream):
+def test_the_reward_respects_episode_boundaries(episode_stream):
     adapter, obss, acts, last_obs = episode_stream
     split = 5
     dones = [0, split, L]
     lasts = [obss[split], last_obs]  # first episode's last obs = next pre-action obs
-    legacy = _mses(adapter, obss, acts, dones, lasts, 0)
+    unshifted = _mses(adapter, obss, acts, dones, lasts, 0)
     nxt = _mses(adapter, obss, acts, dones, lasts, 1)
 
-    assert torch.allclose(nxt[0:split - 1], legacy[1:split], atol=1e-6)
-    assert torch.allclose(nxt[split:L - 1], legacy[split + 1:L], atol=1e-6)
+    assert torch.allclose(nxt[0:split - 1], unshifted[1:split], atol=1e-6)
+    assert torch.allclose(nxt[split:L - 1], unshifted[split + 1:L], atol=1e-6)
     assert torch.isfinite(nxt).all()
 
 

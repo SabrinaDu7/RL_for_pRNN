@@ -20,7 +20,7 @@ A baseline that silently re-baselines is not a gate: this script used to
 passed vacuously forever. Compare is now the default.
 
 The code must reproduce these tensors exactly (same seed => same RNG
-consumption order) while the `reward_alignment=legacy` default holds.
+consumption order).
 
 FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
 
@@ -29,7 +29,8 @@ FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
     golden_v2.pt  from `d275149` on.
     golden_v3.pt  from the UpdateLogs epoch-averaging fix on.
     golden_v4.pt  from the readout OUTPUT BIAS on (prnn 4ec775ed).
-    golden_v5.pt  from FULL-COLOUR landmarks on (minigrid 22ef960). <- current
+    golden_v5.pt  from FULL-COLOUR landmarks on (minigrid 22ef960).
+    golden_v6.pt  from the "legacy" reward alignment's retirement on (2026-09-07). <- current
 
     Only the current file is in the tree: the superseded fixtures (v0-v4, and the
     eval fixtures' _v1) were removed 2026-09-06 - no test read them, and git
@@ -46,6 +47,18 @@ downstream of it moved.
 
 The bump went unnoticed for three days because nothing ran this file.
 `tests/golden/test_golden.py` now does.
+
+v5 -> v6: the "legacy" reward alignment was retired (2026-09-07). This
+fixture had pinned `PredictivePPOAlgo`'s own default, which rewarded action i
+with the error on the observation it saw BEFORE acting - a default no
+dataclass config ever selected (`configs.py` defaulted to next_obs from the
+start), so the gate pinned a path no run took. It now pins the live serial
+`reference` path: a[i] rewarded with prediction row i+1. Measured against v5
+before the recapture: round 0's ROLLOUT is bitwise unchanged (actions,
+log_probs, values, SRs, locs - the collect precedes any update), round 0's
+curious_rewards, advantages, policy_loss, value_loss and grad_norm move, and
+everything in round 1 and both state dicts moves downstream of that first
+update (85 leaves in all).
 
 v4 -> v5: `minigrid` 22ef960 fills Floor/Obstacle at full COLORS instead of
 COLORS/2, so every observation pixel on a landmark cell doubles its
@@ -93,7 +106,7 @@ FRAMES = 64
 SEQDUR = 32
 UPDATES = 2
 DEVICE = torch.device("cpu")
-OUT = "tests/golden/golden_v5.pt"  # see FIXTURE VERSIONS in the module docstring
+OUT = "tests/golden/golden_v6.pt"  # see FIXTURE VERSIONS in the module docstring
 
 
 def build_fixture() -> dict:

@@ -182,10 +182,8 @@ class OnPolicyAnalysis:
                 action_offset=PPOalgo.action_offset,
                 curious_agent=PPOalgo.curious_agent,
                 k_curious=PPOalgo.k_curious,
-                # Without these the clone was a DIFFERENT agent: legacy
-                # alignment (asserts under action_offset=1) sampling the
-                # policy even for a RANDOM run.
-                reward_alignment=PPOalgo.reward_alignment,
+                # Without these the clone was a DIFFERENT agent: it sampled
+                # the policy even for a RANDOM run.
                 random_actions=PPOalgo.random_actions,
                 random_action_probs=PPOalgo.random_action_probs,
                 # Same bug class, next generation (audit 2026-08-31): without

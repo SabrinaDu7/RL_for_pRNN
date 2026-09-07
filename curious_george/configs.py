@@ -124,13 +124,6 @@ class CompileMode(str, enum.Enum):
         return False if self is CompileMode.OFF else self.value
 
 
-class RewardAlignment(str, enum.Enum):
-    """Which observation the curiosity reward credits an action with."""
-
-    LEGACY = "legacy"  # the pre-action observation (historical)
-    NEXT_OBS = "next_obs"  # the observation the action produced
-
-
 class EvalKind(str, enum.Enum):
     """Names the eval driver iterates over, replacing four independent booleans
     read at four call sites plus one implicit branch."""
@@ -570,12 +563,6 @@ class TrainPolicyCfg:
     statistics. 0 disables (the default; the agent stays AC). Requires the
     DEVICE backend; counts ride the policy checkpoint so a resume continues
     them. Scale it under normalize_advantage per the noise-floor protocol."""
-    reward_alignment: RewardAlignment = RewardAlignment.NEXT_OBS
-    """Composition made NEXT_OBS the effective default while the code fell back
-    to LEGACY - a fallback reachable only from a config that omitted the key,
-    which no live config did. NEXT_OBS is the corrected indexing and is now the
-    single default."""
-
     normalize_advantage: bool = False
     """Whiten the advantage per PPO minibatch to mean 0, std 1.
 

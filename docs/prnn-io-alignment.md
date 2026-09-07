@@ -79,8 +79,7 @@ after seeing `obs[t]`; taking it produces `obs[t+1]`. `h[t]` is the hidden state
 | action offset | `actOffset=0`, a real constructor parameter | prnn:`Architectures.py:718` |
 | observation masking | `inMask = np.full(k+1, False); inMask[0] = True` -> 1 shown in 6 | prnn:`Architectures.py:739-740` |
 | ...applied | `obs_out = obs_in * self._tile_mask(self.inMask_f, ...)` | prnn:`Architectures.py:235` |
-| reward shift | `REWARD_ALIGNMENTS = {"legacy": 0, "next_obs": 1}` | `rl/update/rewards.py:25` |
-| in use | `reward_alignment: RewardAlignment = RewardAlignment.NEXT_OBS` | `configs.py:509` |
+| reward shift | `REWARD_TARGET_OFFSET = 1` - a[i] is rewarded with prediction row i+1 | `rl/update/rewards.py` |
 
 `models/prnn_adapter.py:8-13` already states this and flags the trap:
 
@@ -98,10 +97,10 @@ from **byte-identical base64 strings**, and labels every curiosity-reward cell
 
 `a[t]` enters the hidden state at the same step whose target is `obs[t]` — an
 observation that already existed before `a[t]` was chosen. **The action cannot inform
-the prediction it is paired with.** `reward_alignment="next_obs"` then shifts the reward
-by one so the policy is at least credited for the error its action did cause; the module
-docstring (`rl/update/rewards.py:9-17`) says exactly this about the `legacy` default it
-replaced — *"crediting the action with surprise it did not cause."*
+the prediction it is paired with.** `REWARD_TARGET_OFFSET` then shifts the reward by
+one so the policy is at least credited for the error its action did cause; the module
+docstring (`rl/update/rewards.py`) says exactly this about the retired "legacy"
+alignment — surprise the action did not cause.
 
 So the reward shift is a correction applied downstream of a misalignment that is still
 present upstream in the world model's own objective.
@@ -196,9 +195,9 @@ smaller change as well as the one asked for.**
   records that the adapter already handles the analogous case for `next_obs` by
   *"extend[ing] the per-episode predict pass by one zero-action step"* — the same
   treatment is what keeps every action rewarded here.
-- **`reward_alignment` becomes redundant.** Under A the MSE at `t` is already the error
-  on the observation `a[t]` produced, so the correct setting becomes `legacy` (offset 0)
-  — the *opposite* of today. Getting this backwards would double-shift the reward, and
+- **The reward shift becomes redundant.** Under A the MSE at `t` is already the error
+  on the observation `a[t]` produced, so `REWARD_TARGET_OFFSET` must become 0 — the
+  *opposite* of today. Getting this backwards would double-shift the reward, and
   nothing would fail loudly.
 
 ## 5. Open decisions, for Sabrina
@@ -211,7 +210,7 @@ smaller change as well as the one asked for.**
    again. Reopening it also reopens `masked_nextstep`, which section 2 argues is
    misnamed; leaving that name in place while adding a genuine next-step variant would
    put two contradictory meanings of "nextstep" in one enum.
-3. **`reward_alignment` must flip to `legacy` in the same commit**, per section 4.
+3. **`REWARD_TARGET_OFFSET` must flip to 0 in the same commit**, per section 4.
 
 ## 6. What would confirm this document
 

@@ -3,12 +3,11 @@
 from pathlib import Path
 
 import numpy as np
-import pytest
 import torch
 
 from dataclasses import replace
 
-from curious_george.configs import EnvBackend, RewardAlignment
+from curious_george.configs import EnvBackend
 from curious_george.training.setup import setup_training
 from tests.small_config import small_config
 
@@ -34,13 +33,12 @@ def _set_rng_state(device, state):
         torch.mps.set_rng_state(accelerator)
 
 
-def _config(device_env: bool, reward_alignment=RewardAlignment.NEXT_OBS, **kwargs):
+def _config(device_env: bool, **kwargs):
     """The same small run on either stepping backend - the comparison this
     module exists to make. `rl.frames=128` with `seqdur=16` used to spell
     "8 episodes per rollout"; small_config says it directly."""
     return small_config(
         backend=EnvBackend.DEVICE if device_env else EnvBackend.SERIAL_TABLE,
-        reward_alignment=reward_alignment,
         **kwargs,
     )
 
@@ -85,22 +83,15 @@ def _assert_rollouts_equal(
         assert np.array_equal(expected_logs[field], actual_logs[field]), field
 
 
-@pytest.mark.parametrize("reward_alignment", list(RewardAlignment), ids=lambda a: a.value)
-def test_device_collector_is_exactly_equal_to_cpu_table_collector(
-    reward_alignment: str,
-):
+def test_device_collector_is_exactly_equal_to_cpu_table_collector():
     """Same initial weights/RNG must produce the same complete rollout.
 
     This catches errors outside the transition table itself, including
     pre-vs-post direction alignment in SpeedHD encoding and flatten order.
     """
-    reference = setup_training(
-        _config(device_env=False, reward_alignment=reward_alignment)
-    ).algo
+    reference = setup_training(_config(device_env=False)).algo
     reference_rng = _rng_state(reference.device)
-    device = setup_training(
-        _config(device_env=True, reward_alignment=reward_alignment)
-    ).algo
+    device = setup_training(_config(device_env=True)).algo
     device_rng = _rng_state(device.device)
 
     try:

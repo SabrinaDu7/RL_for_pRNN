@@ -25,7 +25,6 @@ from curious_george.configs import (
     EvalCfg,
     EvalKind,
     EnvCfg,
-    RewardAlignment,
     RunCfg,
     TrainPolicyCfg,
     TrainPrnnCfg,
@@ -57,7 +56,6 @@ def small_config(
     train_prnn: bool = True,
     # -- policy -------------------------------------------------------------
     entropy_coef: float = 0.0,
-    reward_alignment: RewardAlignment = RewardAlignment.NEXT_OBS,
     policy_cuda_graph: bool = False,
     # -- the rest -----------------------------------------------------------
     env: EnvCfg | None = None,
@@ -105,7 +103,6 @@ def small_config(
             total_grad_steps=ppo_epochs * env_steps // batch,
             ppo_epochs=ppo_epochs,
             entropy_coef=entropy_coef,
-            reward_alignment=reward_alignment,
             cuda_graph=policy_cuda_graph,
         ),
         eval=EvalCfg(

@@ -6,14 +6,15 @@ The total reward fed to GAE is
 
 Curiosity reward time alignment
 -------------------------------
-`reward_alignment="next_obs"` (the config default, `TrainPolicyCfg`) credits
-action i with the prediction error on the observation it produced - uniformly
-for every action, including the last of each episode (the adapter extends the
-per-episode predict pass by one zero-action step so the final observation is a
-real prediction target; no boundary special case). `"legacy"` credits action i
-with the error on obss[i], the observation the agent saw BEFORE taking it -
-surprise the action did not cause. It survives only because
-tests/golden/test_golden.py still pins the historical serial rollout under it.
+Action i is credited with the prediction error on the observation it PRODUCED
+(`REWARD_TARGET_OFFSET`), uniformly for every action including the last of each
+episode: the adapter extends the per-episode predict pass by one zero-action
+step so the final observation is a real prediction target, with no boundary
+special case. Until 2026-09-07 a `reward_alignment` switch also offered
+"legacy" - the error on obss[i], the observation the agent saw BEFORE acting,
+surprise the action did not cause - which no config had selected since the
+dataclass config existed; the adapter's `target_offset=0` pass survives only
+as the oracle tests/test_reward_alignment.py checks the shift against.
 """
 
 from dataclasses import dataclass
@@ -25,7 +26,8 @@ from jaxtyping import Float, Int
 from curious_george.models.prnn_adapter import PRNNAdapter
 
 
-REWARD_ALIGNMENTS = {"legacy": 0, "next_obs": 1}  # name -> prediction target offset
+#: Prediction row i + this is action i's reward: the observation it produced.
+REWARD_TARGET_OFFSET = 1
 
 
 def occurrence_index(states: Int[torch.Tensor, "B T"]) -> Int[torch.Tensor, "B T"]:
@@ -108,20 +110,14 @@ def compute_curious_rewards(
     done_indices: list[int],
     last_observations: list,
     num_frames: int,
-    alignment: str = "legacy",
 ) -> torch.Tensor:
-    """Curiosity reward = per-step pRNN observation-prediction MSE.
-
-    alignment="legacy": MSEs[i] is the error on the PRE-action obs.
-    alignment="next_obs": MSEs[i] is the error on the obs action i produced
-    (see module docstring).
-    """
-    assert alignment in REWARD_ALIGNMENTS, f"unknown reward_alignment {alignment!r}"
+    """Curiosity reward = per-step pRNN prediction error on the observation
+    each action produced (module docstring); MSE or CE surprisal per the loss."""
     return adapter.prediction_errors(
         obss=obss,
         actions_np=actions_np,
         done_indices=done_indices,
         last_observations=last_observations,
         num_frames=num_frames,
-        target_offset=REWARD_ALIGNMENTS[alignment],
+        target_offset=REWARD_TARGET_OFFSET,
     )
