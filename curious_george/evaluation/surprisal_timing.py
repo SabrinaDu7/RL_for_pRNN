@@ -18,16 +18,18 @@ forward-biased random walker, and decomposes per-tile surprisal via
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import torch
 from jaxtyping import Float
 
-from curious_george.configs import RAND_ACT_PROBA
-from curious_george.envs.layouts import LANDMARK_COLORS
+from curious_george.configs import RAND_ACT_PROBA, Config
+from curious_george.envs.layouts import LANDMARK_COLORS, Layout, Selected, resolve_layouts
 from curious_george.envs.palette import TILE_CLASS_NAMES
 from curious_george.evaluation.error_decomposition import per_tile_errors
 from curious_george.models.device import eval_mode
+from curious_george.models.prnn_adapter import PRNNAdapter
 
 #: Class ids counted as "landmark tiles", derived from the palette - the
 #: complement is background (floor, wall, agent).
@@ -90,6 +92,55 @@ def walk_episodes(
                 acts.append(a)
                 obs = env.step(a)[0]
             yield room_index, obss, acts, obs
+
+
+def rooms_at(cfg: Config, positions: tuple[int, ...] | None) -> list[Layout]:
+    """The run's rooms in training order, or the subset at these `ROOMS_SELECTED`
+    positions - how a floor is measured on one room of an 8-room checkpoint.
+    Positions the run never trained on are an error, not an extra room."""
+    layouts = resolve_layouts(cfg)
+    if positions is None:
+        return layouts
+    if not isinstance(cfg.env.source, Selected):
+        raise ValueError(f"--positions needs a Selected room set; the run has {cfg.env.source!r}")
+    at = dict(zip(cfg.env.source.positions, layouts, strict=True))
+    if missing := [p for p in positions if p not in at]:
+        raise ValueError(f"positions {missing} are not in the run's set {cfg.env.source.positions}")
+    return [at[p] for p in positions]
+
+
+@dataclass(frozen=True)
+class LoadedCheckpoint:
+    """A world-model checkpoint on the CPU, wired as its run wired it."""
+
+    cfg: Config
+    layouts: list[Layout]
+    env: object
+    adapter: PRNNAdapter
+
+
+def load_checkpoint(
+    ckpt: str | Path, *, positions: tuple[int, ...] | None = None
+) -> LoadedCheckpoint:
+    """`ckpt` under the config its run trained under (`Config.of_run`, from the
+    provenance beside the checkpoint or one level up for an archived copy):
+    the same rooms through the same `resolve_layouts`, the circuit's own
+    `action_offset`. Until 2026-09-06 the probe tools re-typed the config from
+    flags and hard-coded `action_offset=0` (audit 2026-09-05, C11)."""
+    from prnn.utils.checkpoints import load_pN
+
+    from curious_george.training.setup import setup_env, setup_world_model
+    from curious_george.utils.checkpoints import run_dir_of
+
+    cfg = Config.of_run(run_dir_of(ckpt))
+    layouts = rooms_at(cfg, positions)
+    env = setup_env(cfg, landmarks=list(layouts[0].landmarks))
+    pN = setup_world_model(cfg, env, wandb_log=False)
+    load_pN(model_ckpt_filepath=str(ckpt), device="cpu",
+            pRNNtype=cfg.arch_prnn.prnn_type.value, predictive_net=pN)
+    pN.pRNN.to("cpu")
+    adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=cfg.arch_prnn.action_offset)
+    return LoadedCheckpoint(cfg=cfg, layouts=layouts, env=env, adapter=adapter)
 
 
 def measure(*, adapter, env, layouts: list) -> SurprisalTiming:
@@ -192,45 +243,20 @@ def plot(result: SurprisalTiming, *, out_path: str, title_note: str) -> None:
 def main() -> None:
     import argparse
 
-    from curious_george.configs import cli
-    from curious_george.envs.layouts import ROOMS_SELECTED, with_affordance
-    from curious_george.models.prnn_adapter import PRNNAdapter
-    from curious_george.training.setup import setup_env, setup_world_model
-    from prnn.utils.checkpoints import load_pN
-
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ckpt", required=True, help="predictiveNet_state.pt path")
+    ap.add_argument("--ckpt", required=True,
+                    help="predictiveNet_state.pt; the run's provenance.json supplies the config")
     ap.add_argument("--out", default="docs/figures/surprisal_vs_time.png")
-    ap.add_argument("--readout", choices=["LINEAR", "MLP"], default="LINEAR",
-                    help="the checkpoint's readout architecture (a mismatch fails at load)")
-    ap.add_argument(
-        "--positions", type=int, nargs="+", default=[0, 1, 2, 3, 5, 6, 7, 8],
-        help="ROOMS_SELECTED indices (default: the 8-room training pool)",
-    )
+    ap.add_argument("--positions", type=int, nargs="+", default=None,
+                    help="walk only these ROOMS_SELECTED positions of the run's set "
+                         "(default: every room the run trained on)")
     args = ap.parse_args()
 
-    cfg = cli(
-        ["multienv-fast", "--arch-prnn.loss", "CE", "--run.no-wandb",
-         "--arch-prnn.readout", args.readout,
-         "env.source:selected", "--env.source.n", str(len(args.positions)),
-         "--env.source.impassable", "--env.source.positions",
-         *map(str, args.positions)]
-    )
-    layouts = [
-        with_affordance((ROOMS_SELECTED[p],), impassable=True)[0]
-        for p in args.positions
-    ]
-    env = setup_env(cfg, landmarks=list(layouts[0].landmarks))
-    pN = setup_world_model(cfg, env, wandb_log=False)
-    load_pN(
-        model_ckpt_filepath=args.ckpt, device="cpu",
-        pRNNtype=cfg.arch_prnn.prnn_type.value, predictive_net=pN,
-    )
-    pN.pRNN.to("cpu")
-    result = measure(
-        adapter=PRNNAdapter(pN, torch.device("cpu"), action_offset=0),
-        env=env, layouts=layouts,
-    )
+    run = load_checkpoint(args.ckpt, positions=None if args.positions is None else tuple(args.positions))
+    print(f"{args.ckpt}: {run.cfg.arch_prnn.loss.value} loss, {run.cfg.arch_prnn.readout.value} "
+          f"readout, action_offset {run.cfg.arch_prnn.action_offset}, "
+          f"{len(run.layouts)} of {len(resolve_layouts(run.cfg))} rooms")
+    result = measure(adapter=run.adapter, env=run.env, layouts=run.layouts)
     print(f"landmark by {TIME_BIN}-step bin: "
           + " ".join(f"{v:.2f}" for v in result.landmark_by_bin))
     print("background:                 "
@@ -241,7 +267,7 @@ def main() -> None:
           f"{result.recall_masked:.3f} | entirely missing shown "
           f"{result.miss_shown:.3f} / masked {result.miss_masked:.3f}")
     plot(result, out_path=args.out,
-         title_note=f"{args.ckpt}, eval_mode, {len(args.positions)} rooms "
+         title_note=f"{args.ckpt}, eval_mode, {len(run.layouts)} rooms "
                     f"x {EPISODES_PER_ROOM} episodes, fwd-biased walker")
     print(f"wrote {args.out}")
 

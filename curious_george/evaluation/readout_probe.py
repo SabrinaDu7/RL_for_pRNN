@@ -27,6 +27,7 @@ from curious_george.evaluation.error_decomposition import per_tile_errors
 from curious_george.evaluation.surprisal_timing import (
     EPISODE_STEPS,
     LANDMARK_CLASS_IDS,
+    load_checkpoint,
     walk_episodes,
 )
 from curious_george.models.device import eval_mode
@@ -134,19 +135,14 @@ def fit_linear_head(
     focal-trained checkpoint reproduces the plain-CE pathology on a frozen
     h (measured: bg 0.14 / landmarks 1.16) - the objective, not the head,
     decides where a linear readout spends itself."""
-    from curious_george.envs.palette import vocab_tensor
+    from curious_george.envs.palette import classes_of, vocab_tensor
 
-    vocab = vocab_tensor().to(device)
-    C, ch = vocab.shape
+    C, ch = vocab_tensor().shape
 
-    def classes_of(px):
-        pix = px.reshape(px.shape[0], -1, ch).to(device)
-        dist = (pix.unsqueeze(-2) - vocab).abs().sum(-1)
-        mind, cls = dist.min(-1)
-        assert float(mind.max()) < 1e-3
-        return cls  # (N, 49)
+    def targets(px):  # (N, 49) class indices on `device`
+        return classes_of(px.reshape(px.shape[0], -1, ch).to(device))
 
-    y_tr, y_va = classes_of(px_train), classes_of(px_val)
+    y_tr, y_va = targets(px_train), targets(px_val)
     x_tr, x_va = h_train.to(device), h_val.to(device)
     torch.manual_seed(0)
     head = (
@@ -196,17 +192,12 @@ def fit_linear_head(
 def main() -> None:
     import argparse
 
-    from curious_george.configs import cli
-    from curious_george.envs.layouts import ROOMS_SELECTED, with_affordance
-    from curious_george.models.prnn_adapter import PRNNAdapter
-    from curious_george.training.setup import setup_env, setup_world_model
-    from prnn.utils.checkpoints import load_pN
-
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ckpt", required=True)
-    ap.add_argument("--readout", choices=["LINEAR", "MLP"], default="LINEAR",
-                    help="the checkpoint's readout architecture (a mismatch fails at load)")
-    ap.add_argument("--positions", type=int, nargs="+", default=[0, 1, 2, 3, 5, 6, 7, 8])
+    ap.add_argument("--ckpt", required=True,
+                    help="predictiveNet_state.pt; the run's provenance.json supplies the config")
+    ap.add_argument("--positions", type=int, nargs="+", default=None,
+                    help="probe only these ROOMS_SELECTED positions of the run's set "
+                         "(default: every room the run trained on)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--gamma", type=float, default=5.0,
                     help="focal gamma for the matched-objective fresh fit")
@@ -216,23 +207,8 @@ def main() -> None:
                     help="if >0, also fit a 1-hidden-layer MLP probe this wide")
     args = ap.parse_args()
 
-    cfg = cli(
-        ["multienv-fast", "--arch-prnn.loss", "CE", "--run.no-wandb",
-         "--arch-prnn.readout", args.readout,
-         "env.source:selected", "--env.source.n", str(len(args.positions)),
-         "--env.source.impassable", "--env.source.positions",
-         *map(str, args.positions)]
-    )
-    layouts = [
-        with_affordance((ROOMS_SELECTED[p],), impassable=True)[0]
-        for p in args.positions
-    ]
-    env = setup_env(cfg, landmarks=list(layouts[0].landmarks))
-    pN = setup_world_model(cfg, env, wandb_log=False)
-    load_pN(model_ckpt_filepath=args.ckpt, device="cpu",
-            pRNNtype=cfg.arch_prnn.prnn_type.value, predictive_net=pN)
-    pN.pRNN.to("cpu")
-    adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=0)
+    run = load_checkpoint(args.ckpt, positions=None if args.positions is None else tuple(args.positions))
+    adapter, env, layouts, pN = run.adapter, run.env, run.layouts, run.adapter.pN
     torch.manual_seed(11)  # offline CLI; see surprisal_timing.measure
 
     splits = {

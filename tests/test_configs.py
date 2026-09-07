@@ -7,6 +7,7 @@ replace produced.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -210,3 +211,57 @@ def test_parity_defaults_to_whitened_entropy():
     assert cfg.train_policy.entropy_coef_final is None
     assert cfg.eval.probe_seed is not None
     assert cfg.arch_prnn.action_offset == 0, "the circuit must still be typed to change"
+
+
+def _round_trip(cfg: Config) -> Config:
+    return Config.from_dict(json.loads(json.dumps(cfg.to_dict())))
+
+
+@pytest.mark.parametrize("name", list(PRESETS))
+def test_from_dict_inverts_to_dict_for_every_preset(name):
+    """`provenance.json` IS the run's config: what `to_dict` writes, `from_dict`
+    reads back as the same frozen `Config` - enums, Paths, frozensets, the
+    `env.source` union member - so no offline tool re-types a command line."""
+    assert _round_trip(PRESETS[name][1]) == PRESETS[name][1]
+
+
+def test_from_dict_round_trips_the_production_command_line():
+    """The multienv launcher's shape: positions, kept landmarks, a checkpoint
+    Path, focal CE, an MLP readout - every non-scalar field type in one run."""
+    cfg = cli(["multienv-fast", "--arch-prnn.loss", "CE", "--arch-prnn.focal-gamma", "5",
+               "--arch-prnn.readout", "MLP", "--run.no-wandb", "--run.seed", "3",
+               "--run.prnn-ckpt", "/x/predictiveNet_state.pt", "--train-prnn.no-cuda-graph",
+               "env.source:selected", "--env.source.impassable",
+               "--env.source.positions", "0", "1", "2", "3", "5", "6", "7", "8",
+               "--env.source.keep-landmarks", "012", "012", "012", "12", "01", "0", "2", "-"])
+    back = _round_trip(cfg)
+    assert back == cfg
+    assert back.run.prnn_ckpt == Path("/x/predictiveNet_state.pt")
+    assert back.env.source.keep_landmarks == cfg.env.source.keep_landmarks
+
+
+def test_of_run_reads_the_training_provenance(tmp_path):
+    """The offline tools score under the config the run trained under, read
+    from `provenance.json` - a checkpoint-kind record is refused, not mistaken
+    for a run's."""
+    from curious_george.log_and_store import provenance
+
+    cfg = cli(["multienv-fast", "--run.no-wandb", "env.source:selected", "--env.source.impassable"])
+    provenance.write(tmp_path, kind="training", params={"config": cfg.to_dict()})
+    assert Config.of_run(tmp_path) == cfg
+    provenance.write(tmp_path / "step", kind="checkpoint", params={"run_dir": str(tmp_path)})
+    with pytest.raises(ValueError, match="'checkpoint' provenance"):
+        Config.of_run(tmp_path / "step")
+    with pytest.raises(FileNotFoundError):
+        Config.of_run(tmp_path / "nowhere")
+
+
+def test_from_dict_reads_the_pre_2026_09_06_selected_record():
+    """Records before `Selected` lost `n` said "the first n rooms" with
+    `positions` null; the walkable arm's provenance has that shape."""
+    cfg = cli(["multienv-fast", "--run.no-wandb"])
+    old = json.loads(json.dumps(cfg.to_dict()))
+    old["env"]["source"] = {"n": 5, "impassable": False, "keep_landmarks": None,
+                            "positions": None, "_type": "Selected"}
+    assert Config.from_dict(old) == cfg
+    assert Config.from_dict(old).env.source.positions == (0, 1, 2, 3, 4)

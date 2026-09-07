@@ -18,7 +18,6 @@ from prnn.utils import (
     ActionEncodingsEnum,
     MinigridEnvNames,
     PredictiveNet,
-    RandomActionAgent,
 )
 from curious_george import AgentInputType, make_env
 from curious_george.models.prnn_adapter import PRNNAdapter
@@ -62,7 +61,6 @@ def _one_segment(pN: PredictiveNet, k: int = 0):
     torch.manual_seed(SEED + 1 + k)
     np.random.seed(SEED + 1 + k)
     env = pN.env_shell
-    agent = RandomActionAgent(env.action_space, np.array([0.15, 0.15, 0.6, 0.1]))
     obs_dicts, acts = [env.reset()], []
     for _ in range(L):
         a = int(np.random.randint(0, 4))

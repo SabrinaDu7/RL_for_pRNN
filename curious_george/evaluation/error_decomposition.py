@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import torch
 from jaxtyping import Float, Int
 
-from curious_george.envs.palette import TILE_CLASS_NAMES, vocab_tensor
+from curious_george.envs.palette import TILE_CLASS_NAMES, classes_of, vocab_tensor
 from curious_george.models.prnn_adapter import FORWARD_IDX as FORWARD
 
 
@@ -46,13 +46,10 @@ def per_tile_errors(
     (pred_rows are logits, X = 49 * C). Targets are exact-vocab lookups either
     way - a target outside the palette asserts loudly.
     """
-    vocab = vocab_tensor().to(target_rows.device)
-    n_classes, n_channels = vocab.shape
+    n_classes, n_channels = vocab_tensor().shape
     n_tiles = target_rows.shape[-1] // n_channels
     pixels = target_rows.reshape(-1, n_tiles, n_channels)
-    dist = (pixels.unsqueeze(-2) - vocab).abs().sum(-1)
-    mindist, classes = dist.min(-1)
-    assert float(mindist.max()) < 1e-3, "target tile outside the committed vocabulary"
+    classes = classes_of(pixels)
 
     if ce:
         logits = pred_rows.reshape(-1, n_tiles, n_classes)

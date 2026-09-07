@@ -807,6 +807,40 @@ class Config:
         """
         return _jsonable(self)
 
+    @classmethod
+    def from_dict(cls, blob: dict[str, Any]) -> "Config":
+        """The inverse of `to_dict`: the `Config` a provenance record describes.
+
+        Types come from the field annotations, `_type` tags pick the member of
+        a union (`env.source`), enums are rebuilt by value. Every preset
+        round-trips (tests/test_configs.py), so a run's `provenance.json` IS
+        its config and no offline tool needs to re-type the command line.
+        """
+        return _from_jsonable(_current_shape(blob), cls)
+
+    @classmethod
+    def of_run(cls, run_dir: "str | Path") -> "Config":
+        """The EFFECTIVE config a finished or running training run trained
+        under, read from its `provenance.json`. Effective, not requested:
+        main_train.py writes provenance after `setup_training`, so a rounded
+        hidden size is the one recorded. Raises `FileNotFoundError` for a run
+        that predates provenance (2026-08-25)."""
+        from curious_george.log_and_store import provenance
+
+        record = provenance.read(run_dir)
+        if record["kind"] != "training":
+            raise ValueError(f"{run_dir} holds {record['kind']!r} provenance, not a training run's")
+        drift: dict[str, list[str]] = {"missing": [], "extra": []}
+        cfg = _from_jsonable(_current_shape(record["params"]["config"]), cls, drift=drift)
+        # A field the run predates is read as its default - the behaviour the
+        # field was introduced to name - and a field since removed is dropped.
+        # Both are said out loud: a default that later changes would otherwise
+        # re-describe an old run silently.
+        for kind, paths in drift.items():
+            if paths:
+                print(f"{provenance.FILENAME} {kind} fields vs today's Config: {', '.join(paths)}")
+        return cfg
+
     # -- validation --------------------------------------------------------
 
     def __post_init__(self) -> None:
@@ -903,6 +937,65 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _current_shape(blob: dict[str, Any]) -> dict[str, Any]:
+    """A recorded config in today's shape. ONE record shape has changed
+    meaning rather than merely gaining or losing a field: until 2026-09-06
+    `Selected` said "the first n rooms" through `n` and left `positions` null
+    (audit 2026-09-05, C10); today `positions` alone says which rooms."""
+    source = blob.get("env", {}).get("source", {})
+    if source.get("_type") == "Selected" and source.get("positions") is None and "n" in source:
+        source = {**source, "positions": list(range(source["n"]))}
+        return {**blob, "env": {**blob["env"], "source": source}}
+    return blob
+
+
+def _from_jsonable(
+    value: Any, hint: Any, *, drift: dict[str, list[str]] | None = None, path: str = ""
+) -> Any:
+    """Rebuild `value` as `hint` - the inverse of `_jsonable`, type-directed.
+
+    `hint` is a resolved annotation: a dataclass, an enum, `Path`, a union
+    (`X | None`, `RoomSource`), `frozenset[T]`, `tuple[T, ...]`, or a scalar.
+    `drift`, when given, collects the dotted paths of dataclass fields the
+    blob lacks ("missing", read as defaults) and keys no field claims
+    ("extra", dropped) - how a record older than a field stays legible.
+    """
+    import dataclasses
+    import types
+    import typing
+
+    origin, args = typing.get_origin(hint), typing.get_args(hint)
+    if value is None:
+        return None
+    if origin in (typing.Union, types.UnionType):
+        members = [a for a in args if a is not type(None)]
+        if isinstance(value, dict) and "_type" in value:
+            (hint,) = [m for m in members if m.__name__ == value["_type"]]
+        else:
+            (hint,) = members
+        return _from_jsonable(value, hint, drift=drift, path=path)
+    if dataclasses.is_dataclass(hint):
+        hints = typing.get_type_hints(hint)
+        names = {f.name for f in dataclasses.fields(hint) if f.init}
+        if drift is not None:
+            drift["missing"] += sorted(f"{path}{n}" for n in names - set(value))
+            drift["extra"] += sorted(f"{path}{k}" for k in set(value) - names - {"_type"})
+        return hint(**{
+            n: _from_jsonable(value[n], hints[n], drift=drift, path=f"{path}{n}.")
+            for n in names if n in value
+        })
+    if isinstance(hint, type) and issubclass(hint, enum.Enum):
+        return hint(value)
+    if hint is Path:
+        return Path(value)
+    if origin is frozenset:
+        return frozenset(_from_jsonable(v, args[0]) for v in value)
+    if origin is tuple:
+        per_element = args[:-1] * len(value) if args[-1:] == (Ellipsis,) else args
+        return tuple(_from_jsonable(v, a) for v, a in zip(value, per_element, strict=True))
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Preset configurations: what `run=multienv` and `performance=ultra` were.
 
@@ -958,7 +1051,7 @@ def _multienv_fast() -> Config:
 
         main_train.py multienv-fast                                   # walkable
         main_train.py multienv-fast env.source:selected \
-            --env.source.n 5 --env.source.impassable                  # impassable
+            --env.source.impassable                                   # impassable
 
     `env.source` is a UNION, so the member is a SUBCOMMAND and its fields only
     exist after it - `--env.source.impassable False` is an unrecognized option
@@ -979,7 +1072,7 @@ def _multienv_fast() -> Config:
     base = _parity()
     return replace(
         base,
-        env=EnvCfg(source=Selected(n=5, impassable=False)),
+        env=EnvCfg(source=Selected(impassable=False)),
         eval=replace(
             base.eval,
             evals=frozenset({EvalKind.SPATIAL_MULTIROOM, EvalKind.BEHAVIOUR}),

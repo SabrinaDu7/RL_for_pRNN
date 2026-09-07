@@ -42,3 +42,24 @@ def vocab_tensor() -> torch.Tensor:
 def class_render() -> torch.Tensor:
     """(C, 3) uint8 - class index -> displayable RGB, for argmax renders."""
     return torch.tensor(list(TILE_VOCABULARY.values()), dtype=torch.uint8)
+
+
+def classes_of(pixels: torch.Tensor, *, check: bool = True) -> torch.Tensor:
+    """Pixel rows in [0, 1], shaped `(..., n_channels)`, -> class indices `(...)`.
+
+    The analysis-side home for the pixel -> class lookup. The TRAINING side is
+    the fork's `predCE.targets_for`, which the adapter and the reward path call
+    because it lives on the loss object and skips its host sync while a CUDA
+    graph is capturing; the two spell the same nearest-vocabulary rule, and
+    `tests/test_palette.py` holds them to it. Until 2026-09-06 two analysis
+    modules each carried their own copy (audit 2026-09-05, C17).
+    """
+    vocab = vocab_tensor().to(pixels.device)
+    dist = (pixels.unsqueeze(-2) - vocab).abs().sum(-1)
+    mindist, classes = dist.min(-1)
+    if check:
+        assert float(mindist.max()) < 1e-3, (
+            "tile value outside the committed vocabulary - "
+            "rebuild envs/palette.py::TILE_VOCABULARY"
+        )
+    return classes

@@ -28,13 +28,13 @@
 # WHY THE SOURCE IS A SUBCOMMAND. `env.source` is a tyro UNION, so a member has
 # to be selected before its fields exist:
 #
-#     main_train.py multienv env.source:selected --env.source.n 5 --env.source.impassable
+#     main_train.py multienv-fast env.source:selected --env.source.impassable
 #
 # `--env.source.impassable False` is NOT that - it is an unrecognized option
 # followed by a stray positional, and it cost job 10563027. `impassable` is a
 # bool, so the flag form is `--env.source.impassable` / `--env.source.no-impassable`.
 # The walkable arm needs no override at all: the preset already carries
-# `Selected(n=5, impassable=False)`.
+# `Selected(impassable=False)`, the first five rooms.
 #
 # THE ROOMS ARE THE SAME IN BOTH ARMS. `Selected` pins ANCHORS and applies the
 # affordance on top, because the walkable and impassable admissible pools are
@@ -74,8 +74,11 @@ AGENT="${6:-}"
 # the preset docstring (configs.py::_parity) is the one home for that history.
 NORM="${7:-}"
 # positions  : comma-separated ROOMS_SELECTED POSITIONS (not source indices;
-#               position 4 is source index 83). Empty keeps "first n". The CE
-#               plan's 8-room set is 0,1,2,3,5,6,7,8.
+#               position 4 is source index 83). Empty means the first n. The CE
+#               plan's 8-room set is 0,1,2,3,5,6,7,8. Since 2026-09-06 the
+#               config has ONLY positions (`Selected.n` used to be a second
+#               field that positions silently overrode, so 8-room runs recorded
+#               n=5); this launcher turns n into 0..n-1 when positions is empty.
 # label       : appended to the run name, so arms differing only in the extra
 #               flags stay distinguishable in wandb.
 # extra...    : passed VERBATIM to main_train.py, PRESET-LEVEL (they are
@@ -91,7 +94,8 @@ ENT="${8:-}"
 POS="${9:-}"; LABEL="${10:-}"
 shift $(( $# < 10 ? $# : 10 ))
 EXTRA=("$@")
-POSFLAG=${POS:+--env.source.positions ${POS//,/ }}
+[ -z "$POS" ] && POS=$(seq -s, 0 $((N-1)))
+POSFLAG="--env.source.positions ${POS//,/ }"
 case "$IMP" in
   true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
   false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
@@ -150,7 +154,7 @@ trap save EXIT
 uv run python main_train.py multienv-fast \
     --run.seed "$SEED" --run.exp-name "$NAME" --run.wandb-project curious-george-multienv \
     $BUDGET $AGENTFLAG $NORMFLAG $ENTFLAG "${EXTRA[@]}" \
-    env.source:selected --env.source.n "$N" "$FLAG" $POSFLAG \
+    env.source:selected "$FLAG" $POSFLAG \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback
 # because the tail showed the config dump instead of the error.

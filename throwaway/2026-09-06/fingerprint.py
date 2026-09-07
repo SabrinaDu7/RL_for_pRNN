@@ -20,7 +20,6 @@ import contextlib
 import hashlib
 import io
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -45,7 +44,7 @@ CASES: dict[str, list[str]] = {
         "multienv-fast", *_COMMON, *_TWO_ROLLOUTS_POOLED,
         "--arch-prnn.loss", "CE", "--arch-prnn.focal-gamma", "5", "--arch-prnn.readout", "MLP",
         "--train-policy.normalize-reward",
-        "env.source:selected", "--env.source.n", "5", "--env.source.impassable",
+        "env.source:selected", "--env.source.impassable",
         "--env.source.positions", "0", "1", "2", "3", "5", "6", "7", "8",
     ],
     # the walkable multienv arm, MSE (the preset as it ships)

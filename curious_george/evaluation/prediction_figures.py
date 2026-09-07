@@ -24,13 +24,12 @@ evaluation code that must not pull a plotting stack onto the training host.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Bool, Float, Int
 
 #: MiniGrid's egocentric view, as flattened by `env2pred`: 7x7 cells, RGB.
 VIEW = (7, 7, 3)
@@ -286,15 +285,15 @@ def plot_run_predictions(
 ):
     """Draw every room of a finished or in-flight run from its archived checkpoint.
 
-    The config comes from the run's OWN recorded `argv`, so the rooms drawn are
-    the rooms trained on rather than a re-specification that can drift.
+    The config is the run's OWN (`Config.of_run`), so the rooms drawn are the
+    rooms trained on rather than a re-specification that can drift.
     """
-    from curious_george import configs
+    from curious_george.configs import Config
     from curious_george.envs.layouts import resolve_layouts
     from curious_george.evaluation.checkpoint_series import archived, build
 
     run_dir = Path(run_dir)
-    cfg = configs.cli(json.loads((run_dir / "provenance.json").read_text())["argv"][1:])
+    cfg = Config.of_run(run_dir)
     layouts = resolve_layouts(cfg)
     if not layouts:
         raise ValueError(f"{cfg.env.source!r} resolves to no rooms")
@@ -405,7 +404,6 @@ def trace_circuit(
     from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
 
     adapter = PRNNAdapter(pN, device, action_offset=action_offset)
-    rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
 
     obs = env.reset()

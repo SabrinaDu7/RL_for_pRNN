@@ -26,7 +26,11 @@ from curious_george.training.schedule import (
 )
 from curious_george.training.setup import RunContext, TrainingComponents
 from curious_george.models.device import eval_mode, on_device
-from curious_george.utils.checkpoints import StatusCkptKeys
+from curious_george.utils.checkpoints import (
+    ARCHIVE_DIRNAME,
+    PRNN_CKPT_FILENAME,
+    StatusCkptKeys,
+)
 from curious_george.utils.timing import timer
 
 
@@ -163,10 +167,10 @@ def save_checkpoint(
 
     trains_prnn = comps.predictiveNet is not None and cfg.train_prnn.train
     if trains_prnn:
-        save_pN(comps.predictiveNet, run_ctx.model_dir + "predictiveNet_state.pt")
+        save_pN(comps.predictiveNet, str(Path(run_ctx.model_dir) / PRNN_CKPT_FILENAME))
 
     if archive:
-        archive_dir = Path(run_ctx.model_dir) / "checkpoints"
+        archive_dir = Path(run_ctx.model_dir) / ARCHIVE_DIRNAME
         archive_dir.mkdir(parents=True, exist_ok=True)
         # Named by ENVIRONMENT STEP, the one counter that means the same thing
         # across rollout shapes (see training/schedule.py), and the SAME step

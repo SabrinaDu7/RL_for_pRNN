@@ -22,14 +22,14 @@ Two jobs:
     uv run python -m curious_george.evaluation.checkpoint_series --run <run> --room lroom
     uv run python -m curious_george.evaluation.checkpoint_series --run <run> --room squareroom --source uniform
 
-THE ROOM COMES FROM THE RUN'S OWN CONFIG, NOT FROM THIS FILE. `--room` and
-`--source` name what the job was launched with, and every room-dependent
-quantity - the multi-room env id, the base room's walls, the room set, the pool
-size and seed, D4 dedup - is then read from the `Config` they build, through the
-SAME `resolve_layouts` the training loop uses. Re-specifying any of them here is
-how a square run gets scored in an L-room: the two differ in walls, in room set
-and in whether rooms are deduplicated under the symmetries of the square, and a
-mismatched score looks entirely plausible.
+THE CONFIG COMES FROM THE RUN'S OWN PROVENANCE. `provenance.json` records the
+effective config the run trained under and `Config.of_run` rebuilds it - rooms,
+positions, kept landmarks, loss, readout, circuit, width - which then flows
+through the SAME `resolve_layouts` the training loop uses. `--room` /
+`--source` / `--impassable` are the fallback for runs that predate provenance
+(2026-08-25), and they cannot express everything: an 8-room `positions` run
+scored through them was silently scored on rooms 0..4 (audit 2026-09-05, C9).
+Re-specifying by hand is also how a square run gets scored in an L-room.
 
 Reports one row per checkpoint. A RUNNING job's newest checkpoint is a
 checkpoint, not a result: the row is printed with `(latest)` so it is never
@@ -47,6 +47,7 @@ import numpy as np
 import torch
 
 from curious_george.envs.layouts import BASE_ROOM_ID, SQUARE_ROOM_ID
+from curious_george.utils.checkpoints import ARCHIVE_DIRNAME
 
 PROBE_SEED = 20260813
 ONSET = 20
@@ -55,7 +56,7 @@ ONSET = 20
 def archived(run_dir: Path) -> list[tuple[int, Path]]:
     """(environment step, path) for every archived checkpoint, oldest first."""
     out = []
-    for p in sorted((run_dir / "checkpoints").glob("predictiveNet_state_step*.pt")):
+    for p in sorted((run_dir / ARCHIVE_DIRNAME).glob("predictiveNet_state_step*.pt")):
         out.append((int(p.stem.split("step")[-1]), p))
     return out
 
@@ -74,7 +75,7 @@ def archived_policies(run_dir: Path) -> dict[int, Path]:
     that step.
     """
     out: dict[int, Path] = {}
-    for p in sorted((run_dir / "checkpoints").glob("policy_state_step*.pt")):
+    for p in sorted((run_dir / ARCHIVE_DIRNAME).glob("policy_state_step*.pt")):
         out[int(p.stem.split("step")[-1])] = p
     return out
 
@@ -122,7 +123,7 @@ def run_config(*, room: str, source: str, hiddensize: int, impassable: bool = Fa
         shape=EnvShape(ROOMS[room]),
         source=(
             Uniform() if source == "uniform"
-            else Selected(n=5, impassable=impassable) if source == "selected"
+            else Selected(impassable=impassable) if source == "selected"
             else Frozen()
         ),
         indices=(0,) if source == "one" else None,
@@ -413,10 +414,20 @@ def main() -> None:
     run_dir = Path(a.run)
     points = archived(run_dir)
     if not points:
-        raise SystemExit(f"no archived checkpoints under {run_dir / 'checkpoints'}")
+        raise SystemExit(f"no archived checkpoints under {run_dir / ARCHIVE_DIRNAME}")
 
-    cfg = run_config(room=a.room, source=a.source, impassable=a.impassable,
-                     hiddensize=checkpoint_hiddensize(points[0][1]))
+    # The run's OWN effective config when it has provenance (module docstring);
+    # the flags otherwise, with the width read off the checkpoint.
+    from curious_george.configs import Config
+    from curious_george.log_and_store import provenance
+
+    try:
+        cfg = Config.of_run(run_dir)
+        print(f"config: {run_dir / provenance.FILENAME}")
+    except FileNotFoundError:
+        cfg = run_config(room=a.room, source=a.source, impassable=a.impassable,
+                         hiddensize=checkpoint_hiddensize(points[0][1]))
+        print("config: --room/--source/--impassable flags (the run predates provenance.json)")
 
     if a.exploration:
         exploration_main(cfg=cfg, run_dir=run_dir, args=a)

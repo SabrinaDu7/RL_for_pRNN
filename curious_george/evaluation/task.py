@@ -236,7 +236,7 @@ def collect_eval_rollouts(
     """
     render_size = env_eval.render_size
     _, view_size, C = env_eval.obs_shape
-    B, X = n_trajs, None
+    B = n_trajs
 
     with on_device(eval_modules, "cpu"):
         all_obs = torch.zeros((B, T + 1, view_size * view_size * C), dtype=torch.float32)

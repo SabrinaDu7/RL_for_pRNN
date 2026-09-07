@@ -38,8 +38,13 @@ outputs/ckpts/*
 
 # Observation banks live under RL_STORAGE (outputs/obs_bank) since 2026-09-06,
 # rebuilt automatically by curious_george/envs/obs_bank.py on a grid fingerprint.
+# They are a pure LOCAL CACHE, not data: rebuilding one 16x16 bank plus its
+# transition tables is 0.49 s and 0.15 MB in memory. Before the move they sat in
+# data/obs_bank/ as 246 files with only 2 tracked - a split that answers "which
+# of these is canonical?" with "nobody knows". Nothing is tracked; a fresh
+# machine rebuilds.
 storage/*
-tests/perf/results/*.prof
+throwaway/**/results/*.prof
 
 # EXCEPTION: the checkpoint tests/golden_omt/capture_golden_omt.py pins.
 # It is a FIXTURE, not an output. The fixtures beside it are tracked (658 KB
@@ -55,15 +60,9 @@ tests/perf/results/*.prof
 # a path naming that user. .env.example carries the keys with relative defaults.
 .env
 
-# The observation bank is a pure LOCAL CACHE, not data. Measured: rebuilding one
-# 16x16 bank plus its transition tables is 0.49 s and 0.15 MB in memory, so the
-# cache saves half a second per distinct grid per process. It was 246 files with
-# only 2 tracked - a split that answers "which of these is canonical?" with
-# "nobody knows". Nothing is tracked now, and a fresh machine rebuilds.
-
 # macOS finder droppings
 .DS_Store
 
 # Retired run output, parked not deleted. NEVER tracked: 1.7 GB of binaries
 # in history is permanent - a later `rm` does not reclaim it.
-throwaway/outputs/
+throwaway/**/outputs/

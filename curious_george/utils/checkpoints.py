@@ -1,4 +1,5 @@
 from enum import Enum
+from pathlib import Path
 from typing import Any
 import torch
 import torch.nn as nn
@@ -9,6 +10,17 @@ import torch.nn as nn
 #: 2026-08-28 (`storage.LEGACY_POLICY_CKPT_FILENAME` still reads it).
 PRNN_CKPT_FILENAME = "predictiveNet_state.pt"
 POLICY_CKPT_FILENAME = "policy.pt"
+
+#: The step-tagged copies `training/loop.py::save_checkpoint` archives.
+ARCHIVE_DIRNAME = "checkpoints"
+
+
+def run_dir_of(checkpoint: str | Path) -> Path:
+    """The run directory a checkpoint file belongs to - the directory holding
+    `provenance.json` - whether the file is a rolling one beside it or a
+    step-tagged copy one level down under `checkpoints/`."""
+    parent = Path(checkpoint).resolve().parent
+    return parent.parent if parent.name == ARCHIVE_DIRNAME else parent
 
 # Data classes
 ACMODEL_STATUS = dict[str, Any] # Will follow StatusCkptKeys

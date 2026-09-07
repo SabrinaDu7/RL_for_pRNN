@@ -36,7 +36,7 @@ def _rooms(*, impassable: bool):
     """The committed room set, exactly as an arm's training run resolves it."""
     entry = PRESETS["multienv-fast"]
     cfg = entry[1] if isinstance(entry, tuple) else entry
-    env = dataclasses.replace(cfg.env, source=Selected(n=5, impassable=impassable))
+    env = dataclasses.replace(cfg.env, source=Selected(impassable=impassable))
     return resolve_rooms(
         shape=env.shape, content=env.content, source=env.source,
         room_rules=env.room_rules, set_rules=env.set_rules, indices=env.indices,

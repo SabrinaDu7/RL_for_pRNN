@@ -31,6 +31,10 @@ FIXTURE VERSIONS - each bump is a REVIEWED dynamics change, never a repair:
     golden_v4.pt  from the readout OUTPUT BIAS on (prnn 4ec775ed).
     golden_v5.pt  from FULL-COLOUR landmarks on (minigrid 22ef960). <- current
 
+    Only the current file is in the tree: the superseded fixtures (v0-v4, and the
+    eval fixtures' _v1) were removed 2026-09-06 - no test read them, and git
+    history keeps them at the commits that did.
+
 `d275149` ("rl: remove dead `recurrence`") removed a code path that silently
 dropped one transition on odd epochs, so the policy minibatches changed and
 with them the update statistics and the weights. Measured 2026-08-25: v1

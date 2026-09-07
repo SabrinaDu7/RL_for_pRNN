@@ -26,8 +26,11 @@ class LocationStats:
 
     def update(self, locs: list) -> tuple[float, float]:
         """Accumulate this rollout's visits; return (loc_entropy, loc_entropy_5)."""
-        for loc in locs:
-            self.loc_visits[loc] += 1
+        # One scatter-add instead of a Python loop over B*T visits (65,536 per
+        # production rollout). Integer counts, so the order of accumulation
+        # cannot change the result.
+        xy = np.asarray(locs, dtype=np.intp).reshape(-1, 2)
+        np.add.at(self.loc_visits, (xy[:, 0], xy[:, 1]), 1)
         self.loc_visits = self.loc_visits.flatten("F")[self.loc_mask]
         loc_entropy = entropy(self.loc_visits, base=2)
 

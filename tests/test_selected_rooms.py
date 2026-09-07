@@ -106,7 +106,7 @@ def test_selected_returns_n_rooms_at_the_requested_affordance(n):
     for impassable in (False, True):
         rooms = resolve_rooms(
             shape=EnvShape(BASE_ROOM_ID), content=EnvContent(),
-            source=Selected(n=n, impassable=impassable),
+            source=Selected(positions=tuple(range(n)), impassable=impassable),
         )
         assert len(rooms) == n
         assert all(r.blocks_movement is impassable for r in rooms)
@@ -174,11 +174,18 @@ def test_the_flip_changes_no_observation(room_index):
     assert not differing, f"{len(differing)} of {len(walkable)} observations differ"
 
 
-def test_n_out_of_range_is_refused():
-    with pytest.raises(ValueError, match="must be 1"):
-        Selected(n=0)
-    with pytest.raises(ValueError, match="must be 1"):
-        Selected(n=len(ROOMS_SELECTED) + 1)
+def test_an_empty_or_out_of_range_selection_is_refused():
+    with pytest.raises(ValueError, match="positions"):
+        Selected(positions=())
+    with pytest.raises(ValueError, match="positions"):
+        Selected(positions=(len(ROOMS_SELECTED),))
+
+
+def test_n_is_the_count_of_positions_and_nothing_else():
+    """`n` used to be a second field that `positions` silently overrode; the
+    launcher set both, so every 8-room run's provenance said n=5 (audit C10)."""
+    assert Selected(positions=(0, 1, 2, 3, 5, 6, 7, 8)).n == 8
+    assert Selected().n == 5
 
 
 def test_positions_select_by_position_not_source_index():

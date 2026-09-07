@@ -881,60 +881,65 @@ class Curated:
 
 @dataclass(frozen=True)
 class Selected:
-    """The first `n` of `ROOMS_SELECTED`, at the affordance this run wants.
+    """Named entries of `ROOMS_SELECTED`, at the affordance this run wants.
 
     A HAND-CHOSEN subset, which is what distinguishes it from its neighbours:
     `Curated` picks algorithmically under `RoomSetRules`, `Frozen` names the one
     committed set per shape, and `Committed` takes literal rooms but holds struct
-    types tyro will not build a parser for. This is CLI-reachable - an int and a
-    bool - which is what lets one flag flip the affordance and nothing else.
+    types tyro will not build a parser for. This is CLI-reachable - a tuple of
+    positions and a bool - which is what lets one flag flip the affordance and
+    nothing else.
 
-        --env.source:selected --env.source.n 5 --env.source.impassable True
+        --env.source:selected --env.source.impassable          # the first five
+        --env.source:selected --env.source.positions 0 1 2 3 5 6 7 8
 
     `impassable` lives HERE and not on `EnvContent.kinds` on purpose. Putting it
     on the content would feed it to `admissible_placements`, which is what makes
     the walkable and impassable pools different sequences in the first place;
     pinning the anchors and applying the affordance afterwards is what keeps the
     two arms the same rooms.
+
+    Until 2026-09-06 there was also an `n` ("the first n") that `positions`
+    silently overrode when both were set - and the launcher set both, so every
+    8-room run's provenance recorded `n=5` (audit 2026-09-05, C10). One field
+    now says which rooms.
     """
 
-    n: int = 5
+    positions: tuple[int, ...] = (0, 1, 2, 3, 4)
+    """Which `ROOMS_SELECTED` entries, by POSITION in that tuple (NOT by the
+    source-pool index in the per-row comments - position 4 is source index
+    83). Distinct, in-range, order preserved. The default is the historical
+    "first five"; the CE plan's 8-room set is (0, 1, 2, 3, 5, 6, 7, 8), which
+    drops source index 83, the room one cell away from index 0, and takes 191
+    instead."""
+
     impassable: bool = True
 
     keep_landmarks: tuple[str, ...] | None = None
-    """Per-room OBJECT SUBSET, aligned with the rooms this source resolves
-    (2026-09-01, the mixed-count design). One entry per room: the kept
-    landmark indices as digits, order-insensitive ('012' = all three, '12' =
-    drop landmark 0, '-' = the landmark-free room). None keeps every
-    landmark, the historical meaning. EXPLICIT digits rather than counts
-    plus a hidden rotation rule: which objects survive is a design choice
-    that must be readable in the provenance, and colour/shape balance across
-    the set is the caller's responsibility, not an accident.
+    """Per-room OBJECT SUBSET, aligned with `positions` (2026-09-01, the
+    mixed-count design). One entry per room: the kept landmark indices as
+    digits, order-insensitive ('012' = all three, '12' = drop landmark 0,
+    '-' = the landmark-free room). None keeps every landmark, the historical
+    meaning. EXPLICIT digits rather than counts plus a hidden rotation rule:
+    which objects survive is a design choice that must be readable in the
+    provenance, and colour/shape balance across the set is the caller's
+    responsibility, not an accident.
 
         --env.source.keep-landmarks 012 012 012 12 01 0 2 -
     """
 
-    positions: tuple[int, ...] | None = None
-    """Which `ROOMS_SELECTED` entries, by POSITION in that tuple (NOT by the
-    source-pool index in the per-row comments - position 4 is source index
-    83). None keeps the historical meaning: the first `n`. Set, it overrides
-    `n` entirely; distinct, in-range, order preserved. Exists for the CE
-    plan's 8-room set - positions (0, 1, 2, 3, 5, 6, 7, 8) - which drops
-    source index 83, the room one cell away from index 0, and takes 191
-    instead."""
-
     def __post_init__(self) -> None:
-        if self.positions is not None:
-            bad = [p for p in self.positions if not 0 <= p < len(ROOMS_SELECTED)]
-            if bad or len(set(self.positions)) != len(self.positions):
-                raise ValueError(
-                    f"Selected.positions must be distinct positions in "
-                    f"0..{len(ROOMS_SELECTED) - 1}, got {self.positions}"
-                )
-        elif not 1 <= self.n <= len(ROOMS_SELECTED):
+        bad = [p for p in self.positions if not 0 <= p < len(ROOMS_SELECTED)]
+        if not self.positions or bad or len(set(self.positions)) != len(self.positions):
             raise ValueError(
-                f"Selected.n must be 1..{len(ROOMS_SELECTED)}, got {self.n}"
+                f"Selected.positions must be one or more distinct positions in "
+                f"0..{len(ROOMS_SELECTED) - 1}, got {self.positions}"
             )
+
+    @property
+    def n(self) -> int:
+        """How many rooms: a count derived from `positions`, never stated."""
+        return len(self.positions)
 
 
 @dataclass(frozen=True)
@@ -1193,11 +1198,7 @@ def resolve_rooms(
     elif isinstance(source, Selected):
         # `content` is deliberately NOT consulted: the anchors are pinned and the
         # affordance is the source's own field. See `Selected`.
-        chosen = (
-            tuple(ROOMS_SELECTED[p] for p in source.positions)
-            if source.positions is not None
-            else ROOMS_SELECTED[: source.n]
-        )
+        chosen = tuple(ROOMS_SELECTED[p] for p in source.positions)
         rooms = with_affordance(chosen, impassable=source.impassable)
         if source.keep_landmarks is not None:
             if len(source.keep_landmarks) != len(rooms):

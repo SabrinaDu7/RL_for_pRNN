@@ -97,7 +97,7 @@ def test_keep_landmarks_expresses_the_mixed_count_design() -> None:
 
     rooms = resolve_rooms(
         shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
-        source=Selected(n=8, impassable=True, positions=(0, 1, 2, 3, 5, 6, 7, 8),
+        source=Selected(impassable=True, positions=(0, 1, 2, 3, 5, 6, 7, 8),
                         keep_landmarks=("012", "012", "012", "12", "01", "0", "2", "-")),
         set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})),
     )
@@ -114,11 +114,11 @@ def test_keep_landmarks_misalignment_and_bad_digits_fail_loudly() -> None:
     kw = dict(shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
               set_rules=RoomSetRules(varies=frozenset({Vary.POSITION})))
     with pytest.raises(ValueError, match="align by position"):
-        resolve_rooms(source=Selected(n=8, impassable=True,
+        resolve_rooms(source=Selected(impassable=True,
                                       positions=(0, 1, 2, 3, 5, 6, 7, 8),
                                       keep_landmarks=("012",)), **kw)
     with pytest.raises(ValueError, match="invalid or repeated"):
-        resolve_rooms(source=Selected(n=1, impassable=True, positions=(0,),
+        resolve_rooms(source=Selected(impassable=True, positions=(0,),
                                       keep_landmarks=("03",)), **kw)
 
 
@@ -126,7 +126,7 @@ def test_keep_landmarks_parses_from_the_command_line() -> None:
     from curious_george.configs import cli
 
     cfg = cli(["multienv-fast", "--run.no-wandb", "env.source:selected",
-               "--env.source.n", "8", "--env.source.impassable",
+               "--env.source.impassable",
                "--env.source.positions", "0", "1", "2", "3", "5", "6", "7", "8",
                "--env.source.keep-landmarks", "012", "012", "012", "12", "01", "0", "2", "-"])
     assert cfg.env.source.keep_landmarks == ("012", "012", "012", "12", "01", "0", "2", "-")

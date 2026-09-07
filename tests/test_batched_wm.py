@@ -9,7 +9,6 @@ from prnn.utils import (
     ActionEncodingsEnum,
     MinigridEnvNames,
     PredictiveNet,
-    RandomActionAgent,
 )
 from curious_george import AgentInputType, make_env
 from curious_george.rl.update.world_model import train_world_model_on_episodes
@@ -33,7 +32,6 @@ def setup():
                        trainNoiseMeanStd=(0, 0), wandb_log=False)
     adapter = PRNNAdapter(pN, torch.device("cpu"), action_offset=0)
 
-    agent = RandomActionAgent(env.action_space, np.array([0.15, 0.15, 0.6, 0.1]))
     obs_dicts, acts = [env.reset()], []
     for _ in range(2 * L):
         a = int(np.random.randint(0, 4))
