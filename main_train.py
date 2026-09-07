@@ -58,6 +58,12 @@ def train(cfg: configs.Config) -> None:
                 flush=True,
             )
             run_ctx = replace(run_ctx, wandb_log=False)
+    # The world model logs its own loss and eval metrics through the fork, on a
+    # flag it was BUILT with - before wandb existed. One home for "is wandb on":
+    # the run context, after the init that may just have failed. Without this
+    # line the degrade above survived `init` and died at the first world-model
+    # step, in `recordTrainingTrial` (audit 2026-09-05, C4).
+    comps.predictiveNet.wandb_log = run_ctx.wandb_log
 
     run_training(cfg, run_ctx, comps)
 

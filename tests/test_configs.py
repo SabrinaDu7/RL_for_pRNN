@@ -113,12 +113,47 @@ def test_rollout_size_does_not_change_the_training_budget():
          lambda: CollectCfg(backend=EnvBackend.DEVICE, num_envs=1)),
         ("a rollout graph needs the device backend",
          lambda: CollectCfg(rollout_cuda_graph=True)),
+        # The half-budget arm of 2026-08-31: 21,968 world-model steps on a
+        # preset whose rollout yields 32, so the loop ran 687 rollouts and
+        # 21,984 steps while provenance said 686 and 21,968 (audit C2).
+        ("the rollout must divide the budget",
+         lambda: cli(["multienv-fast", "--run.no-wandb",
+                      "--train-prnn.total-grad-steps", "21968",
+                      "--train-policy.total-grad-steps", "87872"])),
+        # A graphed learner rebuilds its optimizer capturable from EMPTY state;
+        # a checkpoint restores state. This asserted at the first update, after
+        # the allocation and the wandb run (audit C8).
+        ("resuming the world model under its CUDA graph",
+         lambda: cli(["parity", "--run.no-wandb", "--run.prnn-ckpt", "/x/predictiveNet_state.pt"])),
+        ("resuming the policy under its CUDA graph",
+         lambda: cli(["parity", "--run.no-wandb", "--run.policy-ckpt", "/x/policy.pt"])),
     ],
 )
 def test_invalid_states_do_not_construct(label, build):
     """Each of these was a runtime failure mid-run, or a silent no-op."""
     with pytest.raises(ValueError):
         build()
+
+
+def test_resuming_with_the_graphs_off_is_allowed():
+    """The refusal is about the graphs, not about resuming."""
+    cfg = cli(["parity", "--run.no-wandb",
+               "--run.prnn-ckpt", "/x/predictiveNet_state.pt",
+               "--run.policy-ckpt", "/x/policy.pt",
+               "--train-prnn.no-cuda-graph", "--train-policy.no-cuda-graph"])
+    assert cfg.run.prnn_ckpt is not None
+    # A random agent's policy never updates, so its checkpoint holds no
+    # optimizer state and the policy graph is moot.
+    cli(["parity", "--run.no-wandb", "--run.policy-ckpt", "/x/policy.pt",
+         "--train-prnn.no-cuda-graph", "--arch-policy.agent", "RANDOM"])
+
+
+def test_the_half_budget_that_divides_is_the_one_the_launcher_names():
+    """`slurm/multienv.sh` documents 21,984 as the half budget; it must parse."""
+    cfg = cli(["multienv-fast", "--run.no-wandb",
+               "--train-prnn.total-grad-steps", "21984",
+               "--train-policy.total-grad-steps", "87936"])
+    assert cfg.total_rollouts * cfg.schedule.prnn_steps_per_rollout == 21_984
 
 
 def test_to_dict_is_json_serialisable_and_keeps_subclass_identity():

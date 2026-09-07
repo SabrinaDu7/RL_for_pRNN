@@ -1,0 +1,248 @@
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:23<00:23, 2753.72it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing:  50%|█████     | 65536/131072 [00:40<00:23, 2753.72it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:56<00:00, 2278.99it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:10<00:00, 2278.99it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:23<00:00, 1566.28it/s]
+Device: cuda
+
+multi-room: 8 layouts, resampled per episode
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_7c767b3ea0ca465b-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_8c2f3dbfbb1b22dc-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_1046cfffa43b0690-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_31b422db62d758a1-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_44b26e4c9839e2ab-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_5a8151d1510b3fd2-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_26c607160bb67283-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_93d634fe851cc43e-22ef960b-t1v7.npz (0.2 MB raw)
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-06-23-31-10/ 
+
+
+
+[base1] prod: 92.2 s; eval: ['rooms sRSA [0.106 0.072 0.073 0.065 0.049] mean=0.0730 pooled=0.0440 remapping=+0.0290 SWdist=0.0141 episodes/room [65, 64, 55, 66, 70, 59, 63, 70] [5/8 rooms scored]', 'rooms sRSA [0.041 0.036 0.046 0.077 0.034] mean=0.0468 pooled=0.0373 remapping=+0.0095 SWdist=0.0082 episodes/room [91, 102, 89, 102, 94, 94, 101, 95] [5/8 rooms scored]']
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:05<00:05, 11324.85it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing:  50%|█████     | 65536/131072 [00:19<00:05, 11324.85it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:35<00:00, 3310.25it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:49<00:00, 3310.25it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:02<00:00, 2085.01it/s]
+Device: cuda
+
+multi-room: 5 layouts, resampled per episode
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_06eeee374e3425b2-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_a184f96002b3f54c-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_b9251fd893706623-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_7e002190852de638-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_7c9ac7401667aca2-22ef960b-t1v7.npz (0.2 MB raw)
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-06-23-32-40/ 
+
+
+
+[base1] walkable: 69.5 s; eval: ['rooms sRSA [0.006 0.029 0.031 0.032 0.044] mean=0.0285 pooled=0.0206 remapping=+0.0079 SWdist=0.0085 episodes/room [101, 95, 108, 97, 111]', 'rooms sRSA [0.053 0.034 0.052 0.025 0.045] mean=0.0417 pooled=0.0302 remapping=+0.0114 SWdist=0.0066 episodes/room [150, 151, 155, 152, 160]']
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:04<00:04, 14097.52it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:09<00:00, 13954.87it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:13<00:00, 9891.20it/s] 
+Device: cuda
+
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN_base/data/obs_bank/MiniGrid-LRoom-v0_tile1_6f48cd7fbcae481d-22ef960b-t1v7.npz (0.2 MB raw)
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-06-23-33-48/ 
+
+
+
+[base1] parity: 16.0 s; eval: ['onPolicy sRSA=0.0245 SWdist=0.0160', 'onPolicy sRSA=0.0421 SWdist=0.0097']
+Processing:   0%|          | 0/4096 [00:00<?, ?it/s]Processing:  50%|█████     | 2048/4096 [00:03<00:03, 680.90it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 4096/4096 [00:10<00:00, 374.83it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 4096/4096 [00:14<00:00, 283.05it/s]
+Device: cuda
+
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-06-23-34-03/ 
+
+
+
+[base1] reference: 15.9 s; eval: ['onPolicy sRSA=0.0507 SWdist=0.0330', 'onPolicy sRSA=0.0215 SWdist=0.0278']
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:20<00:20, 3182.13it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing:  50%|█████     | 65536/131072 [00:40<00:20, 3182.13it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:56<00:00, 2202.33it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:10<00:00, 2202.33it/s]/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN_base/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:25<00:00, 1528.17it/s]
+Device: cuda
+
+multi-room: 8 layouts, resampled per episode
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-06-23-34-31/ 
+
+
+
+[base2] prod: 89.7 s; eval: ['rooms sRSA [0.106 0.072 0.073 0.065 0.049] mean=0.0730 pooled=0.0440 remapping=+0.0290 SWdist=0.0141 episodes/room [65, 64, 55, 66, 70, 59, 63, 70] [5/8 rooms scored]', 'rooms sRSA [0.041 0.036 0.046 0.077 0.034] mean=0.0468 pooled=0.0373 remapping=+0.0095 SWdist=0.0082 episodes/room [91, 102, 89, 102, 94, 94, 101, 95] [5/8 rooms scored]']
+exit=0

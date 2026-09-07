@@ -24,7 +24,7 @@ BINDINGS = {
     "POLICY_GRAPH": "", "RAMP": "",
     # A budget override, so the flags it injects are parsed too. Its 1:4
     # world-model:policy ratio is what keeps ppo_batch_size at 2048.
-    "BUDGET": "--train-prnn.total-grad-steps 21968 --train-policy.total-grad-steps 87872",
+    "BUDGET": "--train-prnn.total-grad-steps 21984 --train-policy.total-grad-steps 87936",  # the half budget multienv.sh documents; 21,968 does not divide the rollout
     "AGENTFLAG": "--arch-policy.agent RANDOM",
     "NORMFLAG": "--train-policy.normalize-advantage",
     "ENTFLAG": "--train-policy.entropy-coef 0.024",

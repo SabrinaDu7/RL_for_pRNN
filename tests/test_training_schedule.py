@@ -27,9 +27,21 @@ def test_cumulative_gradient_steps_agree_with_the_totals():
     """
     for name, (_, cfg) in PRESETS.items():
         s = cfg.schedule
-        at_end = s.gradient_steps_at(s.total_rollouts)
+        at_end = s.gradient_steps_at(s.total_rollouts, prnn_trains=True, policy_trains=True)
         assert at_end["prnn_grad_steps"] == s.total_prnn_steps, name
         assert at_end["policy_grad_steps"] == s.total_policy_steps, name
+
+
+def test_a_learner_that_does_not_train_reports_zero_steps():
+    """A random-agent baseline takes no policy steps; its axis said 175,744.
+    `freeze_params` stops both learners; both axes climbed regardless
+    (audit 2026-09-05, C3)."""
+    s = PRESETS["multienv-fast"][1].schedule
+    random_agent = s.gradient_steps_at(10, prnn_trains=True, policy_trains=False)
+    assert random_agent["policy_grad_steps"] == 0
+    assert random_agent["prnn_grad_steps"] == 10 * s.prnn_steps_per_rollout
+    frozen = s.gradient_steps_at(10, prnn_trains=False, policy_trains=False)
+    assert frozen == {"prnn_grad_steps": 0, "policy_grad_steps": 0}
 
 
 def test_the_two_learners_train_at_different_rates():
@@ -167,10 +179,11 @@ def test_update_stats_accepts_exactly_what_gradient_steps_at_returns():
 
     from curious_george.training.logging import UpdateStats
 
-    keys = set(PRESETS["reference"][1].schedule.gradient_steps_at(1))
+    steps = PRESETS["reference"][1].schedule.gradient_steps_at(
+        1, prnn_trains=True, policy_trains=True
+    )
     fields = {f.name for f in dataclasses.fields(UpdateStats)}
-    assert keys <= fields, f"UpdateStats is missing {sorted(keys - fields)}"
+    assert set(steps) <= fields, f"UpdateStats is missing {sorted(set(steps) - fields)}"
 
     # and it really constructs
-    UpdateStats(num_frames=1, fps=1.0, duration=1, random_agent=False,
-                **PRESETS["reference"][1].schedule.gradient_steps_at(1))
+    UpdateStats(num_frames=1, fps=1.0, duration=1, random_agent=False, **steps)

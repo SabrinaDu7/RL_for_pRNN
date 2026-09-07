@@ -61,6 +61,9 @@ IMP="${1:-false}"; N="${2:-5}"; SEED="${3:-2}"; BRANCH="${4:-sdu/multienv}"
 # analysis events - which is why a half budget exists. Per-room sRSA over the
 # walkable run went 0.617 -> 0.713 -> 0.786 -> 0.795 -> 0.804, so half the
 # budget buys nearly all of the quality.
+# MUST BE A MULTIPLE OF 32 (the world-model steps one rollout yields on this
+# preset): the config refuses a budget the rollout does not divide, because the
+# loop would overshoot it - 21,968 actually ran 21,984. Use 21,984 for "half".
 WM="${5:-}"
 # "random" makes actions come from RAND_ACT_PROBA instead of the policy, through
 # the SAME collector - the baseline the learned policy is measured against.

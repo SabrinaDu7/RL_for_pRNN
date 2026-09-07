@@ -368,6 +368,10 @@ def evaluate_multi_room_representation(
     per_room: list[dict] = []
     h_rows: list = []
     pos_rows: list = []
+    # The shell is borrowed: rooms are visited by rebinding its landmarks, and
+    # it goes back the way it was found, or the trajectory figure drawn after
+    # this event shows whichever room was scored last (audit 2026-09-05, C15).
+    landmarks_found = list(env.env.unwrapped.landmarks)
     with _probe_rng(probe_seed, pN), eval_mode(modules), on_device(modules, "cpu"):
         for k, layout in enumerate(layouts):
             env.env.unwrapped.landmarks = list(layout.landmarks)
@@ -409,6 +413,7 @@ def evaluate_multi_room_representation(
             rng=rng,
             wandb_nameext="_pooled",
         )
+    env.env.unwrapped.landmarks = landmarks_found
 
     mean_room_srsa = float(np.mean([r["sRSA"] for r in per_room]))
     return {

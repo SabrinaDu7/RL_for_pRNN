@@ -111,9 +111,9 @@ def setup_task(
 
     status = torch.load(acmodel_ckpt, map_location=device, weights_only=False)
     algo = setup_algo(cfg, list(envs_train), acmodel, pN, preprocess_obss, status, device=device)
-    # NOTE: freezing the world model must NOT zero prnn_seqdur (episode cuts
-    # still apply), so it is applied post-construction rather than via
-    # cfg.train_prnn.train.
+    # The task's freeze is a property of the PHASE, not of the config it was
+    # handed, so it is applied post-construction. (`setup_algo` keeps the
+    # episode cut either way since 2026-09-06.)
     if freeze.world_model:
         algo.train_pN = False
         pN.pRNN.eval()
@@ -177,8 +177,13 @@ def train_phase(
 
             if wandb_log:
                 cur_rewards = synthesize(exp_logs["curious_rewards"], abs=True)
-                wandb.log({"Train/cur_rewards": cur_rewards["mean"]})
-                wandb.log({"Train/cur_rewards": cur_rewards["std"]})
+                # Two keys: these were logged under ONE key on consecutive
+                # steps, so the series alternated mean and std (audit
+                # 2026-09-05, C7).
+                wandb.log({
+                    "Train/cur_rewards_mean": cur_rewards["mean"],
+                    "Train/cur_rewards_std": cur_rewards["std"],
+                })
                 for key, val in logs2.items():
                     wandb.log({f"Train/{key}": val})
 
@@ -289,8 +294,7 @@ def collect_eval_rollouts_batched(
 ) -> EvalRollouts:
     """Batched eval collection: one trajectory per env copy, stepped in
     lockstep with ONE batched AC forward and ONE batched pRNN step per
-    timestep (BatchedSRTrackerShim - the direct pN.pRNN batched path, not
-    the buggy predict(batched=True)).
+    timestep (BatchedSRTrackerShim, the direct pN.pRNN batched path).
 
     NOT bit-comparable to the serial collector: per-env pRNN states start
     from zeros (no cross-trajectory pN.state carry-over) and RNG order
@@ -311,7 +315,6 @@ def collect_eval_rollouts_batched(
     with on_device(eval_modules, "cpu"):
         device = torch.device("cpu")
         adapter = PRNNAdapter(pN, device, agent.action_offset)
-        tracker = BatchedSRTrackerShim(adapter, B)
         preprocess = get_obss_preprocessor(envs_eval[0].observation_space)[1]
 
         raw_obs = [[] for _ in range(B)]     # per env: T+1 raw obs dicts
@@ -335,6 +338,10 @@ def collect_eval_rollouts_batched(
             if include_render:
                 all_renders[b, 0] = env.render(mode=None)
 
+        # Built from the initial observations, which the shim takes as a list -
+        # it was handed the stream COUNT, an int, and raised TypeError on its
+        # first call (audit 2026-09-05, C6).
+        tracker = BatchedSRTrackerShim(adapter, obs_b)
         sr = tracker.initial_sr()
         for t in range(T):
             preprocessed = preprocess(obs_b, device=device)

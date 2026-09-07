@@ -228,10 +228,13 @@ def setup_algo(cfg, envs, acmodel, predictiveNet, preprocess_obss, status: dict,
                device: torch.device | None = None) -> PredictivePPOAlgo:
     device = get_device() if device is None else device
     schedule = TrainingSchedule.from_config(cfg)
-    # A frozen pRNN still needs episode cuts, so segmenting no longer depends on
-    # whether it trains - the old code zeroed seqdur here, mutating the config
-    # AFTER provenance had already recorded it.
-    prnn_seqdur = cfg.collect.episode_steps if cfg.train_prnn.train else 0
+    # A frozen pRNN still needs episode cuts: the tracker resets, the curiosity
+    # segments and the GAE masks all run on this clock whether or not the world
+    # model takes a step. `train_prnn.train` gates the UPDATE alone (`train_pN`
+    # in rl/algo.py). This used to zero the cut for a frozen net - which handed
+    # a serial run MiniGrid's own 2,560-step truncation as its episode length
+    # while the comment above it claimed the opposite (audit 2026-09-05, C5).
+    prnn_seqdur = cfg.collect.episode_steps
 
     # The circuit, straight from the config. It used to be INFERRED from the
     # architecture's name and then carried alongside a second name, `pastSR`,

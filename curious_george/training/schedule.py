@@ -117,17 +117,24 @@ class TrainingSchedule:
 
     # -- logging -----------------------------------------------------------
 
-    def gradient_steps_at(self, rollout: int) -> dict[str, int]:
+    def gradient_steps_at(
+        self, rollout: int, *, prnn_trains: bool, policy_trains: bool
+    ) -> dict[str, int]:
         """Cumulative optimizer steps after `rollout` rollouts, per learner.
 
         Logged beside environment steps so a wandb panel can be read on either
         axis: environment steps answer "how much experience", gradient steps
         answer "how much training", and the two come apart exactly when the
         collection shape changes.
+
+        A learner that is not training has taken ZERO steps, and its axis says
+        so. It used to climb on the schedule regardless, so a random-agent
+        baseline reported 175,744 policy steps it never took (audit
+        2026-09-05, C3).
         """
         return {
-            "prnn_grad_steps": self.prnn_steps_per_rollout * rollout,
-            "policy_grad_steps": self.policy_steps_per_rollout * rollout,
+            "prnn_grad_steps": self.prnn_steps_per_rollout * rollout if prnn_trains else 0,
+            "policy_grad_steps": self.policy_steps_per_rollout * rollout if policy_trains else 0,
         }
 
     def as_dict(self) -> dict[str, int]:

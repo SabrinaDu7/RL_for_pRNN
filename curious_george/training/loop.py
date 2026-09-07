@@ -196,6 +196,13 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     schedule = TrainingSchedule.from_config(cfg)
     cadence = TrainingCadence.from_config(cfg, start_step=num_frames)
     entropy = EntropySchedule.from_config(cfg)
+    # Which learners actually step, decided once: the update call and the
+    # logged gradient-step axes read the SAME two facts.
+    policy_trains = (
+        not cfg.arch_policy.freeze_params
+        and cfg.arch_policy.agent is not AgentType.RANDOM
+    )
+    prnn_trains = cfg.train_prnn.train and not cfg.arch_policy.freeze_params
     print(schedule.summary())
     print(entropy.summary())
     # The ceiling `loc_entropy` is measured against. Printed once because it is
@@ -245,10 +252,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
             exps, logs1 = algo.collect_experiences()
             logs2 = algo.update_parameters(
                 exps=exps,
-                update_params=(
-                    not cfg.arch_policy.freeze_params
-                    and cfg.arch_policy.agent is not AgentType.RANDOM
-                ),
+                update_params=policy_trains,
                 # The BASELINE trains its world model on random-walk data - that
                 # is the whole measurement. Only the POLICY stands still.
                 update_world_model=not cfg.arch_policy.freeze_params,
@@ -294,7 +298,9 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
                         fps=logs["num_frames"] / update_duration,
                         duration=int(time.time() - start_time),
                         random_agent=cfg.arch_policy.agent is AgentType.RANDOM,
-                        **schedule.gradient_steps_at(update),
+                        **schedule.gradient_steps_at(
+                            update, prnn_trains=prnn_trains, policy_trains=policy_trains,
+                        ),
                     )
                     mi = (
                         None

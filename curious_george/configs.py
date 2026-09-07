@@ -907,6 +907,41 @@ class Config:
                 f"env_steps_per_rollout ({rollout}); adjust total_grad_steps on either "
                 "learner, or the rollout shape"
             )
+        # The loop runs WHOLE rollouts until the budget is met, so a budget the
+        # rollout does not divide is overshot by up to one rollout - and the
+        # stated gradient-step totals, `total_rollouts` and provenance all say
+        # the smaller number. A half-budget arm launched at 21,968 world-model
+        # steps actually took 21,984 (audit 2026-09-05, C2). Unrepresentable now.
+        per_rollout = self.collect.episodes_per_rollout
+        if self.total_episodes % per_rollout:
+            prnn_steps_per_rollout = per_rollout // self.train_prnn.episodes_per_grad_step
+            raise ValueError(
+                f"the budget is {self.total_episodes:,} episodes but a rollout is "
+                f"{per_rollout}, so the loop would run "
+                f"{-(-self.total_episodes // per_rollout):,} rollouts and overshoot "
+                f"both gradient-step budgets. Make train_prnn.total_grad_steps a "
+                f"multiple of {prnn_steps_per_rollout} (and scale the policy's with it)"
+            )
+        # A CUDA-graphed learner rebuilds its optimizer capturable, which needs
+        # EMPTY optimizer state - and a checkpoint restores it. The assertion
+        # fired at the first update, after provenance was written and the wandb
+        # run opened (audit 2026-09-05, C8). Fail here instead. A RANDOM agent's
+        # policy never updates, so its checkpoint carries no optimizer state.
+        resumes = (
+            (self.run.prnn_ckpt, self.train_prnn.cuda_graph, "train-prnn"),
+            (
+                self.run.policy_ckpt,
+                self.train_policy.cuda_graph and self.arch_policy.agent is not AgentType.RANDOM,
+                "train-policy",
+            ),
+        )
+        for ckpt, graphed, section in resumes:
+            if ckpt is not None and graphed:
+                raise ValueError(
+                    f"resuming from {ckpt} restores optimizer state, and "
+                    f"{section.replace('-', '_')}.cuda_graph needs it empty; "
+                    f"resume with --{section}.no-cuda-graph"
+                )
 
 
 def _jsonable(value: Any) -> Any:

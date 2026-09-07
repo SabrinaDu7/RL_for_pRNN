@@ -289,9 +289,15 @@ def score_exploration_series(
                 "read it off the run's own exploration/* series or the walker "
                 "calibration (python -m curious_george.envs.action_graph)."
             )
-        point_cfg = replace(cfg, run=replace(
-            cfg.run, prnn_ckpt=prnn_path, policy_ckpt=policy_path, wandb=False,
-        ))
+        # Graphs off: a point only COLLECTS, and the config refuses a resume
+        # with a graphed learner (its optimizer would need empty state). The
+        # rollout graph carries no optimizer and stays as the run had it.
+        point_cfg = replace(
+            cfg,
+            run=replace(cfg.run, prnn_ckpt=prnn_path, policy_ckpt=policy_path, wandb=False),
+            train_prnn=replace(cfg.train_prnn, cuda_graph=False),
+            train_policy=replace(cfg.train_policy, cuda_graph=False),
+        )
         comps = setup_training(point_cfg)
         algo = comps.algo
         positions, layout_ids = [], []
