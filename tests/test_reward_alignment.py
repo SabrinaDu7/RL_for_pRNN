@@ -16,10 +16,10 @@ from curious_george.models.device import on_device, eval_mode
 
 
 class StubAdapter:
-    """prediction_mses returns [0, 1, ...] (+100 when target_offset=1) so the
+    """prediction_errors returns [0, 1, ...] (+100 when target_offset=1) so the
     selected alignment is legible from the values."""
 
-    def prediction_mses(self, *, obss, actions_np, done_indices,
+    def prediction_errors(self, *, obss, actions_np, done_indices,
                         last_observations, num_frames, target_offset=0):
         return torch.arange(num_frames, dtype=torch.float32) + 100 * target_offset
 
@@ -88,7 +88,7 @@ def episode_stream():
 
 def _mses(adapter, obss, acts, done_indices, last_observations, offset):
     torch.manual_seed(11)  # identical draws per pass (zero noise anyway)
-    return adapter.prediction_mses(
+    return adapter.prediction_errors(
         obss=obss, actions_np=acts, done_indices=done_indices,
         last_observations=last_observations, num_frames=len(obss),
         target_offset=offset,

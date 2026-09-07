@@ -181,9 +181,8 @@ def write(
     """Write `provenance.json` into `directory` and return its path.
 
     Writes via a temporary file and `os.replace`, so a reader either sees the
-    complete record or no file at all. (`envs/obs_bank.py:95` gets this wrong
-    for its cache and a concurrent reader can load a truncated file; do not
-    repeat it here.)
+    complete record or no file at all - the same dance `envs/obs_bank.py` does
+    for its cache.
     """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)

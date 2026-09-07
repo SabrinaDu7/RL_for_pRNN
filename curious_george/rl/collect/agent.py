@@ -94,7 +94,11 @@ class ActorCriticAgent:
             render = [None for t in range(tsteps + 1)]
             render[0] = env.render(mode=None)
 
-        # TODO: Double check with Alex
+        # Before the first action there is no state: zeros, the same value
+        # `PRNNAdapter.init_sr` returns at offset 0 (the circuit every checkpoint
+        # so far was trained under). At offset 1 the training rollout instead
+        # bootstraps h[0] from obs[0] and HD[0]; this probe does not, so its
+        # first step would differ from training there (audit 2026-09-05, C14).
         SR = torch.zeros((1, self.prnn.hidden_size), device=self.device)
         state["SRs"] = SR.cpu().numpy()
 

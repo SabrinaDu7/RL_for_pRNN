@@ -8,8 +8,6 @@ it at 1.
 
 import dataclasses
 
-import numpy as np
-import pytest
 import torch
 
 from curious_george.configs import EnvBackend

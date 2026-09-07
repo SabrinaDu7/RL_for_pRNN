@@ -12,7 +12,6 @@ and a prepare-thread crash surfaces instead of hanging the collector.
 
 import numpy as np
 import pytest
-import torch
 
 from curious_george.configs import EnvBackend, EnvCfg, EvalKind
 from curious_george.envs.layouts import (

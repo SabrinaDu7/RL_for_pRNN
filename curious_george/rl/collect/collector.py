@@ -49,7 +49,7 @@ def _preprocess_policy_obss(obss, acmodel, preprocess_obss, device):
     """
     # Keep the B=1 golden path byte-for-byte on the historical preprocessor;
     # high-throughput collection is the B>1 path.
-    if len(obss) == 1 or getattr(acmodel, "with_CV", True):
+    if len(obss) == 1 or acmodel.with_CV:
         return preprocess_obss(obss, device=device)
     directions = np.asarray([obs["direction"] for obs in obss], dtype=np.uint8)
     return DictList({
@@ -60,7 +60,7 @@ def _preprocess_policy_obss(obss, acmodel, preprocess_obss, device):
 def _device_policy_obss(images, directions, acmodel):
     """Build only the device fields consumed by the configured policy."""
     data = {"direction": directions.to(torch.uint8)}
-    if getattr(acmodel, "with_CV", True):
+    if acmodel.with_CV:
         data["image"] = images.to(torch.float32)
     return DictList(data)
 
@@ -638,7 +638,7 @@ def collect_rollout(
     if cfg.curious_agent:
         with timer("collect/curious_rewards"):
             if device_pool is not None:
-                curious_rewards = adapter.prediction_mses_device(
+                curious_rewards = adapter.prediction_errors_device(
                     images_tb=device_images,
                     directions_tb=device_directions,
                     actions_tb=actions,

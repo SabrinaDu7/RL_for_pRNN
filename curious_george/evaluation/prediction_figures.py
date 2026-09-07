@@ -315,12 +315,10 @@ def plot_run_predictions(
 # The circuit itself: every tensor the two networks exchange, on one clock.
 
 
-#: The four actions this environment exposes. Index 3 is MiniGrid's `pickup`,
-#: which cannot succeed in an L-room and leaves position and direction
-#: unchanged - measured, not assumed.
-ACTION_NAMES = ("turn left", "turn right", "forward", "pickup (no-op)")
-#: Same four, short enough for a figure cell.
-ACTION_SHORT = ("turn L", "turn R", "FORWARD", "no-op")
+from curious_george.utils.common import ACTION_NAMES  # the one home for the four names
+
+#: `ACTION_NAMES`, short enough for a figure cell.
+ACTION_SHORT = ("turn L", "turn R", "FORWARD", "stay")
 
 #: Head direction, clockwise from east. MiniGrid's `DIR_TO_VEC`, with y growing
 #: DOWNWARD: 0 right (+1,0), 1 down (0,+1), 2 left (-1,0), 3 up (0,-1).

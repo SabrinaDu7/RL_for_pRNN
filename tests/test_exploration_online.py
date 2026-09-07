@@ -7,17 +7,13 @@ collect lands the scalars in the logs - with the room ids provably the rooms
 the streams were actually stepped in.
 """
 
-import dataclasses
 
 import numpy as np
-import pytest
-import torch
 
 from curious_george.configs import EnvBackend, EnvCfg, EvalKind
 from curious_george.envs.layouts import (
     BASE_ROOM_ID,
     EnvContent,
-    EnvShape,
     LandmarkKind,
     RoomSetRules,
     Uniform,

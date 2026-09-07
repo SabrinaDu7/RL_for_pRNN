@@ -6,7 +6,6 @@ path, and produce seeded, repeatable rows. The archived-policy series was
 write-only from 2026-08-28 until this consumer.
 """
 
-import dataclasses
 import shutil
 from types import SimpleNamespace
 

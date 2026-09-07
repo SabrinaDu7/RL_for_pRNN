@@ -6,7 +6,7 @@ The three headline correctness metrics for the pRNN (see throwaway/ported/docs_l
 - SI: per-unit spatial information of the place fields.
 
 Collection is multi-trajectory (OMT-style): n_trajs rollouts of traj_timesteps
-steps each - the SAME length as training trajectories (predNet.seqdur), so the
+steps each - the SAME length as training trajectories (`collect.episode_steps`), so the
 evaluated hidden-state distribution matches what training produces (a single
 long rollout never resets the pRNN state; training does, every seqdur steps).
 All trajectories are collected and pooled under ONE CPU device move, and each
@@ -169,7 +169,7 @@ def _evaluate_spatial_inner(
         np.random.seed(probe_seed)
         env.env.reset(seed=probe_seed)
 
-    # eval_mode disables the input dropout (p=predNet.dropp, 0.15). That
+    # eval_mode disables the input dropout (p=`arch_prnn.dropout`, 0.15). That
     # dropout implements a DENOISING objective during world-model training -
     # it corrupts obs_out but never obs_target_out (Architectures.clip_mask) -
     # and torch implements it inverted, scaling survivors by 1/(1-p) so that
@@ -180,7 +180,7 @@ def _evaluate_spatial_inner(
     # evaluation/probe.py do the same; checkpoint_series.score and the figure
     # paths historically did NOT (audit 2026-08-31) - see their own notes.
     #
-    # The injected noise (predNet.trainNoiseMeanStd) is deliberately KEPT: it
+    # The injected noise (`arch_prnn.noise_mean`, `arch_prnn.noise_std`) is deliberately KEPT: it
     # is the model's dynamics, and it is what generates the "sleep" activity
     # SWdist compares against.
     with eval_mode(modules), on_device(modules, "cpu"):

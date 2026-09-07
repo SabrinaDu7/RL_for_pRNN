@@ -9,7 +9,6 @@ feature_dim=2 - a transposed reshape gives plausible wrong numbers, not a
 crash), and the argmax render round-trip.
 """
 
-import dataclasses
 
 import pytest
 import torch

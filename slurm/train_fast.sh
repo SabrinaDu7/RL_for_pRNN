@@ -33,7 +33,8 @@
 #     plus the OPA figures, the same keys the 2026-07 reference logged.
 #     Verified locally: all four figure keys reach wandb, exit 0.
 #   - the spatial eval moves the pRNN off-device, which was unsafe under a
-#     captured graph. The final config does not use cuda_graph, so it is safe.
+#     captured graph until models/device.py::on_device became address-preserving
+#     (2026-08-23); the graph switches below are safe to turn on since.
 # The offline scoring at the end still runs: wandb is the live view, the
 # archives remain the checkable record.
 #
@@ -304,8 +305,8 @@ PLOT_EVERY=$((TOTAL_STEPS/N_PLOT))
 # 400,000 episodes = 102.4M environment steps (NOTE: with a stride, episodes
 # no longer equal world-model gradient steps - 102.4M/2048 = 50,000 of those).
 #
-# Sized from the MEASURED PRODUCTION RATE, not the benchmark. tests/perf
-# benchmarks reported 106.74 grad/s at 4 updates; a real run sustains
+# Sized from the MEASURED PRODUCTION RATE, not the benchmark. The perf scripts
+# (throwaway/2026-09-06/perf) reported 106.74 grad/s at 4 updates; a real run sustains
 # 19,286 env steps/s = 75.3 grad/s, because a benchmark excludes archiving,
 # checkpoint saves and the multi-room layout resampling. Believe the run.
 #   setup ~10 min + 102.4M/~45,000 env steps/s = ~38 min training

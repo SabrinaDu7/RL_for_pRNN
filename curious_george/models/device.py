@@ -43,7 +43,7 @@ def on_device(targets, device: torch.device | str):
     `data_ptr()` it started with.
 
     That is not a micro-optimization, it is what makes this composable with
-    `predNet.cuda_graph`. `Module.to()` REPLACES `param.data`, so a plain
+    `train_prnn.cuda_graph`. `Module.to()` REPLACES `param.data`, so a plain
     cuda->cpu->cuda round trip ends on a fresh allocation and leaves every
     captured CUDA graph writing to freed memory - a use-after-free that killed
     two cluster runs (`obs.direction`==184, 7 updates after an analysis event).

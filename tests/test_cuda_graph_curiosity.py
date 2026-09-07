@@ -84,7 +84,7 @@ def _paired_adapters(**kwargs):
     eager_pN, eager = _adapter(graphed=False, **kwargs)
     graph_pN, graphed = _adapter(graphed=True, **kwargs)
     assert not eager.curiosity_cuda_graph, "the flag leaked into the eager arm"
-    assert graphed.curiosity_cuda_graph, "predNet.curiosity_cuda_graph did not engage"
+    assert graphed.curiosity_cuda_graph, "train_prnn.curiosity_cuda_graph did not engage"
     assert all(
         torch.equal(a, b)
         for a, b in zip(eager_pN.pRNN.parameters(), graph_pN.pRNN.parameters())
@@ -231,7 +231,7 @@ def test_replay_draws_fresh_randomness():
 
 def test_flag_reaches_the_device_curiosity_path():
     """End-to-end wiring: `predNet.curiosity_cuda_graph` in the config must
-    reach `prediction_mses_device`, the path a device_env run actually takes.
+    reach `prediction_errors_device`, the path a device_env run actually takes.
     The unit gates above prove the graph is correct; this proves it is used."""
     from dataclasses import replace
 

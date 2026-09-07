@@ -232,7 +232,7 @@ def test_device_backend_matches_the_cpu_table_at_either_offset(offset):
     `test_device_collector.py` makes this comparison across `reward_alignment`
     but not across `action_offset`, and the A/B runs used the device backend -
     so the combination that actually trained was the one nothing checked. The
-    offset touches `prediction_mses_device`, `train_on_episodes_batched`,
+    offset touches `prediction_errors_device`, `train_on_episodes_batched`,
     `step_device` and the captured rollout body, none of which the serial tests
     above reach.
     """

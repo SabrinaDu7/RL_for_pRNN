@@ -86,19 +86,18 @@ def synthesize(array, signs=False, abs=False):
         d["abs_mean"] = np.nanmean(np.abs(array))
     return d
 
-def mean_by_action(values: np.ndarray, actions: np.ndarray) -> dict:
-    """Compute mean values separated by action type.
+#: The four actions, by index, as every per-action wandb key spells them
+#: (`curious_reward_<name>`, `avg_adv_<name>`). Index 3 is MiniGrid's `pickup`,
+#: which nothing in these rooms can pick up, so it is a stay-put; it had three
+#: names across the tree ("pickup", "stay", "no-op") until 2026-09-06.
+ACTION_NAMES: tuple[str, str, str, str] = ("turn_left", "turn_right", "forward", "stay_put")
 
-    Args:
-        values: Array of values (e.g., advantages, rewards)
-        actions: Array of action indices (0=turn_left, 1=turn_right, 2=forward, 3=stay_put)
 
-    Returns:
-        Dict with keys "turn_left", "turn_right", "forward", "stay_put" and mean values
-    """
-    action_names = ["turn_left", "turn_right", "forward", "stay_put"]
+def mean_by_action(values: np.ndarray, actions: np.ndarray) -> dict[str, float]:
+    """Mean of `values` per action, keyed by `ACTION_NAMES`; 0.0 where an action
+    never occurred."""
     result = {}
-    for i, name in enumerate(action_names):
+    for i, name in enumerate(ACTION_NAMES):
         filtered = values[actions == i]
         result[name] = float(np.mean(filtered)) if len(filtered) > 0 else 0.0
     return result

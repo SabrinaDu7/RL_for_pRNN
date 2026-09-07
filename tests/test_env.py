@@ -1,4 +1,4 @@
-from minigrid.envs import LEnv, LEnv_goal
+from minigrid.envs import LEnv
 from prnn.utils import MinigridEnvNames, ActionEncodingsEnum
 
 from curious_george import AgentInputType

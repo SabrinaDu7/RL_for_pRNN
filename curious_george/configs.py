@@ -37,7 +37,8 @@ from curious_george.envs.layouts import (
 )
 from curious_george.utils.enums import AgentType
 
-#: The project's random-action distribution over (left, right, forward, pickup).
+#: The project's random-action distribution over `utils.common.ACTION_NAMES`
+#: (turn_left, turn_right, forward, stay_put).
 #: Forward-weighted: a uniform walker mostly spins on the spot and covers little
 #: (measured: nAUC 0.108 vs 0.224 - `python -m curious_george.envs.action_graph`).
 #: THE one home - `ArchPolicyCfg.random_action_probs` defaults to it, and every

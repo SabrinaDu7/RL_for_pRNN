@@ -1,20 +1,19 @@
 """Reward terms for the curious agent, and the count-based control.
 
 The total reward fed to GAE is
-    r[i] = rewards[i] + k_int * int_rewards[i] + k_curious * curious_rewards[i]
-           + k_count * count_rewards[i]
+    r[i] = rewards[i] + k_curious * curious_rewards[i] + k_count * count_rewards[i]
 (see curious_george.rl.update.advantage.compute_gae).
 
 Curiosity reward time alignment
 -------------------------------
-`reward_alignment="legacy"` (default, bitwise-pinned by
-tests/golden/golden_v0.pt): the curiosity reward at step i is the pRNN's
-error reconstructing obss[i] - the observation the agent saw BEFORE taking
-action i, crediting the action with surprise it did not cause.
-`"next_obs"` credits action i with the prediction error on the observation it
-produced - uniformly for every action, including the last of each episode
-(the adapter extends the per-episode predict pass by one zero-action step so
-the final observation is a real prediction target; no boundary special case).
+`reward_alignment="next_obs"` (the config default, `TrainPolicyCfg`) credits
+action i with the prediction error on the observation it produced - uniformly
+for every action, including the last of each episode (the adapter extends the
+per-episode predict pass by one zero-action step so the final observation is a
+real prediction target; no boundary special case). `"legacy"` credits action i
+with the error on obss[i], the observation the agent saw BEFORE taking it -
+surprise the action did not cause. It survives only because
+tests/golden/test_golden.py still pins the historical serial rollout under it.
 """
 
 from dataclasses import dataclass
@@ -118,7 +117,7 @@ def compute_curious_rewards(
     (see module docstring).
     """
     assert alignment in REWARD_ALIGNMENTS, f"unknown reward_alignment {alignment!r}"
-    return adapter.prediction_mses(
+    return adapter.prediction_errors(
         obss=obss,
         actions_np=actions_np,
         done_indices=done_indices,

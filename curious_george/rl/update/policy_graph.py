@@ -93,7 +93,7 @@ class GraphPolicyTrainer:
     def bind(self, exps) -> None:
         """Point the graph at this update's rollout by refilling the mirror.
 
-        Allocated on first call; `rl.frames` is fixed for a run, so every later
+        Allocated on first call; the rollout size is fixed for a run, so every later
         update is a copy into the same storage - which is the whole point, since
         the captured graph reads those addresses.
         """

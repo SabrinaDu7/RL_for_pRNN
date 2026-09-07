@@ -93,7 +93,7 @@ class _GraphCuriosityForward:
     and draw fresh on every replay, as they do in eager.
 
     Keyed on shape. `target_offset` changes the sequence length (the next_obs
-    alignment appends a zero-action step) and `exp.num_envs` changes the
+    alignment appends a zero-action step) and `collect.num_envs` changes the
     batch, so one capture per (batch, obs length, action length).
 
     The returned tensors are the graph's STATIC OUTPUTS, valid until the next
@@ -218,7 +218,7 @@ class _GraphWMTrainer:
         that silently corrupts whatever the allocator hands those blocks to
         next, and only sometimes crashes.
 
-        This bit us for real: `logging.plot_interval`/`analysis_interval`
+        This bit us for real: the plot and analysis cadences (`eval.plot_every_steps` / `eval.analysis_every_steps`)
         (both 200) wrap plotting and the spatial eval in
         `on_device([predictiveNet, acmodel], "cpu")` (training/loop.py,
         evaluation/spatial.py). A 2026-07-22 cluster run died 7 updates after
@@ -226,7 +226,7 @@ class _GraphWMTrainer:
         had been reused for `exps.obs.direction` and graph replay overwrote it.
 
         Guarding inside `PRNNAdapter.to()` is NOT sufficient: `on_device` calls
-        `world_model.device._move()` straight on the PredictiveNet and never
+        `models/device.py::_move()` straight on the PredictiveNet and never
         goes through the adapter. Checking the addresses before every replay
         covers every path, present and future.
         """
@@ -244,13 +244,13 @@ class _GraphWMTrainer:
         silently breaks equivalence."""
         opt = self.pN.optimizer
         assert type(opt) is torch.optim.RMSprop, (
-            f"predNet.cuda_graph assumes plain RMSprop, got {type(opt).__name__} "
+            f"train_prnn.cuda_graph assumes plain RMSprop, got {type(opt).__name__} "
             "(RMSpropEG / eg_lr path not supported)"
         )
         if opt.param_groups[0].get("capturable", False):
             return
         assert all(len(st) == 0 for st in opt.state.values()), (
-            "predNet.cuda_graph supports fresh runs only "
+            "train_prnn.cuda_graph supports fresh runs only "
             "(optimizer state must be empty at capture time)"
         )
         groups = []
@@ -421,14 +421,14 @@ class PRNNAdapter:
         self.num_acts = shell.action_space.n
         self.num_hd = shell.numHDs
 
-        # CUDA-graph world-model training (predNet.cuda_graph). Only viable on a
+        # CUDA-graph world-model training (train_prnn.cuda_graph). Only viable on a
         # CUDA device for the maskless-theta SpeedHD path; trainer is built
         # lazily on first use so weights are already on-device.
         self.cuda_graph = bool(cuda_graph) and self.device.type == "cuda"
         self._graph_trainer: _GraphWMTrainer | None = None
         self.batched_curiosity = bool(batched_curiosity)
 
-        # predNet.curiosity_cuda_graph: replay the batched curiosity forward.
+        # train_prnn.curiosity_cuda_graph: replay the batched curiosity forward.
         # Built lazily on first use, and only ever reached by the two batched
         # curiosity paths - a serial-curiosity run never captures anything, so
         # the flag needs no compatibility check of its own.
@@ -437,7 +437,7 @@ class PRNNAdapter:
         )
         self._graph_curiosity: _GraphCuriosityForward | None = None
 
-        # predNet.compile_cell: fuse the recurrent cell with torch.compile.
+        # train_prnn.compile: fuse the recurrent cell with torch.compile.
         # The 256-step loop is dispatch-bound across many tiny ops - ranked by
         # TIME, `mm` is 26.6% and the LayerNorm chain ~28%, with no single hot
         # spot (docs/claude_logs/exp_speed_cuda_graph_2026-08-19.md 9d). Fusing the cell
@@ -451,7 +451,7 @@ class PRNNAdapter:
         # NOT semantics-free: fusion may reorder floating-point operations, so
         # this needs the same learning gate as any other change. It carries no
         # captured parameter addresses, which is what separates it from
-        # predNet.cuda_graph.
+        # train_prnn.cuda_graph.
         # "layer" compiles the WHOLE 256-step loop, which dynamo unrolls into
         # one graph - the torch analogue of jax.lax.scan + XLA fusion, and far
         # better than fusing the cell alone: 3.89x vs 1.14x on the isolated
@@ -586,7 +586,7 @@ class PRNNAdapter:
         pixels = pixels.reshape(*pixels.shape[:-1], n_tiles, n_channels)
         # The loss's own lookup - the ONE home for pixel->class (audit
         # 2026-08-31) - with its closed-set assert live: this runs eagerly on
-        # the curiosity outputs, so under `predNet.cuda_graph` it is also the
+        # the curiosity outputs, so under `train_prnn.cuda_graph` it is also the
         # reward-side vocabulary check the captured trainStep cannot perform.
         targets = self.pN.loss_fn.targets_for(pixels, check=True)
         logp = torch.log_softmax(logits, dim=-1)
@@ -620,7 +620,7 @@ class PRNNAdapter:
         action i.
 
         The one home for the curiosity forward. Both batched callers route
-        through it, so `predNet.curiosity_cuda_graph` covers both and the
+        through it, so `train_prnn.curiosity_cuda_graph` covers both and the
         error reduction has a single spelling.
         """
         with timer("collect/curious/predict"):
@@ -641,7 +641,7 @@ class PRNNAdapter:
                 0
             ].transpose(0, 1)[:, target_offset:]
 
-    def prediction_mses(
+    def prediction_errors(
         self,
         obss: list,
         actions_np: np.ndarray,
@@ -652,7 +652,7 @@ class PRNNAdapter:
     ) -> torch.Tensor:
         """Per-step observation-prediction error over the collected rollout,
         computed per episode segment. Used as the curiosity reward. Named
-        `prediction_mses` for history; under CE the rows are surprisal in
+        `prediction_errors` for history; under CE the rows are surprisal in
         nats, not MSE (see `_prediction_errors`).
 
         ALIGNMENT CONTRACT (see throwaway/ported/docs_legacy/refactor_baseline.md flaw #1): with
@@ -674,7 +674,7 @@ class PRNNAdapter:
             and np.all(segment_lengths == segment_lengths[0])
         )
         if can_batch:
-            return self._prediction_mses_batched(
+            return self._prediction_errors_batched(
                 obss,
                 actions_np,
                 done_indices,
@@ -699,7 +699,7 @@ class PRNNAdapter:
 
         return MSEs
 
-    def _prediction_mses_batched(
+    def _prediction_errors_batched(
         self,
         obss: list,
         actions_np: np.ndarray,
@@ -741,7 +741,7 @@ class PRNNAdapter:
             MSEs[start:end] = errors[b]
         return MSEs
 
-    def prediction_mses_device(
+    def prediction_errors_device(
         self,
         *,
         images_tb: torch.Tensor,
@@ -926,7 +926,7 @@ class PRNNAdapter:
         per-segment losses.
 
         `group=0` pools ALL B segments into ONE step (the historical
-        predNet.batched_wm behaviour). `group=g` instead takes B/g steps, each
+        train_prnn.batched behaviour). `group=g` instead takes B/g steps, each
         pooled over g segments - the middle design between one pooled step and
         B serial ones.
 

@@ -4,7 +4,7 @@ For a static grid, RGBImgPartialObsWrapper_HD's per-step get_frame render
 (~0.7 ms, the single biggest per-step cost) is a pure function of
 (x, y, dir, grid). BankedRGBPartialObsWrapper precomputes the full
 (W, H, 4) bank once per grid layout (~1 s for 18x18), caches it under
-data/obs_bank/ and serves per-step observations as lookups.
+`<RL_STORAGE>/obs_bank/` and serves per-step observations as lookups.
 
 The cache is LOCAL and untracked. Measured: one 16x16 bank plus its transition
 tables costs 0.49 s to build and 0.15 MB in memory, so the cache saves half a
@@ -48,7 +48,15 @@ def _render_revision() -> str:
     rev = (source.commit or "unversioned")[:8]
     return f"{rev}-dirty" if source.dirty else rev
 
-BANK_DIR = Path(__file__).resolve().parents[2] / "data" / "obs_bank"
+def default_bank_dir() -> Path:
+    """`<RL_STORAGE>/obs_bank`: the cache lives under the run-output root like
+    every other artifact, resolved at call time so a test's `RL_STORAGE` is
+    honoured. It was `<repo>/data/obs_bank`, spelled as `parents[2]` of this
+    file - a climbing path that encoded where this module sat and the one output
+    that bypassed the storage root (audit 2026-09-05, N21)."""
+    from curious_george.log_and_store.storage import get_storage_dir
+
+    return Path(get_storage_dir()) / "obs_bank"
 
 # Multi-layout training re-keys the bank at every episode boundary, so the same
 # handful of grids is re-read from disk thousands of times a run. Banks are
@@ -131,10 +139,10 @@ class BankedRGBPartialObsWrapper(RGBImgPartialObsWrapper_HD):
 
     def __init__(self, env, tile_size: int = 1, bank_dir: Path | None = None):
         super().__init__(env, tile_size)
-        # Resolved at CALL time, not bound as a default at import: a default
-        # argument captures BANK_DIR once, so rebinding the module global has no
-        # effect and the wrapper silently keeps writing to the real cache.
-        self.bank_dir = Path(bank_dir) if bank_dir is not None else BANK_DIR
+        # Resolved at CALL time, not bound as a default at import, so a caller's
+        # `RL_STORAGE` (a test's tmp_path, a cluster's node-local scratch) is
+        # what the cache actually lands in.
+        self.bank_dir = Path(bank_dir) if bank_dir is not None else default_bank_dir()
         self._bank: np.ndarray | None = None  # (W, H, 4, h, w, 3) uint8
         self._fingerprint: str | None = None
 

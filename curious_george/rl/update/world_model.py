@@ -21,14 +21,15 @@ def train_world_model_on_episodes(
     tensors); segments are [done_indices[i-1], done_indices[i]) and never
     span environment boundaries in the flat layout.
 
-    batched=True (predNet.batched_wm): ONE pooled gradient step on all
+    batched=True (train_prnn.batched): ONE pooled gradient step on all
     segments stacked to (B, L) instead of B sequential steps - an
     optimization-semantics change, curve-gate before defaulting on. Falls
     back to serial when segments are ragged or the encoding isn't SpeedHD.
 
-    segment_stride (predNet.wm_segment_stride) trains on every k-th segment
-    instead of all of them, which sets WORLD-MODEL GRADIENT STEPS PER UNIT OF
-    EXPERIENCE - the quantity that separates the serial and pooled regimes:
+    segment_stride (what `setup_algo` derives from `train_prnn.episodes_per_grad_step`
+    when `batched` is off) trains on every k-th segment instead of all of them,
+    which sets WORLD-MODEL GRADIENT STEPS PER UNIT OF EXPERIENCE - the quantity
+    that separates the serial and pooled regimes:
 
         serial, stride 1   1 step per seqdur          env steps  (256)
         serial, stride k   1 step per k*seqdur        env steps
@@ -41,7 +42,7 @@ def train_world_model_on_episodes(
     experience - then FELL to 0.5581 by 83.9M while prediction loss kept
     improving (0.0055 -> 0.0035). Loss down, place code down, is over-training
     the predictor. `stride = frames // seqdur` reproduces the reference's ratio
-    while keeping the serial code path, which is the one predNet.cuda_graph
+    while keeping the serial code path, which is the one train_prnn.cuda_graph
     accelerates.
 
     ⚠️ Not identical to pooling: a pooled step averages the gradient over all

@@ -15,7 +15,6 @@ two identical calls differ by ~0.4 in h. Dropout is separate and is off in
 eval(). Tests here zero the noise.
 """
 
-import numpy as np
 import pytest
 import torch
 

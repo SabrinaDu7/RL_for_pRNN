@@ -36,9 +36,8 @@ outputs/ckpts/*
 # tests/perf/benchmark.py and a figure generator that carried its numbers as
 # source literals. Untracked and load-bearing is the worst combination.
 
-# Generated observation banks: rebuilt automatically per (env, object position)
-# by curious_george/envs/obs_bank.py, keyed on a grid fingerprint.
-data/obs_bank/
+# Observation banks live under RL_STORAGE (outputs/obs_bank) since 2026-09-06,
+# rebuilt automatically by curious_george/envs/obs_bank.py on a grid fingerprint.
 storage/*
 tests/perf/results/*.prof
 

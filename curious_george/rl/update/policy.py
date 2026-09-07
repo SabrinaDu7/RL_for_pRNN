@@ -55,7 +55,7 @@ def _index_policy_batch(exps, indexes, acmodel):
     default SR actor has ``with_CV=False``. Indexing the 147-float RGB row for
     every PPO sample/epoch was therefore pure accelerator traffic.
     """
-    if getattr(acmodel, "with_CV", True):
+    if acmodel.with_CV:
         return exps[indexes]
 
     sb = DictList({
@@ -66,7 +66,7 @@ def _index_policy_batch(exps, indexes, acmodel):
         "returnn": exps.returnn[indexes],
         "log_prob": exps.log_prob[indexes],
     })
-    if getattr(acmodel, "with_HD", False):
+    if acmodel.with_HD:
         sb.obs = DictList({"direction": exps.obs.direction[indexes]})
     else:
         sb.obs = DictList()

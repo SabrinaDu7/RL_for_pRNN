@@ -13,8 +13,6 @@ import pytest
 from curious_george.envs.layouts import ROOMS_RUN1, Committed
 from curious_george.configs import (
     PRESETS,
-    AgentType,
-    ArchPolicyCfg,
     CollectCfg,
     Config,
     EnvBackend,
@@ -184,7 +182,6 @@ def test_a_ramp_under_the_policy_graph_is_refused():
     """
     import pytest
 
-    from curious_george.configs import TrainPolicyCfg
 
     with pytest.raises(ValueError, match="silently never happen"):
         TrainPolicyCfg(entropy_coef=0.001, entropy_coef_final=0.01, cuda_graph=True)

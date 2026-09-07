@@ -1,6 +1,6 @@
 """Pre-build the observation banks for a room set, and name the rooms.
 
-A bank is built lazily on first use and cached under `data/obs_bank/`, so this
+A bank is built lazily on first use and cached under `<RL_STORAGE>/obs_bank/`, so this
 buys nothing a training run would not eventually do itself. What it buys is
 TIMING and a RECORD: a cold build is ~0.45 s per room, so a pool pays that at
 startup, and a cluster job pays it inside its allocation. Running this first

@@ -9,7 +9,6 @@ reader Q1 depends on hit it immediately.
 No network: a stub Run reproduces both branches.
 """
 
-import pytest
 
 from curious_george.log_and_store.wandb import _history_rows
 

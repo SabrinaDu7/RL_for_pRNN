@@ -43,7 +43,12 @@ import wandb
 
 from curious_george.log_and_store.storage import get_storage_dir
 
-ENTITY, PROJECT = "blake-richards", "curious-george"
+from curious_george.configs import RunCfg
+
+#: Where runs live by default: the SAME defaults `RunCfg` launches with, so a
+#: renamed project changes in one place. `--entity` / `--project` override them
+#: (the multienv launcher logs to `curious-george-multienv`).
+ENTITY, PROJECT = RunCfg().wandb_entity, RunCfg().wandb_project
 #: The cumulative environment-step series, newest name first. `frames` was
 #: renamed to `env_steps` on 2026-08-27 (retired vocabulary; see the README's
 #: terminology section), and BOTH are read so a post-cutover run can still be
@@ -63,12 +68,12 @@ DEFAULT_METRICS = (
 )
 
 
-def resolve(api, ident: str):
+def resolve(api, ident: str, *, entity: str = ENTITY, project: str = PROJECT):
     """A wandb run from either its id or its display name."""
     try:
-        return api.run(f"{ENTITY}/{PROJECT}/{ident}")
+        return api.run(f"{entity}/{project}/{ident}")
     except Exception:
-        matches = list(api.runs(ENTITY + "/" + PROJECT,
+        matches = list(api.runs(entity + "/" + project,
                                 filters={"displayName": ident}))
         if not matches:
             raise SystemExit(f"no run with id or display name {ident!r}")
@@ -174,10 +179,14 @@ def main() -> None:
     ap.add_argument("--metric", action="append", default=None)
     ap.add_argument("--points", type=int, default=6, help="matched env-step checkpoints")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--entity", default=ENTITY)
+    ap.add_argument("--project", default=PROJECT,
+                    help="e.g. curious-george-multienv, where slurm/multienv.sh logs")
     args = ap.parse_args()
 
     api = wandb.Api(timeout=59)
-    ref, new = resolve(api, args.reference), resolve(api, args.run)
+    where = dict(entity=args.entity, project=args.project)
+    ref, new = resolve(api, args.reference, **where), resolve(api, args.run, **where)
     metrics = tuple(args.metric) if args.metric else DEFAULT_METRICS
     print(f"reference : {ref.name}  ({ref.id})  state={ref.state}")
     print(f"run       : {new.name}  ({new.id})  state={new.state}\n")

@@ -29,6 +29,10 @@ def init_params(m):
 
 
 class ACModel(nn.Module, torch_ac.ACModel):
+    #: Reads the image. A class attribute so callers can test it on either
+    #: model without a `getattr` default guessing.
+    with_CV = True
+
     def __init__(self, obs_space, action_space, with_HD=True, rgb=True):
         super().__init__()
         self.with_HD = with_HD
@@ -107,21 +111,20 @@ class ACModelSR(ACModel):
         self, obs_space, action_space, SR_size=-1, with_CV=True, rgb=True, with_HD=True
     ):
         self.with_CV = with_CV
-        self.SR_single = SR_size  # if SRs are not used, the arg should be -1
+        self.sr_size = SR_size  # width of the pRNN hidden state the policy reads
         super(ACModelSR, self).__init__(
             obs_space, action_space, with_HD=with_HD, rgb=rgb
         )
 
     @property
-    def SR_size(self):
-        if self.with_HD:
-            return self.SR_single + 4
-        else:
-            return self.SR_single
+    def sr_and_hd_size(self) -> int:
+        """The non-image part of the embedding: the SR, plus the HD one-hot
+        when `with_HD`. (Was `SR_size`, a name that hid the +4.)"""
+        return self.sr_size + (4 if self.with_HD else 0)
 
     @property
     def embedding_size(self):
-        return self.image_embedding_size + self.SR_size
+        return self.image_embedding_size + self.sr_and_hd_size
 
     def CV(self, obs_space):
         if self.with_CV:

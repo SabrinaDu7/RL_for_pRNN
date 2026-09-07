@@ -6,8 +6,8 @@ once per room and reused, so no point carries its own BEHAVIOURAL noise.
 
 WHAT IS NOT PINNED, and it is not cosmetic. `score` wraps the forward in
 `torch.no_grad()` alone, which stops gradients and NOT dropout. Every checkpoint
-is therefore scored under a fresh dropout mask (predNet.dropout, 0.15), a fresh
-noise draw (predNet.noisestd, 0.05) and an unpinned initial hidden state.
+is therefore scored under a fresh dropout mask (`arch_prnn.dropout`, 0.15), a fresh
+noise draw (`arch_prnn.noise_std`, 0.05) and an unpinned initial hidden state.
 `probe.py` measures that wobble at ~0.4 in h between two identical calls, so
 row-to-row differences here are NOT weights alone. `probe.py::replay_checkpoint`
 is the same idea carried through - `eval_mode` around the forward, torch seeded

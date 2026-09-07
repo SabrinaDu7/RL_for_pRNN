@@ -182,7 +182,7 @@ updates it.
   and is what the fast configurations use.
 - `envs/obs_bank.py` — precomputed `(position, direction) → observation` tables, plus the
   transition tables, that make the device pool possible. Byte-equality with the live
-  render is gated in `tests/test_obs_bank.py`. The on-disk cache under `data/obs_bank/`
+  render is gated in `tests/test_obs_bank.py`. The on-disk cache under `<RL_STORAGE>/obs_bank/`
   is local and untracked: rebuilding one bank is 0.49 s, so it saves half a second per
   distinct grid and nothing else.
 - `envs/layouts.py` — seeded pools of landmark layouts for multi-room training.

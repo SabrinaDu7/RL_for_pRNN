@@ -21,7 +21,6 @@ Synthetic populations, not trained networks: the ground truth has to be known.
 
 import numpy as np
 import pytest
-import torch
 
 SEED = 7
 N_ROOMS = 4

@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 
-from curious_george.configs import Config, EnvBackend, EnvCfg, EvalKind, PRESETS
+from curious_george.configs import EnvBackend, PRESETS
 from curious_george.envs.layouts import Selected
 from curious_george.utils.enums import AgentType
 

@@ -1,0 +1,675 @@
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-BlockedUnlockPickup-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaCrossingS9N1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaCrossingS9N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaCrossingS9N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaCrossingS11N5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-SimpleCrossingS9N1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-SimpleCrossingS9N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-SimpleCrossingS9N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-SimpleCrossingS11N5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DistShift1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DistShift2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutRoom-16x16-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutRoom-17x17-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutRoom-20x20-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutRoom-18x18-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg02-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg025-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg03-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg04-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg05-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg10-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-v1 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg05-v1 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-v2 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-Long-neg05-v2 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-16x16-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg02-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg021-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg022-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg023-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg024-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg025-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg03-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg035-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg04-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg045-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-17x17-neg05-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-20x20-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DonutLava-18x18-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DoorKey-5x5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DoorKey-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DoorKey-8x8-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-DoorKey-16x16-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Dynamic-Obstacles-5x5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Dynamic-Obstacles-Random-5x5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Dynamic-Obstacles-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Dynamic-Obstacles-Random-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Dynamic-Obstacles-8x8-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Dynamic-Obstacles-16x16-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Empty-5x5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Empty-Random-5x5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Empty-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Empty-Random-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Empty-8x8-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Empty-16x16-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-v1 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg02-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg021-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg022-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg023-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg024-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg025-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg026-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg027-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg028-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg029-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg03-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg031-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg032-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg033-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg034-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg035-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-3x4-neg04-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-3x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-3x4-neg02-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-3x4-neg04-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-3x4-neg03-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-3x4-neg035-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-3x4-neg025-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-7x7-3x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-7x7-3x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-9x9-3x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-9x9-3x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-5x5-4x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-5x5-4x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-7x7-4x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-7x7-4x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-9x9-4x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FakeLava-Target-9x9-4x4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Fetch-5x5-N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Fetch-6x6-N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Fetch-8x8-N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FourRooms-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FourRooms-Fixed-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FourRooms-Invisible-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-FourRooms-Objects-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-GoToDoor-5x5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-GoToDoor-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-GoToDoor-8x8-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-GoToObject-6x6-N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-GoToObject-8x8-N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-KeyCorridorS3R1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-KeyCorridorS3R2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-KeyCorridorS3R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-KeyCorridorS4R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-KeyCorridorS5R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-KeyCorridorS6R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaGapS5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaGapS6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LavaGapS7-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LockedRoom-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MemoryS17Random-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MemoryS13Random-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MemoryS13-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MemoryS11-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MemoryS9-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MemoryS7-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MultiRoom-N2-S4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MultiRoom-N4-S5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-MultiRoom-N6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-1Dl-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-1Dlh-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-1Dlhb-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-2Dl-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-2Dlh-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-2Dlhb-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-1Q-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-2Q-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-ObstructedMaze-Full-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Playground-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-PutNear-6x6-N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-PutNear-8x8-N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-RedBlueDoors-6x6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-RedBlueDoors-8x8-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-Unlock-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-UnlockPickup-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToRedBallGrey-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToRedBall-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToRedBallNoDists-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObj-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjS4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjS6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocal-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS5N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS6N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS6N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS6N4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS7N4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS7N5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS8N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS8N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS8N4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS8N5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS8N6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToLocalS8N7-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoTo-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToOpen-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMaze-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMazeOpen-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMazeS4R2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMazeS4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMazeS5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMazeS6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjMazeS7-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToImpUnlock-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToSeq-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToSeqS5R2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToRedBlueBall-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToDoor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-GoToObjDoor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-Open-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenRedDoor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorDebug-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorColor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorLoc-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenTwoDoors-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenRedBlueDoors-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenRedBlueDoorsDebug-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorsOrderN2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorsOrderN4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorsOrderN2Debug-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OpenDoorsOrderN4Debug-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-Pickup-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-UnblockPickup-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PickupLoc-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PickupDist-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PickupDistDebug-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PickupAbove-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextLocal-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextLocalS5N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextLocalS6N4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS4N1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS5N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS5N1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS6N3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS7N4-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS5N2Carrying-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS6N3Carrying-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-PutNextS7N4Carrying-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-Unlock-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-UnlockLocal-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-UnlockLocalDist-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyInBox-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-UnlockPickup-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-UnlockPickupDist-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-BlockedUnlockPickup-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-UnlockToUnlock-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-ActionObjDoor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-FindObjS5-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-FindObjS6-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-FindObjS7-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridor-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridorS3R1-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridorS3R2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridorS3R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridorS4R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridorS5R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-KeyCorridorS6R3-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OneRoomS8-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OneRoomS12-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OneRoomS16-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-OneRoomS20-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-MoveTwoAcrossS5N2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-MoveTwoAcrossS8N9-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-Synth-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-SynthS5R2-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-SynthLoc-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-SynthSeq-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-MiniBossLevel-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-BossLevel-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment BabyAI-BossLevelNoUnlock-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LRoom-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LRoom_LineGreen-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LRoom_Goal-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LRoom-SmallObj-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-LRoom-Multi-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-SquareRoom-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/gymnasium/envs/registration.py:694: UserWarning: [33mWARN: Overriding environment MiniGrid-SquareRoom-Multi-v0 already in registry.[0m
+  logger.warn(f"Overriding environment {new_spec.id} already in registry.")
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:19<00:19, 3347.42it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing:  50%|█████     | 65536/131072 [00:30<00:19, 3347.42it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:51<00:00, 2458.17it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:10<00:00, 2458.17it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:18<00:00, 1666.53it/s]
+Device: cuda
+
+multi-room: 8 layouts, resampled per episode
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_7c767b3ea0ca465b-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_8c2f3dbfbb1b22dc-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_1046cfffa43b0690-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_31b422db62d758a1-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_44b26e4c9839e2ab-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_5a8151d1510b3fd2-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_26c607160bb67283-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_93d634fe851cc43e-22ef960b-t1v7.npz (0.2 MB raw)
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-07-29/ 
+
+
+
+[step3] prod: 86.0 s; eval: ['rooms sRSA [0.106 0.072 0.073 0.065 0.049] mean=0.0730 pooled=0.0440 remapping=+0.0290 SWdist=0.0141 episodes/room [65, 64, 55, 66, 70, 59, 63, 70] [5/8 rooms scored]', 'rooms sRSA [0.041 0.036 0.046 0.077 0.034] mean=0.0468 pooled=0.0373 remapping=+0.0095 SWdist=0.0082 episodes/room [91, 102, 89, 102, 94, 94, 101, 95] [5/8 rooms scored]']
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:05<00:05, 11634.16it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing:  50%|█████     | 65536/131072 [00:24<00:05, 11634.16it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:35<00:00, 3340.79it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:54<00:00, 3340.79it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [01:02<00:00, 2081.97it/s]
+Device: cuda
+
+multi-room: 5 layouts, resampled per episode
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_06eeee374e3425b2-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_a184f96002b3f54c-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_b9251fd893706623-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_7e002190852de638-22ef960b-t1v7.npz (0.2 MB raw)
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-Multi-v0_tile1_7c9ac7401667aca2-22ef960b-t1v7.npz (0.2 MB raw)
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-08-54/ 
+
+
+
+[step3] walkable: 70.4 s; eval: ['rooms sRSA [0.006 0.029 0.031 0.032 0.044] mean=0.0285 pooled=0.0206 remapping=+0.0079 SWdist=0.0085 episodes/room [101, 95, 108, 97, 111]', 'rooms sRSA [0.053 0.034 0.052 0.025 0.045] mean=0.0417 pooled=0.0302 remapping=+0.0114 SWdist=0.0066 episodes/room [150, 151, 155, 152, 160]']
+Processing:   0%|          | 0/131072 [00:00<?, ?it/s]Processing:  50%|█████     | 65536/131072 [00:04<00:04, 14412.87it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:09<00:00, 14076.87it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 131072/131072 [00:13<00:00, 9962.05it/s] 
+Device: cuda
+
+obs bank built and saved: /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/obs_bank/MiniGrid-LRoom-v0_tile1_6f48cd7fbcae481d-22ef960b-t1v7.npz (0.2 MB raw)
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-10-03/ 
+
+
+
+[step3] parity: 16.3 s; eval: ['onPolicy sRSA=0.0245 SWdist=0.0160', 'onPolicy sRSA=0.0421 SWdist=0.0097']
+Processing:   0%|          | 0/4096 [00:00<?, ?it/s]Processing:  50%|█████     | 2048/4096 [00:02<00:02, 691.24it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 4096/4096 [00:10<00:00, 377.27it/s]/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: divide by zero encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:378: RuntimeWarning: invalid value encountered in divide
+  fxfr = fx / fr
+/home/sabrina/Documents/experiments/RL_for_pRNN/.venv/lib/python3.10/site-packages/pynapple/process/tuning_curves.py:389: RuntimeWarning: invalid value encountered in divide
+  SI = SI / fr[:, 0, 0]
+Processing: 100%|██████████| 4096/4096 [00:14<00:00, 284.67it/s]
+Device: cuda
+
+action_offset: 0
+
+
+
+LOGGING TO:  /home/sabrina/Documents/experiments/RL_for_pRNN/throwaway/2026-09-06/outputs/fp_curious_26-09-07-00-10-18/ 
+
+
+
+[step3] reference: 15.8 s; eval: ['onPolicy sRSA=0.0507 SWdist=0.0330', 'onPolicy sRSA=0.0215 SWdist=0.0278']
+exit=0
+prod: IDENTICAL (130 leaves)
+walkable: IDENTICAL (106 leaves)
+parity: IDENTICAL (106 leaves)
+reference: IDENTICAL (99 leaves)

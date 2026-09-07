@@ -7,7 +7,7 @@ import pytest
 from minigrid.wrappers import RGBImgPartialObsWrapper_HD
 
 import gymnasium as gym
-from curious_george.envs.obs_bank import BANK_DIR, BankedRGBPartialObsWrapper
+from curious_george.envs.obs_bank import BankedRGBPartialObsWrapper
 
 ENV_KEY = "MiniGrid-LRoom-v0"
 SEED = 3
@@ -50,7 +50,7 @@ def test_byte_equality_over_random_walk(pair):
 def test_bank_persisted_and_readonly(pair):
     banked, _ = pair
     fp = banked._grid_fingerprint()
-    assert banked._bank_path(fp).exists(), "bank should be saved under data/obs_bank"
+    assert banked._bank_path(fp).exists(), "bank should be saved under the bank dir"
     obs, _ = banked.reset()
     with pytest.raises(ValueError):
         obs["image"][0, 0, 0] = 0  # served read-only: mutation must raise

@@ -1,11 +1,11 @@
-"""CUDA-graph capture of ONE rollout timestep (`exp.rollout_cuda_graph`).
+"""CUDA-graph capture of ONE rollout timestep (`collect.rollout_cuda_graph`).
 
 Why: with the world model and the PPO minibatch already graphed, collection is
-the largest remaining block of a training update. At `exp.num_envs=128`,
-`rl.frames=32768` the rollout runs 256 sequential iterations of three tiny GPU
-regions - the actor-critic forward, the device environment table, and the pRNN
-single step - and is almost pure PyTorch dispatch: the GPU sits idle while
-Python decides what to launch.
+the largest remaining block of a training update. At 128 streams of 256 steps
+the rollout runs 256 sequential iterations of three tiny GPU regions - the
+actor-critic forward, the device environment table, and the pRNN single step -
+and is almost pure PyTorch dispatch: the GPU sits idle while Python decides
+what to launch.
 
 The whole timestep goes in, and it goes in by CALLING THE PRODUCTION
 FUNCTIONS - `DeviceTableShellPool.observation_device` / `.step_device`,

@@ -20,7 +20,6 @@ def test_c4_a_failed_wandb_init_reaches_the_world_models_own_logger(tmp_path, mo
     survived `init` and died at the first world-model step - wandb 0.28 raises
     on `log` before `init`."""
     import main_train
-    from curious_george.training import loop as loop_mod
 
     monkeypatch.setenv("RL_STORAGE", str(tmp_path))
     seen: dict = {}
