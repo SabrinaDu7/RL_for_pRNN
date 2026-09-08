@@ -2,3 +2,6 @@
 parity exit 0 05:16:31
 multienv exit 0 05:37:34
 ALL DONE 05:37:34
+23:42:10 start reference-local (preset reference, seed 2, wandb curious-george)
+reference-local exit 143 23:43:01
+23:43:04 reference-local KILLED after ~1 min: 660 env steps/s on the serial path = 8.6 h; the cluster job is the faithful rerun
