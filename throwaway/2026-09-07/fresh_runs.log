@@ -5,3 +5,6 @@ ALL DONE 05:37:34
 23:42:10 start reference-local (preset reference, seed 2, wandb curious-george)
 reference-local exit 143 23:43:01
 23:43:04 reference-local KILLED after ~1 min: 660 env steps/s on the serial path = 8.6 h; the cluster job is the faithful rerun
+2026-09-09 parity mse-clean submitted on Mila as job 10723552 (slurm/parity.sh '' '' 2 sdu/clean-sept '' mse-clean @ 46012c7): the current machinery on the single L-room with MSE; reference parity-s2-mseB_curious_26-08-31-01-32-31 (1682 s on an L40S)
+2026-09-09 job 10723552 cancelled before start; resubmitted with explicit prediction logging: slurm/parity.sh '' '' 2 sdu/clean-sept '' mse-clean --eval.evals BEHAVIOUR SPATIAL_ONPOLICY TRAJECTORY_PLOT --eval.plot-every-steps 3333328 (26 "Observation Sequence" images instead of the preset's 12)
+2026-09-09 NOTE: job 10723552 had been allocated (cn-l026, wandb run parity-s2-mse-clean_curious_26-09-09-12-55-56) in the seconds between the status check and the scancel; that wandb run is a crashed stub with no data. Job 10723582 (explicit prediction logging) is the live one; pending on an L40S (ReqNodeNotAvail names cn-l061 only).
