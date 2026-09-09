@@ -1,0 +1,44 @@
+reference : mx-impassable-n8-s2-mse8full-local_curious_26-08-31-08-47-15  (mx-impassable-n8-s2-mse8full-local_curious_26-08-31-08-47-15)  state=finished
+run       : mx-impassable-n8-s2-mse-clean_curious_26-09-09-13-29-48  (mx-impassable-n8-s2-mse-clean_curious_26-09-09-13-29-48)  state=finished
+
+env-step axis: reference to 89,980,928, run to 89,980,928
+
+multiroom/mean_room_sRSA  band +/-0.0488
+  env step                  12,508,318  25,016,636  37,524,955  50,033,273  62,541,591  75,049,909
+  reference                     0.3497      0.4764      0.4764      0.5745      0.5898      0.6084
+  run                           0.3605      0.4053      0.4053      0.5423      0.5717      0.6605
+  delta                        0.0108    -0.0711*    -0.0711*    -0.0322    -0.0181     0.0521*
+
+multiroom/pooled_sRSA     band +/-0.0145
+  env step                  12,508,318  25,016,636  37,524,955  50,033,273  62,541,591  75,049,909
+  reference                     0.2928      0.3311      0.3311      0.3563      0.3751      0.3731
+  run                           0.2370      0.2851      0.2851      0.3579      0.3602      0.4425
+  delta                       -0.0558*    -0.0459*    -0.0459*     0.0016    -0.0149*     0.0694*
+
+multiroom/pooled_SWdist   band +/-0.0211
+  env step                  12,508,318  25,016,636  37,524,955  50,033,273  62,541,591  75,049,909
+  reference                     0.0309      0.0297      0.0297      0.0627      0.0633      0.1113
+  run                           0.0340      0.0348      0.0348      0.0482      0.0428      0.0638
+  delta                        0.0031     0.0051     0.0051    -0.0145    -0.0205    -0.0476*
+
+pRNN loss                 band +/-0.0009
+  env step                  14,996,490  29,992,981  44,989,471  59,985,961  74,982,452  89,978,942
+  reference                     0.0173      0.0144      0.0128      0.0123      0.0120      0.0110
+  run                           0.0176      0.0152      0.0130      0.0123      0.0119      0.0109
+  delta                        0.0004     0.0008     0.0002    -0.0000    -0.0001    -0.0000
+
+cur_reward_mean           band +/-0.0009
+  env step                  14,996,821  29,993,643  44,990,464  59,987,285  74,984,107  89,980,928
+  reference                     0.0184      0.0146      0.0131      0.0122      0.0116      0.0115
+  run                           0.0173      0.0146      0.0138      0.0121      0.0116      0.0114
+  delta                       -0.0011*     0.0001     0.0007    -0.0001    -0.0000    -0.0001
+
+MI_policy                 band +/-0.0046
+  env step                  14,996,821  29,993,643  44,990,464  59,987,285  74,984,107  89,980,928
+  reference                     0.0450      0.0571      0.0633      0.0606      0.0773      0.0762
+  run                           0.0614      0.0675      0.0764      0.0611      0.0769      0.0740
+  delta                        0.0164*     0.0104*     0.0131*     0.0005    -0.0005    -0.0021
+
+
+* = outside the reference's own adjacent-sample band. 13 of 36 matched points.
+wrote /home/sabrina/Documents/experiments/RL_for_pRNN/outputs/summary/wandb_compare_mse-clean-vs-mse8full.json
