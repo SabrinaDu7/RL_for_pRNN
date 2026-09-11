@@ -353,7 +353,12 @@ class CircuitTrace:
     h: Float[np.ndarray, "T H"]
     pred: Float[np.ndarray, "T 7 7 3"]
     target: Float[np.ndarray, "T 7 7 3"]
-    mse: Float[np.ndarray, " T"]
+    #: per-row prediction error, the quantity that BECOMES the curiosity
+    #: reward: pixel MSE under MSE, summed surprisal in nats under CE.
+    #: `PRNNAdapter._prediction_errors` is the one home for which.
+    #: Deliberately NOT `RoomPrediction.mse`, which is the error of the
+    #: RENDERED image - a comparable-looking number, but not the reward.
+    error: Float[np.ndarray, " T"]
     shown: Bool[np.ndarray, " T"]
     policy_state: Float[np.ndarray, "T H"]
     policy_hd_onehot: Float[np.ndarray, "T 4"]
@@ -404,7 +409,25 @@ def trace_circuit(
     from curious_george.models.prnn_adapter import PRNNAdapter, make_sr_tracker
 
     adapter = PRNNAdapter(pN, device, action_offset=action_offset)
+    # The env owns its OWN Generator (gymnasium `np_random`), which
+    # `torch.manual_seed` does not touch. Seeding only torch left the START
+    # POSITION free, so two traces meant to share one trajectory began in
+    # different places and the figure's "replayed identically in both circuits"
+    # was false. Same idiom, and the same bug, as the seeded spatial probe
+    # (`evaluation/spatial.py::_evaluate_spatial_inner`, 2026-08-31); this
+    # module predates that fix.
     torch.manual_seed(seed)
+    # `pN.state` and `pN.phase` are module-level globals of the PredictiveNet
+    # that `predict_single` advances, so a second trace on the same object
+    # started from the first one's endpoint - two traces of ONE trajectory
+    # diverged after three steps with a bit-identical torch stream, and the
+    # mask phase was whatever the previous caller left. This is the rest of
+    # seeded-probe protocol v2 (`spatial.py`, audit 2026-08-31), which this
+    # module predates. `reset_state` resets both and draws its init noise, so
+    # it belongs after the seed and before anything else consumes the stream.
+    pN.reset_state(device=str(device))
+    np.random.seed(seed)
+    env.env.reset(seed=seed)
 
     obs = env.reset()
     tracker = make_sr_tracker(adapter, device, [obs])
@@ -457,9 +480,14 @@ def trace_circuit(
         act_in=x_t[0, :T, obs_size:].to(torch.int64).numpy(),
         h_prev=np.concatenate([h_init.squeeze(0).numpy(), h_np[:-1]]),
         h=h_np,
-        pred=_views(pred[:, :T]),
+        # CE rows are per-tile LOGITS, not pixels. The adapter owns the argmax
+        # render and the error measure both, so this figure and the reward path
+        # cannot disagree under either loss.
+        pred=_views(adapter.render_prediction_rows(pred[:, :T])),
         target=_views(tgt[:, :T]),
-        mse=((pred - tgt) ** 2).mean(dim=2)[0, :T].numpy(),
+        error=adapter._prediction_errors(
+            pred[:, :T], tgt[:, :T], feature_dim=2
+        )[0].numpy(),
         shown=np.resize(np.asarray(pN.pRNN.inMask, dtype=bool), T),
         policy_state=stack([s.squeeze(0).cpu().numpy() for s in srs], pN.hidden_size),
         policy_hd_onehot=stack([np.eye(4, dtype=np.float32)[hd[i]] for i in range(L)], 4),
@@ -503,7 +531,7 @@ def alignment_table(trace: CircuitTrace) -> str:
     rows = [f"circuit: {trace.label} + {trace.encoding}   "
             f"policy acts on {trace.policy_state_label}", head, "-" * len(head)]
     shift = 1 if trace.policy_state_label == "h[t-1]" else 0
-    for t in range(len(trace.mse)):
+    for t in range(len(trace.error)):
         act, real = trace.act_in[t], t < trace.n_steps
         bits = ("[" + "".join(str(int(v)) for v in act[:a]) + "|"
                 + "".join(str(int(v)) for v in act[a:]) + "]")
@@ -515,7 +543,7 @@ def alignment_table(trace: CircuitTrace) -> str:
             f"{_encodes(trace, t):>22} "
             f"{('yes' if trace.shown[t] else 'no'):>9} "
             f"{np.abs(trace.obs_in[t]).sum():>11.3f} {bits:>{a + hd + 3}} "
-            f"{'obs[' + str(t) + ']':>8} {trace.mse[t]:>8.5f} {reward:>10} "
+            f"{'obs[' + str(t) + ']':>8} {trace.error[t]:>8.5f} {reward:>10} "
             f"{(f'h[{t - shift}]' if real else '-'):>12} "
             f"{(f'{trace.policy_value[t]:.3f}' if real else '-'):>7}"
         )
@@ -544,7 +572,7 @@ def plot_circuit(trace: CircuitTrace, *, path: Path | str | None = None, units: 
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec
 
-    T = len(trace.mse)
+    T = len(trace.error)
     A, HD = trace.num_acts, trace.num_hd
     rows = [
         ("obs[t]\nfrom the environment", "img", trace.obs_env),
@@ -557,7 +585,7 @@ def plot_circuit(trace: CircuitTrace, *, path: Path | str | None = None, units: 
         ("h[t]   recurrent out", "hid", trace.h),
         ("prediction  y[t]", "img", trace.pred),
         ("target  obs_next[t]", "img", trace.target),
-        ("MSE, and whose reward", "txt", "mse"),
+        ("prediction error,\nand whose reward", "txt", "error"),
         (f"hidden state consumed:\n{trace.policy_state_label}", "hid", trace.policy_state),
         ("head direction in", "bits", trace.policy_hd_onehot),
         ("action probabilities", "prob", trace.policy_probs),
@@ -614,14 +642,14 @@ def plot_circuit(trace: CircuitTrace, *, path: Path | str | None = None, units: 
                            f"{ACTION_SHORT[trace.action[t]] if real else '—'}")
                 elif data == "encodes":
                     txt = _encodes(trace, t).replace("=", "\n")
-                elif data == "mse":
+                elif data == "error":
                     who = (f"→ r[a{trace.rewards_action[t]}]"
                            if trace.rewards_action[t] >= 0 else "dropped")
-                    txt = f"{trace.mse[t]:.4f}\n{who}"
+                    txt = f"{trace.error[t]:.4f}\n{who}"
                 else:
                     txt = (f"a = {ACTION_SHORT[trace.action[t]]}\nV = {trace.policy_value[t]:.2f}"
                            if real else "no policy\nstep")
-                grey = not real and data not in ("mse", "encodes")
+                grey = not real and data not in ("error", "encodes")
                 ax.text(0.5, 0.5, txt, ha="center", va="center", fontsize=6.5,
                         color="#999999" if grey else
                         ("#b03060" if data == "encodes" and "->0" in txt else "black"))
@@ -668,3 +696,94 @@ def plot_circuit(trace: CircuitTrace, *, path: Path | str | None = None, units: 
     if path is not None:
         fig.savefig(path, dpi=150, bbox_inches="tight")
     return fig
+
+
+def circuit_figures(
+    *,
+    run_dir: Path | str,
+    offsets: tuple[int, ...] = (0, 1),
+    steps: int = 12,
+    out_dir: Path | str = ".",
+    step: int | None = None,
+) -> dict[int, Path]:
+    """Draw the circuit at each of `offsets`, on ONE shared action sequence.
+
+    The trajectory is sampled once under the run's OWN circuit and replayed in
+    every other (`trace_circuit(actions=...)`), so the two figures differ in the
+    wiring and in nothing else - which is the whole point of putting them side
+    by side. Returns offset -> the path written.
+
+    The world model and policy are the run's, through `Config.of_run`, so the
+    figure cannot drift from what the run actually trained.
+    """
+    from curious_george.configs import Config
+    from curious_george.envs.layouts import resolve_layouts
+    from curious_george.evaluation.checkpoint_series import archived, build
+    from curious_george.log_and_store.storage import find_policy, get_SR_acmodel
+    from curious_george.rl.collect.format import get_obss_preprocessor
+
+    run_dir, out_dir = Path(run_dir), Path(out_dir)
+    cfg = Config.of_run(run_dir)
+    layouts = resolve_layouts(cfg)
+    points = archived(run_dir)
+    if not points:
+        raise FileNotFoundError(f"no archived checkpoints under {run_dir}/checkpoints")
+    ckpt = dict(points)[step] if step is not None else points[-1][1]
+
+    pN, env = build(
+        cfg=cfg, landmarks=layouts[0].landmarks if layouts else None, ckpt=str(ckpt)
+    )
+    obs_space, preprocess_obss = get_obss_preprocessor(env.observation_space)
+    device = torch.device("cpu")
+    acmodel = get_SR_acmodel(
+        cfg, env.action_space, obs_space, device, find_policy(run_dir)
+    ).to(device)
+
+    common = dict(pN=pN, acmodel=acmodel, env=env, preprocess_obss=preprocess_obss,
+                  device=device, steps=steps)
+    # The run's own circuit picks the actions; every other circuit replays them.
+    first = trace_circuit(**common, action_offset=cfg.arch_prnn.action_offset,
+                          driven_by="the trained policy")
+    written: dict[int, Path] = {}
+    for offset in offsets:
+        trace = (
+            first if offset == cfg.arch_prnn.action_offset
+            else trace_circuit(**common, action_offset=offset, actions=first.action[:steps],
+                               driven_by="the trained policy under offset "
+                                         f"{cfg.arch_prnn.action_offset}")
+        )
+        path = out_dir / f"circuit-offset{offset}.png"
+        plot_circuit(trace, path=path)
+        written[offset] = path
+    return written
+
+
+def main(argv: "list[str] | None" = None) -> None:
+    """`python -m curious_george.evaluation.prediction_figures --run <dir>`
+
+    The circuit figure had no committed driver: `outputs/figures/circuit-desired.png`
+    was produced by a throwaway that did not survive 2026-08-29, so the one
+    artifact naming which circuit is wanted could not be regenerated or checked
+    against a current checkpoint.
+    """
+    import argparse
+
+    p = argparse.ArgumentParser(description=main.__doc__)
+    p.add_argument("--run", required=True, help="a run directory holding provenance.json")
+    p.add_argument("--offsets", type=int, nargs="+", default=[0, 1],
+                   help="which circuits to draw (default: both)")
+    p.add_argument("--steps", type=int, default=12)
+    p.add_argument("--step", type=int, default=None,
+                   help="archived checkpoint at this env step (default: the last)")
+    p.add_argument("--out-dir", default=".")
+    a = p.parse_args(argv)
+
+    for offset, path in circuit_figures(
+        run_dir=a.run, offsets=tuple(a.offsets), steps=a.steps,
+        out_dir=a.out_dir, step=a.step,
+    ).items():
+        print(f"offset {offset} -> {path}")
+
+
+if __name__ == "__main__":
+    main()
