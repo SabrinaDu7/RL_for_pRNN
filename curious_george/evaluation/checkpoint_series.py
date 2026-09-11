@@ -470,7 +470,12 @@ def main() -> None:
             mean_r = float(np.mean(per))
             line += (f" {mean_r:>10.4f} {float(pooled['sRSA']):>8.4f} "
                      f"{mean_r - float(pooled['sRSA']):>+8.4f} {float(pooled['SWdist']):>8.4f}")
-            row |= {"mean_room_sRSA": mean_r, "pooled_sRSA": float(pooled["sRSA"]),
+            # `per` is kept, not just its mean: `loss` is already per room, and
+            # a room set whose rooms DIFFER - the mixed-count design's 3/2/1/0
+            # landmarks - is a set whose mean is the least interesting summary.
+            # It was computed and discarded until 2026-09-11.
+            row |= {"room_sRSA": [float(x) for x in per],
+                    "mean_room_sRSA": mean_r, "pooled_sRSA": float(pooled["sRSA"]),
                     "remapping_index": mean_r - float(pooled["sRSA"]),
                     "SWdist": float(pooled["SWdist"])}
         if i == len(points) - 1:

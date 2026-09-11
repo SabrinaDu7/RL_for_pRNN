@@ -79,8 +79,12 @@ metric comparable to every earlier run on this arm. The count gradient is read
 offline instead, from the ten archived checkpoints:
 
 ```
-uv run python -m curious_george.evaluation.checkpoint_series --run <run> --rooms 8
+uv run python -m curious_george.evaluation.checkpoint_series \
+    --run <run> --rooms-scored 8 --spatial
 ```
+
+(the flag is `--rooms-scored`; `--spatial` is what turns on sRSA/SWdist, which
+this scorer leaves off by default because it is the slow part)
 
 ## Controls, and what each one is for
 
@@ -157,12 +161,158 @@ parity and reference.
    --run <dir> --offsets 0 1` regenerates both figures.
 
 Also found and NOT fixed, because it is outside this task and the rule is to ask
-first: `minigrid tests/test_obstacle.py::test_render_cache_does_not_alias_the_two`
-fails at `22ef960` and still fails — its second assertion asks a red `Wall` to
+first: in the minigrid fork, the obstacle suite's
+`test_render_cache_does_not_alias_the_two` fails at `22ef960` and still fails — its second assertion asks a red `Wall` to
 render differently from a red `Obstacle`, but at `tile_size=1` every tile is a
 solid fill of its own colour, so that probe cannot discriminate. The baseline is
 63 passed / 1 failed before this branch and 65 passed / 1 failed after.
 
 ## Results
 
-Pending — twelve jobs submitted 2026-09-10, queued on `long`.
+All twelve COMPLETED (SLURM 0:0), 22-27 min each on L40S. Run names are
+`mx-impassable-n8-s2-<label>_curious_<timestamp>` in `curious-george-multienv`,
+with `<label>` as in the job table above.
+
+🔴 Every sRSA number below is a TAIL MEAN over the last three analysis points
+with the run's own adjacent-sample band beside it, never a final logged point -
+the rule `docs/action-offset-ab-2026-08-29.md` sets in red, after endpoint
+reading produced three wrong conclusions there.
+Recomputed by `curious_george.check.run_tails`, which reports each tail
+beside its band and refuses a metric it cannot read densely rather than
+returning a whole-run mean dressed as a tail:
+
+```
+uv run python -m curious_george.check.run_tails \
+    --project curious-george-multienv --prefix mx-impassable-n8-s2-
+```
+
+### The circuit does not collapse exploration at whitened entropy 0.035
+
+The prediction that could have been falsified, and the reason the circuit axis
+was worth a night:
+
+| | `policy_entropy` MIN | % updates < 1.0 bits | `loc_entropy` MIN |
+|---|---|---|---|
+| tonight, offset 0 (6 runs) | 1.43 - 1.65 | **0.0%** | 6.57 - 6.98 |
+| tonight, offset 1 (6 runs) | 0.99 - 1.63 | **0.0%**, one cell 0.1% | 6.20 - 6.76 |
+| A/B 2026-08-29, offset 1 @ entropy 0.001 | 0.39 - 0.74 | 1.9 - 21.1% | 2.78 - 2.84 |
+
+CONFIRMED. The transient collapse that was offset 1's only reproducible
+signature in the raw-advantage era does not occur here.
+
+The mechanism is still present and subcritical, which is the more interesting
+half: offset 1 has a lower `policy_entropy` MIN than its offset-0 twin in
+**6 of 6** cells and a lower `loc_entropy` MIN in **6 of 6**. Twelve of twelve
+in the direction the A/B's mechanism predicts is not noise. The circuit still
+sharpens the policy on its state; at this entropy it never parks.
+
+### CE over MSE, replicated 4 of 4
+
+sRSA tail-3, bands ~0.05:
+
+| width, circuit | CE focal-5 MLP | MSE | gap |
+|---|---|---|---|
+| 500, offset 0 | 0.786 | 0.632 | +0.154 |
+| 500, offset 1 | 0.792 | 0.568 | +0.224 |
+| 1024, offset 0 | 0.777 | 0.527 | +0.250 |
+| 1024, offset 1 | 0.828 | 0.663 | +0.165 |
+
+The only axis tonight that separates cleanly, and it reproduces
+`docs/ce-multienv-impassable-2026-08-31.md` under a third protocol.
+
+### Circuit, count and width do not separate on the headline
+
+Circuit (offset 1 - offset 0) on sRSA tail-3: **+0.006, +0.051, -0.064,
++0.136, +0.070, -0.036** - four up, two down.
+Count (mixed - fixed), MSE cells: **-0.039, +0.095, +0.118, -0.054** - two up,
+two down.
+
+Mixed signs at magnitudes comparable to the ~0.05 seed spread. Read as "no
+effect demonstrated", NOT "no effect": with one seed per cell this design
+cannot tell them apart, which the Controls section said in advance.
+
+### Offset 1 costs prediction under CE, and not under MSE
+
+The focal-weighted `pRNN loss` reads 0.0222 vs 0.0128 for the CE pair - a 74%
+penalty - and that number should not be quoted. Audit C12: on focal arms that
+metric IS the focal-weighted loss, reweighting by `(1-pt)^5`, and offset 1
+contributes one maximally-hard row per segment. Against plain surprisal
+(`cur_reward_mean`, which `PRNNAdapter._prediction_errors` computes unweighted
+under either loss), by `check.wandb_compare` on matched env steps:
+
+| pair | metric | offset 0 -> offset 1 (end) | band | outside |
+|---|---|---|---|---|
+| CE 500 | `cur_reward_mean` | 18.34 -> 21.62 nats (+18%) | 2.36 | last two points |
+| CE 500 | `pRNN loss` (focal) | 0.0101 -> 0.0199 | 0.0202 | 0 of 6 |
+| MSE 500 | `cur_reward_mean` | 0.0116 -> 0.0120 | 0.0009 | 0 of 6 |
+| MSE 500 | `pRNN loss` | 0.0120 -> 0.0118 | 0.0009 | 2 of 6, mid-run only |
+
+So the cost is real under CE (+18%, not +74%) and absent under MSE. INFERRED,
+not confirmed, and the usual structural story does NOT cover it: one
+chance-level row (49 tiles x ln 7 = 95 nats) among 256 rows at ~18 nats moves
+the mean by ~1.7%, not 18%. One seed per cell; the remaining gap is unexplained.
+⚠️ The `pRNN loss` band of 0.0202 is inflated by the early decay from 0.078,
+so "inside band" is weak evidence on that row - which is itself a reason to
+read the plain measure.
+
+### The count gradient, which is what the mixed-count design is for
+
+Per-room values at the final checkpoint, from
+`checkpoint_series --rooms-scored 8 --spatial`. `room_sRSA` had to be added:
+the scorer computed the per-room list, averaged it, and discarded it.
+
+Prediction loss falls monotonically with landmark count in every run (the
+500-wide offset-0 run shown; the other three have the same shape):
+
+| room | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| landmarks | 3 | 3 | 3 | 2 | 2 | 1 | 1 | 0 |
+| loss | .0087 | .0098 | .0092 | .0067 | .0065 | .0056 | .0054 | **.0039** |
+
+Expected - an emptier room holds less to predict - and it confirms the design
+renders what it claims. Independent check: room 7's layout fingerprint is
+`da39a3ee`, the first eight hex of `sha1("")`.
+
+sRSA by landmark count, averaged over the rooms at each count:
+
+| run | 3 lm | 2 lm | 1 lm | 0 lm | 2-3 | 1-3 | 0-3 |
+|---|---|---|---|---|---|---|---|
+| mixed-mse-off0 | 0.540 | 0.568 | 0.560 | 0.535 | +0.028 | +0.020 | -0.005 |
+| mixed-mse-off1 | 0.612 | 0.665 | 0.659 | 0.642 | +0.054 | +0.048 | +0.030 |
+| mixed-mse-h1024-off0 | 0.621 | 0.629 | 0.631 | 0.583 | +0.008 | +0.010 | -0.038 |
+| mixed-mse-h1024-off1 | 0.449 | 0.480 | 0.488 | 0.450 | +0.032 | +0.039 | +0.001 |
+| | | | | **sign** | **4/4** | **4/4** | 2/4 |
+| | | | | **mean** | **+0.030** | **+0.029** | -0.003 |
+
+An INVERTED U: rooms holding one or two landmarks carry more spatial structure
+than rooms holding three, in 4 of 4 runs, across two widths and both circuits;
+the landmark-free room falls back to the three-landmark level. These are
+WITHIN-run, within-checkpoint contrasts - one network, one probe, different
+rooms - so they do not pay the between-run seed penalty that flattens every
+other axis tonight.
+
+🔴 **Count is confounded with room identity here, and the design cannot separate
+them.** Each count is realised by one to three SPECIFIC rooms, so "two
+landmarks" and "rooms 3 and 4" name the same thing. The zero-landmark cell
+carries a second confound: with nothing impassable it has 172 reachable cells
+against 152, so its sRSA is taken over a different support. The reproducibility
+across four runs says the ordering is a property of these rooms, not of the
+seed; it does not say the property is the COUNT.
+
+The design that separates them is available and cheap, because `keep_landmarks`
+acts on a fixed set of anchors: hold ONE room and vary its own count
+(`"012"`, `"12"`, `"0"`, `"-"` on the same anchors), so count moves and
+geometry does not. That is the next run worth its allocation, ahead of a second
+seed on anything here.
+
+### Prediction scorecard
+
+| prediction | outcome |
+|---|---|
+| no offset-1 exploration collapse at 0.035 | **CONFIRMED** (0.0% duty cycle, 11 of 12 runs) |
+| circuit moves sRSA by less than the 0.05 seed spread | **FALSIFIED AS STATED** - 4 of 6 cells exceed 0.05 - but signs are mixed, so no directional effect |
+| offset-1 prediction loss ties offset 0 at this entropy | **WRONG under CE** (+18% plain surprisal); right under MSE |
+| CE above MSE on mean room sRSA | **CONFIRMED**, 4 of 4 |
+| prediction improves at 1024 under both losses | partly - 4 of 6 cells |
+| count: no prediction stated | the inverted U above, confounded as noted |
+
