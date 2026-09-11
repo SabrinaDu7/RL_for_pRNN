@@ -2,6 +2,9 @@ version = 1
 revision = 3
 requires-python = ">=3.10, <=3.10.15"
 
+[manifest]
+overrides = [{ name = "minigrid", git = "https://github.com/SabrinaDu7/minigrid.git?rev=sdu%2Fempty-room" }]
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -742,7 +745,7 @@ wheels = [
 [[package]]
 name = "minigrid"
 version = "1.2.6"
-source = { git = "https://github.com/SabrinaDu7/minigrid.git#22ef960b67ae5d4bc3d4f5c39a408fd2796401eb" }
+source = { git = "https://github.com/SabrinaDu7/minigrid.git?rev=sdu%2Fempty-room#c5dd5f2d5788bfb748708ffa6e613af4c87c491a" }
 dependencies = [
     { name = "gymnasium" },
     { name = "matplotlib" },
@@ -1580,7 +1583,7 @@ requires-dist = [
     { name = "jaxtyping", specifier = ">=0.2.36" },
     { name = "kaleido", specifier = ">=1.1.0" },
     { name = "matplotlib", specifier = ">=3.5.3" },
-    { name = "minigrid", git = "https://github.com/SabrinaDu7/minigrid.git" },
+    { name = "minigrid" },
     { name = "moviepy", specifier = ">=2.2.1" },
     { name = "nbformat", specifier = ">=5.10.4" },
     { name = "numpy", specifier = ">=1.22.4" },
