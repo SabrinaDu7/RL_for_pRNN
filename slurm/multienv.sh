@@ -1,7 +1,7 @@
 #!/bin/bash
 # Multi-room training on the 5 (or 10) selected rooms, either affordance.
 #
-#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent] [norm] [entropy] [positions] [label] [extra flags...]
+#   sbatch slurm/multienv.sh [impassable] [n] [seed] [branch] [wm_grad_steps] [agent] [norm] [entropy] [positions] [label] [keep] [extra flags...]
 #
 #   Every run this launcher submits logs to wandb project
 #   `curious-george-multienv` - IN the invocation below, not a per-launch
@@ -86,22 +86,35 @@ NORM="${7:-}"
 #               to the directly preceding subcommand, so source-level flags
 #               cannot ride here; positions has its own argument for that).
 #               e.g. ... '' ce --arch-prnn.loss CE --train-policy.normalize-reward
+# keep        : ONE argument, the per-room landmark subsets of the mixed-count
+#               design, space-separated and aligned with `positions`: kept
+#               landmark indices as digits, '-' for the landmark-free room.
+#               Empty keeps every landmark (the historical meaning). It needs
+#               its own argument for the same reason `positions` does - it is a
+#               SOURCE-level flag and has to follow `env.source:selected`, so it
+#               cannot ride in `extra`.
+#                 ... 0,1,2,3,5,6,7,8 mixed-mse '012 012 012 12 01 0 2 -' --arch-prnn.loss MSE
+#               ⚠️ A '-' room is only landmark-free from minigrid c5dd5f2 on;
+#               before it, `_gen_grid` read `landmarks or defaults` and painted
+#               the historical three 6x6 walkable stencils there instead.
 # train_policy.entropy_coef. Empty uses the preset's own default (one home:
 # configs.py::_parity - whitened era; its docstring records the raw-era knee,
 # the measured 67-70% collapse when 0.003 rode whitened advantages, and the
 # ratio-matched ~0.024).
 ENT="${8:-}"
-POS="${9:-}"; LABEL="${10:-}"
-shift $(( $# < 10 ? $# : 10 ))
+POS="${9:-}"; LABEL="${10:-}"; KEEP="${11:-}"
+shift $(( $# < 11 ? $# : 11 ))
 EXTRA=("$@")
 [ -z "$POS" ] && POS=$(seq -s, 0 $((N-1)))
 POSFLAG="--env.source.positions ${POS//,/ }"
+# Unquoted on purpose: the digit groups must reach tyro as separate words.
+KEEPFLAG=${KEEP:+--env.source.keep-landmarks $KEEP}
 case "$IMP" in
   true|True|1)  FLAG=--env.source.impassable;    TAG=impassable ;;
   false|False|0) FLAG=--env.source.no-impassable; TAG=walkable ;;
   *) echo "impassable must be true or false, got $IMP" >&2; exit 1 ;;
 esac
-NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}${NORM:+-$NORM}${ENT:+-e$ENT}${LABEL:+-$LABEL}"
+NAME="mx-${TAG}-n${N}-s${SEED}${WM:+-wm$WM}${AGENT:+-$AGENT}${NORM:+-$NORM}${ENT:+-e$ENT}${KEEP:+-mixed}${LABEL:+-$LABEL}"
 ENTFLAG=${ENT:+--train-policy.entropy-coef $ENT}
 # tyro takes the enum MEMBER NAME, not its value: --arch-policy.agent RANDOM.
 case "$NORM" in
@@ -154,7 +167,7 @@ trap save EXIT
 uv run python main_train.py multienv-fast \
     --run.seed "$SEED" --run.exp-name "$NAME" --run.wandb-project curious-george-multienv \
     $BUDGET $AGENTFLAG $NORMFLAG $ENTFLAG "${EXTRA[@]}" \
-    env.source:selected "$FLAG" $POSFLAG \
+    env.source:selected "$FLAG" $POSFLAG $KEEPFLAG \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 # Never pipe through `tail` alone: a job once died with no visible traceback
 # because the tail showed the config dump instead of the error.

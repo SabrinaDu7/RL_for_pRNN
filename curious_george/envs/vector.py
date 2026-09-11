@@ -233,19 +233,29 @@ class DeviceTableShellPool:
         observations (`_reset_streams` returns positions only; observations
         come from the device banks).
 
-        IMPASSABLE-ONLY, deliberately: with blocking landmarks the env paints
-        the grid BEFORE `place_agent`, so a pre-painted cached grid consumes
-        np_random identically to a fresh build. The walkable arm places the
-        agent on the EMPTY grid first (a historical trajectory-preserving
-        order, see Lroom._gen_grid) - a cached painted grid would change the
-        rejection-sampling draws and silently move every trajectory. Walkable
-        layouts therefore return None and keep the full reset.
+        WHAT MAKES A LAYOUT CACHEABLE: that `place_agent` sees the same grid
+        here as it would in a full reset, since it is the reset's only RNG
+        consumer. With blocking landmarks the env paints BEFORE `place_agent`
+        (`Lroom._gen_grid`), so a pre-painted cached grid is exactly what the
+        full reset would have. A layout with NO landmarks paints nothing in
+        either path, so it qualifies too. The walkable arm does not: it places
+        the agent on the EMPTY grid first (a historical trajectory-preserving
+        order), and a cached painted grid would change the rejection-sampling
+        draws and silently move every trajectory.
+
+        The predicate is per layout and the pool needs EVERY layout to qualify,
+        because one uncacheable room means the reset path has to branch per
+        stream. Until 2026-09-10 it read `all(any(impassable))`, which an empty
+        room fails on `any(()) is False` - so a single landmark-free room cost
+        every other room in the pool its cached grid.
         """
         if self.layouts is None:
             return None
-        if not all(
-            any(lm.impassable for lm in layout.landmarks) for layout in self.layouts
-        ):
+        cacheable = (
+            not layout.landmarks or any(lm.impassable for lm in layout.landmarks)
+            for layout in self.layouts
+        )
+        if not all(cacheable):
             return None
         import copy
 

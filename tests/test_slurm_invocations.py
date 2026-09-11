@@ -30,6 +30,10 @@ BINDINGS = {
     "ENTFLAG": "--train-policy.entropy-coef 0.024",
     # multienv.sh's positions passthrough, bound to the CE plan's 8-room set.
     "POSFLAG": "--env.source.positions 0 1 2 3 5 6 7 8",
+    # multienv.sh's keep_landmarks passthrough, bound to the mixed-count design.
+    # It is SOURCE-level, so this is also what pins it after `env.source:selected`
+    # - placed with the preset flags it would be swallowed as unrecognized.
+    "KEEPFLAG": "--env.source.keep-landmarks 012 012 012 12 01 0 2 -",
     # parity.sh's verbatim passthrough (args 7+), bound to a representative
     # baseline arm so the gate parses what a count run actually submits. The
     # key carries the braces/subscript because the substitution below builds
@@ -82,6 +86,17 @@ def test_parity_extra_flags_reach_tyro():
     cfg = cli(_invocation(SLURM / "parity.sh"))
     assert cfg.train_policy.k_count == 0.1
     assert cfg.train_policy.curious is False
+
+
+def test_multienv_launcher_carries_the_mixed_count_design():
+    """`keep_landmarks` aligns with `positions` by position, so a swallowed
+    flag does not fail - it silently trains every room at three landmarks
+    under a name that says otherwise."""
+    from curious_george.envs.layouts import Selected
+
+    cfg = cli(_invocation(SLURM / "multienv.sh"))
+    assert isinstance(cfg.env.source, Selected)
+    assert cfg.env.source.keep_landmarks == ("012", "012", "012", "12", "01", "0", "2", "-")
 
 
 def test_multienv_launcher_selects_the_room_set_it_claims():

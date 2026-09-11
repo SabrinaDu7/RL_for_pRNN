@@ -9,6 +9,7 @@ and the environment, bank and walkable set are correct at every count.
 
 import numpy as np
 import pytest
+import torch
 
 from curious_george import make_env
 from curious_george.configs import Config, EnvCfg, EvalCfg, EvalKind
@@ -106,6 +107,104 @@ def test_keep_landmarks_expresses_the_mixed_count_design() -> None:
 
     colours = Counter(lm.color for r in rooms for lm in r.landmarks)
     assert colours == {"blue": 5, "green": 5, "red": 5}
+
+
+def test_a_kept_none_room_reaches_the_ENV_with_no_landmarks() -> None:
+    """The layout says `()`; this pins that the GRID agrees.
+
+    `test_a_full_config_carries_a_zero_landmark_design` stops at the resolver,
+    so it passed all the while `LEnv._gen_grid` was reading `self.landmarks or
+    self._default_landmarks(...)` and painting the historical three 6x6
+    walkable stencils into every landmark-free room. Nothing else could catch
+    it: the substituted colours are all in `envs/palette.py::TILE_VOCABULARY`,
+    so CE's closed-set assert never fired.
+    """
+    from curious_george.envs.layouts import Selected
+
+    rooms = resolve_rooms(
+        shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
+        source=Selected(impassable=True, positions=(0, 8), keep_landmarks=("012", "-")),
+    )
+    assert [len(r.landmarks) for r in rooms] == [3, 0]
+
+    env = make_env(env_key="MiniGrid-LRoom-Multi-v0", input_type=AgentInputType.H_PO.value,
+                   act_enc=ActionEncodingsEnum.SpeedHD.value, seed=0,
+                   landmarks=list(rooms[1].landmarks))
+    grid = env.env.unwrapped.grid
+    painted = [c for c in grid.grid if c is not None and c.type != "wall"]
+    assert painted == [], f"the landmark-free room painted {painted}"
+
+
+def test_a_landmark_free_room_does_not_disable_the_pools_fast_reset() -> None:
+    """`_cache_layout_grids` guards `all(any(impassable))` over the WHOLE pool,
+    so one empty room used to cost every other room its cached grid - a
+    pool-wide slowdown from a per-room property. An empty room paints nothing
+    in either path, so it is safe to cache.
+    """
+    from curious_george.envs.layouts import Selected
+    from curious_george.envs.vector import DeviceTableShellPool
+
+    rooms = resolve_rooms(
+        shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
+        source=Selected(impassable=True, positions=(0, 1, 8),
+                        keep_landmarks=("012", "12", "-")),
+    )
+    shells = [
+        make_env(env_key="MiniGrid-LRoom-Multi-v0", input_type=AgentInputType.H_PO.value,
+                 act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed,
+                 landmarks=list(rooms[0].landmarks), table_env=True)
+        for seed in range(3)
+    ]
+    pool = DeviceTableShellPool(
+        training_shells=shells[:2], eval_shell=shells[2],
+        device=torch.device("cpu"), layouts=rooms,
+    )
+    assert pool._cache_layout_grids() is not None, (
+        "the empty room disabled the cached-grid reset for the whole pool"
+    )
+
+
+def test_the_cached_reset_draws_what_a_full_reset_draws_with_an_empty_room() -> None:
+    """The claim `_cache_layout_grids` rests on, for the room it just admitted.
+
+    `place_agent` is a reset's only RNG consumer, so "cacheable" means the two
+    paths hand it the same grid and it therefore draws the same start states.
+    Asserted end to end - same seeds, same layout draws, one pool on the cached
+    path and one forced onto the full reset - rather than argued from the
+    ordering in `Lroom._gen_grid`.
+    """
+    from curious_george.envs.layouts import Selected
+    from curious_george.envs.vector import DeviceTableShellPool
+
+    rooms = resolve_rooms(
+        shape=EnvShape("MiniGrid-LRoom-v0"), content=EnvContent(),
+        source=Selected(impassable=True, positions=(0, 1, 8),
+                        keep_landmarks=("012", "12", "-")),
+    )
+
+    def pool_of(*, cached: bool):
+        shells = [
+            make_env(env_key="MiniGrid-LRoom-Multi-v0", input_type=AgentInputType.H_PO.value,
+                     act_enc=ActionEncodingsEnum.SpeedHD.value, seed=seed,
+                     landmarks=list(rooms[0].landmarks), table_env=True)
+            for seed in range(5)
+        ]
+        pool = DeviceTableShellPool(
+            training_shells=shells[:4], eval_shell=shells[4],
+            device=torch.device("cpu"), layouts=rooms,
+        )
+        if not cached:
+            pool._layout_grids = False  # the branch a non-cacheable pool takes
+        return pool
+
+    fast, full = pool_of(cached=True), pool_of(cached=False)
+    for _ in range(6):
+        a_layout, a_pos, a_dir = fast._reset_streams()
+        b_layout, b_pos, b_dir = full._reset_streams()
+        assert np.array_equal(a_layout, b_layout)
+        assert np.array_equal(a_pos, b_pos), "the cached grid moved a start position"
+        assert np.array_equal(a_dir, b_dir)
+    assert fast._layout_grids, "this pool was supposed to be on the cached path"
 
 
 def test_keep_landmarks_misalignment_and_bad_digits_fail_loudly() -> None:
