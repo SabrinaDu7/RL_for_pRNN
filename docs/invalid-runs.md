@@ -15,6 +15,43 @@ rather than something a reader has to reconstruct.
 
 ---
 
+## `sdu/mixed-count-mse` — a landmark-free room was the DEFAULT room · 2026-09-10
+
+minigrid `c5dd5f2`. `LEnv._gen_grid` read
+`landmarks = self.landmarks or self._default_landmarks(width, height)`. An
+empty list is falsy, so a `Selected.keep_landmarks` entry of `"-"` — "this
+room has no landmarks", the pure path-integration cell of the mixed-count
+design — was served the historical three 6x6 stencils instead: `triangle6`
+blue, `plus6` red, `x6` yellow, and **walkable**, unlike the impassable
+rooms beside it in the same set.
+
+Nothing failed. The substituted colours are all in
+`envs/palette.py::TILE_VOCABULARY`, so `predCE`'s closed-set assert stayed
+silent, and `tests/test_variable_landmarks.py::test_a_full_config_carries_a_zero_landmark_design`
+stops at layout resolution and never builds the env, so it stayed green
+throughout.
+
+Two consequences, both measured:
+
+- The "landmark-free" room was the largest, brightest and only walkable room
+  in the pool, with an object family no other room shared.
+- `DeviceTableShellPool._cache_layout_grids` guarded on
+  `all(any(lm.impassable ...))`; `any(())` is False, so ONE such room put the
+  WHOLE pool back on full MiniGrid resets — 1.31 s of a 2.08 s rollout at
+  B=256. Fixed in the same branch, with the cached-vs-full equivalence now
+  asserted rather than argued.
+
+**Affected**: `mx-mixedcount-n8-s2-focal5mlp_curious_26-09-01-14-17-46`
+(curious-george-multienv, code `71890bd`, local RTX 4060) — the only run ever
+launched with a `"-"` room. Its landmark counts were 3,3,3,2,2,1,1,0 by the
+config and 3,3,3,2,2,1,1,**3-large-walkable** in the environment. Its final
+mean room sRSA of 0.821 is not a mixed-count number, and in any case the
+online eval scores only `rooms_max=5` — the prefix 3,3,3,2,2 — so the low-count
+rooms it does hold were never scored. Do not use it as the mixed-count
+baseline; the 2026-09-10 runs are the first with a real landmark-free room.
+
+---
+
 ## `sdu/optim-pred` — the 2026-08-31 audit's measurement-protocol lines
 
 Four smaller lines from the same audit pass, grouped because they share a
