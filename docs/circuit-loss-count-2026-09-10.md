@@ -233,8 +233,8 @@ cannot tell them apart, which the Controls section said in advance.
 
 ### Offset 1 costs prediction under CE, and not under MSE
 
-The focal-weighted `pRNN loss` reads 0.0222 vs 0.0128 for the CE pair - a 74%
-penalty - and that number should not be quoted. Audit C12: on focal arms that
+The focal-weighted `pRNN loss` tail reads 0.0227 vs 0.0128 for the CE pair -
+a 77% penalty - and that number should not be quoted. Audit C12: on focal arms that
 metric IS the focal-weighted loss, reweighting by `(1-pt)^5`, and offset 1
 contributes one maximally-hard row per segment. Against plain surprisal
 (`cur_reward_mean`, which `PRNNAdapter._prediction_errors` computes unweighted

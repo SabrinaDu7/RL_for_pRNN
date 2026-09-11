@@ -40,6 +40,17 @@ COLLAPSE_BITS: float = 1.0
 #: log2 of the four-action space - what a uniform policy scores, for scale.
 UNIFORM_ENTROPY_BITS: float = 2.0
 
+#: `run.history()` returns at most this many rows however many are asked for
+#: (measured: `samples=100000` on a 45,375-step run returns 10,000).
+HISTORY_CAP: int = 10_000
+
+#: Tail window as a FRACTION of the logged series, not a row count. A row count
+#: is density-dependent - "the last 500 rows" is the last 500 gradient steps on
+#: a dense series and the last ~2,270 on a 10,000-row subsample of the same run,
+#: which are different questions. A fraction is the same window either way, and
+#: the subsample is uniform, so the fractional tail mean is unbiased.
+TAIL_FRACTION: float = 0.0114
+
 #: The analysis-cadence metric the multi-room arm is judged on, and the dense
 #: per-update metrics. Separate because they are logged at different cadences
 #: and so need different tail lengths.
@@ -63,14 +74,22 @@ class RunTails:
     policy_entropy_min: float
     policy_entropy_median: float
     collapse_duty_cycle: float
-    """Fraction of logged updates with `policy_entropy` < `COLLAPSE_BITS`."""
+    """Fraction of logged updates with `policy_entropy` < `COLLAPSE_BITS`.
+    Unbiased on a uniform subsample, so it does not depend on `dense`."""
     loc_entropy_min: float
+    dense: bool = True
+    """False when a dense series was unavailable and the 10,000-row subsample
+    was read instead. The tail means and the duty cycle are still right - the
+    window is a FRACTION and the subsample is uniform - but the two MINIMA are
+    then a lower bound on how extreme the run actually got, because a subsample
+    can only miss extremes. Rows print `~` in that case."""
 
     def row(self) -> str:
         def f(x: float, w: int, p: int, suffix: str = "") -> str:
             return f"{'n/a':>{w}}" if np.isnan(x) else f"{x:{w}.{p}f}{suffix}"
 
-        return (f"{self.run:38s} {f(self.srsa_tail, 8, 3)} {f(self.srsa_band, 6, 3)} "
+        mark = "" if self.dense else "~"
+        return (f"{self.run + mark:44s} {f(self.srsa_tail, 8, 3)} {f(self.srsa_band, 6, 3)} "
                 f"{f(self.loss_tail, 10, 5)} {f(self.policy_entropy_min, 7, 3)} "
                 f"{f(self.policy_entropy_median, 7, 3)} "
                 f"{f(100 * self.collapse_duty_cycle, 6, 1, '%')} "
@@ -78,61 +97,72 @@ class RunTails:
 
     @staticmethod
     def header() -> str:
-        return (f"{'run':38s} {'sRSA t':>8s} {'band':>6s} {'loss t':>10s} "
+        return (f"{'run (~ = read from the 10k subsample)':44s} {'sRSA t':>8s} {'band':>6s} {'loss t':>10s} "
                 f"{'pe MIN':>7s} {'pe MED':>7s} {'%<1.0':>7s} {'loc MIN':>8s}")
 
 
-def series(run, metric: str, *, attempts: int = 6) -> np.ndarray:
-    """A metric's values in logged order, DENSE, or empty if they cannot be had.
+def series(run, metric: str, *, attempts: int = 3) -> tuple[np.ndarray, bool]:
+    """(values in logged order, whether every logged row is present).
 
-    `scan_history` is the streaming reader and the only one that returns every
-    row. It fails two ways, both recorded in
-    `log_and_store/wandb.py::_history_rows`: it raises `Step column '_step' not
-    found in schema`, and it can return rows with the key simply absent. Both
-    are INTERMITTENT on this backend - the same run and metric raised on one
-    call and returned 43,936 rows on the next - so this retries.
+    `scan_history` streams EVERY row and is the right answer when it works. It
+    refuses with `Step column '_step' not found in schema`, and it can return
+    rows with the key absent - both recorded in
+    `log_and_store/wandb.py::_history_rows`. MEASURED here: the refusal is
+    deterministic per (run, metric) over minutes, not flaky per call - the same
+    twelve runs all served dense history once and then refused for a stable
+    subset across two later attempts with backoff between. So retrying is worth
+    a couple of tries and no more.
 
-    🔴 It does NOT fall back to `run.history()`. That endpoint returns a fixed
-    SUBSAMPLE spanning the whole run (500 rows by default), so the "last 500"
-    of it is the whole-run mean, not a tail: measured on `focal5mlp-off0`,
-    0.04261 against the true 0.01047. A tail of a subsample is not a tail, and
-    a wrong number that looks right is worse than no number. Empty here becomes
-    NaN in `RunTails`, which prints as `n/a`.
+    `run.history()` is then the fallback, and its result is a SUBSAMPLE: it is
+    capped at 10,000 rows whatever `samples` asks for, so a 45,375-step run
+    comes back at roughly every 4.5th row. That is why this reports the flag
+    instead of hiding the difference - see `RunTails` for what each statistic
+    does with it.
     """
     for attempt in range(attempts):
         if attempt:
-            # Exponential: the refusals cluster when the API is being hit hard,
-            # and a fixed 2 s retry just adds to the hammering.
             time.sleep(2.0 * 2 ** (attempt - 1))
         try:
             rows = list(run.scan_history(keys=[metric], page_size=2000))
-        except Exception:  # noqa: BLE001 - any backend refusal; it is transient
+        except Exception:  # noqa: BLE001 - any backend refusal
             continue
         vals = [r.get(metric) for r in rows]
         if any(v is not None for v in vals):
-            return np.array([v for v in vals if v is not None and np.isfinite(v)], dtype=float)
-    return np.array([], dtype=float)
+            v = np.array([x for x in vals if x is not None and np.isfinite(x)], dtype=float)
+            return v, True
+    try:
+        frame = run.history(keys=[metric], samples=HISTORY_CAP, pandas=True)
+    except Exception:  # noqa: BLE001
+        return np.array([], dtype=float), False
+    if frame is None or len(frame) == 0 or metric not in getattr(frame, "columns", []):
+        return np.array([], dtype=float), False
+    v = frame[metric].to_numpy(dtype=float)
+    return v[np.isfinite(v)], False
 
 
-def tails_of(run, *, sparse_points: int = 3, dense_points: int = 500) -> RunTails:
+def tails_of(run, *, sparse_points: int = 3) -> RunTails:
     """Summarise one wandb run object. `run.name` identifies it."""
     def tail(v: np.ndarray, n: int) -> float:
         return float(v[-n:].mean()) if v.size else float("nan")
 
-    srsa = series(run, SPARSE_METRIC)
-    loss = series(run, "pRNN loss")
-    pe = series(run, "policy_entropy")
-    loc = series(run, "loc_entropy")
+    def frac_tail(v: np.ndarray) -> float:
+        return tail(v, max(1, round(TAIL_FRACTION * v.size))) if v.size else float("nan")
+
+    srsa, _ = series(run, SPARSE_METRIC)
+    loss, loss_dense = series(run, "pRNN loss")
+    pe, pe_dense = series(run, "policy_entropy")
+    loc, loc_dense = series(run, "loc_entropy")
     return RunTails(
         run=run.name.split("_curious")[0],
         srsa_tail=tail(srsa, sparse_points),
         # The estimator's own error bar: how far consecutive samples move.
         srsa_band=float(np.std(np.diff(srsa))) if srsa.size > 2 else float("nan"),
-        loss_tail=tail(loss, dense_points),
+        loss_tail=frac_tail(loss),
         policy_entropy_min=float(pe.min()) if pe.size else float("nan"),
         policy_entropy_median=float(np.median(pe)) if pe.size else float("nan"),
         collapse_duty_cycle=float((pe < COLLAPSE_BITS).mean()) if pe.size else float("nan"),
         loc_entropy_min=float(loc.min()) if loc.size else float("nan"),
+        dense=bool(loss_dense and pe_dense and loc_dense),
     )
 
 
