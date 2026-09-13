@@ -151,20 +151,25 @@ class ACModelSR(ACModel):
             x = self.image_conv(x)
             x = x.reshape(x.shape[0], -1)
 
-        onehot_HD = torch.nn.functional.one_hot(
-            obs.direction.long(), num_classes=4
-        ).float()
-
+        # The embedding is the parts this model HAS, in a fixed order, joined
+        # once - not a 2x2 of `with_CV` x `with_HD` spelling one concatenation
+        # four times.
+        #
+        # 🔴 The head-direction one-hot is built INSIDE the `with_HD` test. It
+        # used to be built above it, so `obs.direction` was read whatever the
+        # flag said, and the PPO graph path (`rl/update/policy_graph.py`) hands
+        # this a minibatch with no `direction` at all - `KeyError: 'direction'`
+        # at capture. `with_HD=False` was therefore unreachable in every
+        # configuration that captures the policy step, which is `parity`,
+        # `multienv-fast` and everything derived from them. The base
+        # `ACModel.forward` always had it right; only this override did not.
+        parts = [x] if self.with_CV else []
+        parts.append(SR)
         if self.with_HD:
-            if self.with_CV:
-                embedding = torch.cat((x, SR, onehot_HD), dim=1)
-            else:
-                embedding = torch.cat((SR, onehot_HD), dim=1)
-        else:
-            if self.with_CV:
-                embedding = torch.cat((x, SR), dim=1)
-            else:
-                embedding = SR
+            parts.append(
+                torch.nn.functional.one_hot(obs.direction.long(), num_classes=4).float()
+            )
+        embedding = torch.cat(parts, dim=1) if len(parts) > 1 else parts[0]
 
         x = self.actor(embedding)
         # The explicit log_softmax is redundant - Categorical normalizes logits

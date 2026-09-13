@@ -103,12 +103,16 @@ class GraphPolicyTrainer:
         if self.static is None:
             self.static = DictList({f: getattr(exps, f).clone() for f in _FLAT_FIELDS})
             self.static.obs = DictList()
-            if hasattr(exps.obs, "direction"):
+            # `in`, not `hasattr`: DictList sets `__getattr__ = dict.__getitem__`,
+            # so a missing key raises KeyError, and `hasattr` only swallows
+            # AttributeError - the "safe" spelling would propagate. Both sites
+            # happen to be reached with the key present; the idiom is the hazard.
+            if "direction" in exps.obs:
                 self.static.obs.direction = exps.obs.direction.clone()
             return
         for f in _FLAT_FIELDS:
             getattr(self.static, f).copy_(getattr(exps, f))
-        if hasattr(self.static.obs, "direction"):
+        if "direction" in self.static.obs:
             self.static.obs.direction.copy_(exps.obs.direction)
 
     # --- capture and replay --------------------------------------------------
