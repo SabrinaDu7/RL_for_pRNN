@@ -316,3 +316,102 @@ seed on anything here.
 | prediction improves at 1024 under both losses | partly - 4 of 6 cells |
 | count: no prediction stated | the inverted U above, confounded as noted |
 
+
+---
+
+# Seed 3, and the head-direction ablation (2026-09-13)
+
+Four runs, MSE, fixed three objects, the same 8 impassable rooms and budget,
+`curious-george-multienv`. Jobs 10778896/97 (HD on, code `f1f804e`) and
+10780174/75 (HD off, code `52309de`). The training path is fingerprint-identical
+across those two commits on all four gated cases, so the pairs are comparable -
+that rests on the gate, not on the commits matching.
+
+`--arch-policy.no-with-head-direction` drops the 4-dim head-direction one-hot
+from the policy embedding. With `with_obs=False` already the default, the policy
+then reads the pRNN hidden state and NOTHING else.
+
+⚠️ **The flag could not be used before this batch.** `ACModelSR.forward` built
+the one-hot above its own `with_HD` test, so it read `obs.direction` whatever
+the flag said, and `_index_policy_batch` hands the SR actor an EMPTY obs when
+`with_HD` is false. It raised at CUDA-graph capture, so every preset that graphs
+the policy step could not run the ablation. Fixed in `52309de`; the goldens are
+bitwise green and the fingerprint IDENTICAL across it.
+
+## `multiroom/mean_room_sRSA`, every analysis event
+
+| run | series | tail-3 | last |
+|---|---|---|---|
+| s2 off0 | 0.322, 0.414, 0.575, 0.660, 0.661 | 0.632 | 0.661 |
+| s2 off1 | 0.354, 0.418, 0.559, 0.542, 0.603 | 0.568 | 0.603 |
+| s3 off0 | 0.339, 0.427, 0.514, 0.567, 0.570 | 0.550 | 0.570 |
+| s3 off0 **no HD** | 0.369, 0.389, 0.396, 0.491, 0.536 | 0.474 | 0.536 |
+| s3 off1 | 0.323, 0.455, 0.581, 0.637, 0.624 | 0.614 | 0.624 |
+| s3 off1 **no HD** | 0.388, 0.526, 0.600, **0.372**, 0.632 | 0.535 | 0.632 |
+
+## MSE finally has a seed control
+
+| arm | seed 2 | seed 3 | spread |
+|---|---|---|---|
+| off0 | 0.632 | 0.550 | 0.082 |
+| off1 | 0.568 | 0.614 | 0.046 |
+
+**0.046-0.082 on mean room sRSA.** The first measurement of MSE seed-to-seed
+spread on this arm, and the number every other comparison here has to clear.
+It sits where the CE pair's 0.05 did.
+
+## The circuit effect flips sign between seeds
+
+seed 2: off1 is 0.064 BELOW off0. seed 3: off1 is 0.064 ABOVE off0. Same
+magnitude, opposite sign. Together with the 2026-09-11 batch (four up, two
+down across six cells) this settles the circuit question for THIS metric at
+this budget: **the apparent effects were seed noise**, and no experiment of
+this shape will separate them.
+
+## The head-direction ablation is NOT resolved, and the tail mean says otherwise
+
+Tail-3 says a clean, consistent penalty - -0.076 at offset 0 and -0.079 at
+offset 1. The SERIES says the two cells disagree:
+
+- **offset 0**: HD-off is below its twin at four of five events and ends 0.034
+  lower. A modest cost, consistently signed.
+- **offset 1**: HD-off is ABOVE its twin at the first three events and ends
+  0.008 ABOVE it. Its whole tail-3 penalty is one anomalous sample, 0.372 at
+  the fourth event, which also blows its own band out to 0.180 against the
+  0.034-0.059 of every other run here.
+
+So the agreement between the two tail-3 numbers is a coincidence of one
+outlier, not a reproduced effect. Both deltas are inside the 0.046-0.082 seed
+spread in any case. 🔴 And "same seed" does NOT make this a paired comparison:
+`with_HD` changes `embedding_size`, so the actor and critic Linears have
+different shapes, `init_params` draws a different number of values, and the two
+arms diverge from initialisation. They are two independent runs and must clear
+the seed spread like any other pair.
+
+## What the ablation DOES move
+
+| | off0 | off0 no HD | off1 | off1 no HD |
+|---|---|---|---|---|
+| prediction loss (tail) | 0.01132 | 0.01110 | 0.01214 | 0.01234 |
+| `MI_policy` | 0.075 | 0.050 | 0.095 | 0.088 |
+| `exploration/coverage` | 0.255 | 0.263 | 0.214 | 0.229 |
+| `policy_entropy` MIN | 1.660 | 1.658 | 1.608 | 1.558 |
+| % updates < 1.0 bits | 0.0% | 0.0% | 0.0% | 0.0% |
+
+- **Prediction is untouched** (~2%, opposite signs) - CONFIRMED, and predicted:
+  `with_HD` changes the policy's input and nothing the world model sees.
+- **`MI_policy` falls** in both circuits, hardest at offset 0 (0.075 -> 0.050).
+  The policy is less state-dependent without an explicit head direction, which
+  is the expected direction and the only metric moving consistently.
+- **Coverage rises slightly** in both - a policy conditioning on less wanders a
+  little more.
+- **No collapse anywhere**, HD on or off, and offset 1 again has the lower
+  `policy_entropy` MIN in both pairs: that pattern is now 8 of 8 across every
+  circuit pair measured.
+
+## What would settle the head-direction question
+
+A second seed on the two HD-off cells, which is two jobs. The offset-0 cell is
+the one carrying a signal; the offset-1 cell needs its 0.372 event to either
+reproduce or not. Until then: suggestive at offset 0, absent at offset 1,
+both inside the seed spread.
