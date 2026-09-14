@@ -4,15 +4,16 @@ Reads the step-tagged archive a multi-room run writes under `<run>/checkpoints/`
 and replays ONE fixed probe through every checkpoint: the rollouts are collected
 once per room and reused, so no point carries its own BEHAVIOURAL noise.
 
-WHAT IS NOT PINNED, and it is not cosmetic. `score` wraps the forward in
-`torch.no_grad()` alone, which stops gradients and NOT dropout. Every checkpoint
-is therefore scored under a fresh dropout mask (`arch_prnn.dropout`, 0.15), a fresh
-noise draw (`arch_prnn.noise_std`, 0.05) and an unpinned initial hidden state.
-`probe.py` measures that wobble at ~0.4 in h between two identical calls, so
-row-to-row differences here are NOT weights alone. `probe.py::replay_checkpoint`
-is the same idea carried through - `eval_mode` around the forward, torch seeded
-immediately before it so every checkpoint sees one realisation, and a fixed
-initial state. Moving this file onto it is an OPEN ITEM, not an oversight.
+WHAT IS NOT PINNED, and it is not cosmetic. Dropout IS off - `score` has run
+under `eval_mode` since the 2026-08-31 audit, and this paragraph claimed
+otherwise until 2026-09-13. What remains unpinned is the rest: a fresh noise
+draw (`arch_prnn.noise_std`, 0.05, which is inside `predict` and deliberately
+survives `eval_mode`, as it does for every metric in this project) and an
+unpinned initial hidden state. `probe.py` measures that wobble at ~0.4 in h
+between two identical calls, so row-to-row differences here are NOT weights
+alone. `probe.py::replay_checkpoint` is the idea carried through - torch seeded
+immediately before the forward so every checkpoint sees one realisation, and a
+fixed initial state. Moving this file onto it is an OPEN ITEM, not an oversight.
 
 Two jobs:
   - the local gate: is prediction loss actually going down?

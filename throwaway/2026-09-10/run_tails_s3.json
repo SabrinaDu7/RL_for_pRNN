@@ -1,0 +1,46 @@
+[
+ {
+  "run": "mx-impassable-n8-s3-mse-off0",
+  "srsa_tail": 0.550164764620292,
+  "srsa_band": 0.03472491993145584,
+  "loss_tail": 0.01132019120314997,
+  "policy_entropy_min": 1.6600538492202759,
+  "policy_entropy_median": 1.74498450756073,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.621708715613218,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s3-mse-off0-nohd",
+  "srsa_tail": 0.4741416382126449,
+  "srsa_band": 0.03356467130977797,
+  "loss_tail": 0.01110230196274802,
+  "policy_entropy_min": 1.6580649614334106,
+  "policy_entropy_median": 1.7343156337738037,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.760136585390042,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s3-mse-off1",
+  "srsa_tail": 0.6139351055843302,
+  "srsa_band": 0.05919853914196184,
+  "loss_tail": 0.012136963153343477,
+  "policy_entropy_min": 1.6075727939605713,
+  "policy_entropy_median": 1.713534951210022,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.423201361057733,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s3-mse-off1-nohd",
+  "srsa_tail": 0.5347634545524215,
+  "srsa_band": 0.17960765462946043,
+  "loss_tail": 0.012339286177145864,
+  "policy_entropy_min": 1.5583473443984985,
+  "policy_entropy_median": 1.711327314376831,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.4770156215888,
+  "dense": true
+ }
+]

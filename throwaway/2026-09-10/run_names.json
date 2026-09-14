@@ -1,0 +1,14 @@
+{
+ "mixed-mse-h1024-off1": "mx-impassable-n8-s2-mixed-mse-h1024-off1_curious_26-09-11-00-07-34",
+ "mixed-mse-off1": "mx-impassable-n8-s2-mixed-mse-off1_curious_26-09-11-00-07-34",
+ "focal5mlp-off1": "mx-impassable-n8-s2-focal5mlp-off1_curious_26-09-11-00-04-28",
+ "focal5mlp-h1024-off1": "mx-impassable-n8-s2-focal5mlp-h1024-off1_curious_26-09-11-00-04-27",
+ "mse-h1024-off1": "mx-impassable-n8-s2-mse-h1024-off1_curious_26-09-11-00-04-27",
+ "mixed-mse-off0": "mx-impassable-n8-s2-mixed-mse-off0_curious_26-09-11-00-04-25",
+ "mixed-mse-h1024-off0": "mx-impassable-n8-s2-mixed-mse-h1024-off0_curious_26-09-11-00-04-24",
+ "mse-off1": "mx-impassable-n8-s2-mse-off1_curious_26-09-11-00-01-24",
+ "mse-off0": "mx-impassable-n8-s2-mse-off0_curious_26-09-10-23-58-15",
+ "focal5mlp-h1024-off0": "mx-impassable-n8-s2-focal5mlp-h1024-off0_curious_26-09-10-23-58-13",
+ "mse-h1024-off0": "mx-impassable-n8-s2-mse-h1024-off0_curious_26-09-10-23-58-13",
+ "focal5mlp-off0": "mx-impassable-n8-s2-focal5mlp-off0_curious_26-09-10-23-58-13"
+}

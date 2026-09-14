@@ -1,0 +1,134 @@
+[
+ {
+  "run": "mx-impassable-n8-s2-focal5mlp-h1024-off0",
+  "srsa_tail": 0.7773322290986338,
+  "srsa_band": 0.05638035551636825,
+  "loss_tail": 0.010467524188542795,
+  "policy_entropy_min": 1.449061393737793,
+  "policy_entropy_median": 1.7301965951919556,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.9838744059650955,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s2-focal5mlp-h1024-off1",
+  "srsa_tail": 0.8282463136254719,
+  "srsa_band": 0.08357094793034646,
+  "loss_tail": 0.02469204981370192,
+  "policy_entropy_min": 1.3030049800872803,
+  "policy_entropy_median": 1.7235941886901855,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.764162962230911,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-focal5mlp-off0",
+  "srsa_tail": 0.7856698993807193,
+  "srsa_band": 0.05306434850708392,
+  "loss_tail": 0.01283660415854109,
+  "policy_entropy_min": 1.6005146503448486,
+  "policy_entropy_median": 1.7829567193984985,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.916862821572505,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-focal5mlp-off1",
+  "srsa_tail": 0.7917167621719146,
+  "srsa_band": 0.05347841495681315,
+  "loss_tail": 0.022690809944546537,
+  "policy_entropy_min": 1.3804863691329956,
+  "policy_entropy_median": 1.7719447612762451,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.404871279737508,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-mixed-mse-h1024-off0",
+  "srsa_tail": 0.6447574266385734,
+  "srsa_band": 0.05872513011550032,
+  "loss_tail": 0.007461998298459365,
+  "policy_entropy_min": 1.429813265800476,
+  "policy_entropy_median": 1.6590142250061035,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.740047464088705,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-mixed-mse-h1024-off1",
+  "srsa_tail": 0.6085284547784678,
+  "srsa_band": 0.09633935823354264,
+  "loss_tail": 0.011064711541525628,
+  "policy_entropy_min": 0.9894331097602844,
+  "policy_entropy_median": 1.6103928089141846,
+  "collapse_duty_cycle": 0.0007283321194464676,
+  "loc_entropy_min": 6.195921514926236,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-mixed-mse-off0",
+  "srsa_tail": 0.5928975898646373,
+  "srsa_band": 0.019180235177958808,
+  "loss_tail": 0.009327149367194155,
+  "policy_entropy_min": 1.6041765213012695,
+  "policy_entropy_median": 1.6752456426620483,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.721643316859536,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s2-mixed-mse-off1",
+  "srsa_tail": 0.6633838896084848,
+  "srsa_band": 0.030001482592603785,
+  "loss_tail": 0.009667393706510203,
+  "policy_entropy_min": 1.5635968446731567,
+  "policy_entropy_median": 1.6436513662338257,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.61156000065229,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-mse-h1024-off0",
+  "srsa_tail": 0.5274245929153493,
+  "srsa_band": 0.04697493166069818,
+  "loss_tail": 0.00921952449707333,
+  "policy_entropy_min": 1.5165077447891235,
+  "policy_entropy_median": 1.7182022333145142,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.5651641493038095,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s2-mse-h1024-off1",
+  "srsa_tail": 0.663008576398774,
+  "srsa_band": 0.046275934477503444,
+  "loss_tail": 0.010619481110911884,
+  "policy_entropy_min": 1.351226568222046,
+  "policy_entropy_median": 1.6927679777145386,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.518748713539115,
+  "dense": true
+ },
+ {
+  "run": "mx-impassable-n8-s2-mse-off0",
+  "srsa_tail": 0.632104832738971,
+  "srsa_band": 0.05684789276553116,
+  "loss_tail": 0.011190140497331557,
+  "policy_entropy_min": 1.6502593755722046,
+  "policy_entropy_median": 1.7441333532333374,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.658046422220894,
+  "dense": false
+ },
+ {
+  "run": "mx-impassable-n8-s2-mse-off1",
+  "srsa_tail": 0.5679831880372181,
+  "srsa_band": 0.056140288454637415,
+  "loss_tail": 0.011706664994881865,
+  "policy_entropy_min": 1.6260230541229248,
+  "policy_entropy_median": 1.7308608293533325,
+  "collapse_duty_cycle": 0.0,
+  "loc_entropy_min": 6.554151094975517,
+  "dense": false
+ }
+]
