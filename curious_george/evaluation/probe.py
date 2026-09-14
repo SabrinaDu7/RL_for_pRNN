@@ -43,7 +43,13 @@ from tqdm import tqdm
 from prnn.utils import PredictiveNet
 from prnn.utils.Shell import FaramaMinigridShell
 
-from curious_george import get_agent, AgentType
+# `get_agent` moved to `log_and_store.storage` in cleanup 2 (c8bc5fb) and stopped
+# being re-exported from the package root; this import kept naming the root and
+# made the whole module unimportable for a week. Nothing caught it because
+# nothing in tests/ imports this module - see test_module_imports.py, added with
+# this fix so the next deletion fails at gate time instead of at a user.
+from curious_george.log_and_store.storage import get_agent
+from curious_george.utils.enums import AgentType
 from curious_george.models.device import eval_mode, on_device
 from curious_george.envs.access import get_walkable_mask, get_walkable_minigrid_positions
 
