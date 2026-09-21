@@ -22,6 +22,7 @@ from curious_george.envs.layouts import (
     EnvDefault,
     EnvShape,
     LandmarkKind,
+    Placed,
     RoomRules,
     RoomSetRules,
     Symmetry,
@@ -267,3 +268,42 @@ def test_same_stencil_different_colour_stays_distinguishable():
                           palette=("blue", "red", "yellow"))
     placements = admissible_placements(L_SHAPE, two_tone, RoomRules())
     assert len(placements) > len(admissible_placements(L_SHAPE, _identical(), RoomRules()))
+
+
+# --- Placed: one landmark per room, where the command line says ---------------
+
+
+def test_placed_puts_one_landmark_per_room_at_the_named_cell():
+    rooms = resolve_rooms(
+        shape=L_SHAPE, content=CONTENT, source=Placed(anchors=("2,2", "13,2"), kind=2)
+    )
+    assert [r.anchors for r in rooms] == [((2, 2),), ((13, 2),)]
+    for room in rooms:
+        (lm,) = room.landmarks
+        assert (lm.shape, lm.color, lm.impassable) == ("block3", "red", True)
+        assert all(c in L_SHAPE.walkable for c in lm.cells)
+
+
+def test_placed_refuses_a_landmark_that_leaves_the_floor():
+    # block3 at (1, 1) paints (0, 0), a wall; (12, 12) is inside the L's cut-out.
+    for text in ("1,1", "12,12"):
+        with pytest.raises(ValueError, match="not floor"):
+            resolve_rooms(shape=L_SHAPE, content=CONTENT, source=Placed(anchors=(text,)))
+    with pytest.raises(ValueError):
+        Placed(anchors=())
+    with pytest.raises(ValueError):
+        Placed(anchors=("2-2",))
+    with pytest.raises(ValueError):
+        resolve_rooms(shape=L_SHAPE, content=CONTENT, source=Placed(anchors=("2,2",), kind=3))
+
+
+def test_placed_is_reachable_from_the_command_line():
+    from curious_george.configs import cli
+
+    cfg = cli([
+        "multienv-fast", "env.source:placed",
+        "--env.source.anchors", "2,2", "13,2", "--env.source.kind", "2", "--env.source.impassable",
+    ])
+    assert isinstance(cfg.env.source, Placed)
+    assert cfg.env.source.cells == ((2, 2), (13, 2))
+    assert cfg.env.env_name.endswith("-Multi-v0")

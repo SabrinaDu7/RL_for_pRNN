@@ -34,6 +34,10 @@ BINDINGS = {
     # It is SOURCE-level, so this is also what pins it after `env.source:selected`
     # - placed with the preset flags it would be swallowed as unrecognized.
     "KEEPFLAG": "--env.source.keep-landmarks 012 012 012 12 01 0 2 -",
+    # placed.sh's source-level passthroughs: the one-object design's anchors and
+    # which kind every room gets. SOURCE-level, so pinned after `env.source:placed`.
+    "KIND": "2",
+    "ANCHORFLAG": "--env.source.anchors 2,2 13,2 13,7",
     # parity.sh's verbatim passthrough (args 7+), bound to a representative
     # baseline arm so the gate parses what a count run actually submits. The
     # key carries the braces/subscript because the substitution below builds
@@ -69,7 +73,7 @@ def _invocation(script: Path) -> list[str]:
     return shlex.split(body)
 
 
-@pytest.mark.parametrize("name", ["multienv.sh", "parity.sh"])
+@pytest.mark.parametrize("name", ["multienv.sh", "parity.sh", "placed.sh"])
 def test_the_launcher_command_line_parses(name):
     """A launcher whose arguments tyro refuses is a job that dies after the
     allocation, the clone and the sync - and says nothing until then."""
@@ -111,3 +115,15 @@ def test_multienv_launcher_selects_the_room_set_it_claims():
         "the positions passthrough was lost - the 8-room arm would silently "
         "train the first five rooms"
     )
+
+
+def test_placed_launcher_reaches_the_placed_source():
+    """The anchors and the kind are SOURCE-level flags; swallowed, the job would
+    train the preset's default five rooms under a one-object name."""
+    from curious_george.envs.layouts import Placed
+
+    cfg = cli(_invocation(SLURM / "placed.sh"))
+    assert isinstance(cfg.env.source, Placed)
+    assert cfg.env.source.cells == ((2, 2), (13, 2), (13, 7))
+    assert cfg.env.source.kind == 2
+    assert cfg.env.source.impassable is True

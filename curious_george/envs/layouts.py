@@ -943,6 +943,55 @@ class Selected:
 
 
 @dataclass(frozen=True)
+class Placed:
+    """One landmark per room, at the cells named - the one-object design.
+
+    `Committed` takes literal rooms but tyro cannot build a parser for a tuple of
+    Layouts, and every generated source draws placements under `RoomRules`, whose
+    `min_wall_distance` keeps landmarks off the walls. Neither can say "the red
+    block in the top-left corner". This can, from a command line:
+
+        env.source:placed --env.source.anchors 2,2 13,2 13,7 --env.source.kind 2
+
+    `kind` indexes `EnvContent.kinds` and `EnvContent.palette`, so the stencil and
+    colour are the run's own content and not restated here. Anchors are "x,y" in
+    MiniGrid coordinates, one per room. Every cell the stencil paints must be
+    floor, which `resolve_rooms` checks; `RoomRules` are deliberately NOT applied,
+    because wall clearance is the very thing this source exists to override, and
+    the provenance records that as this source's own choice.
+    """
+
+    anchors: tuple[str, ...] = ()
+    """One "x,y" per room. Defaulted empty so the union builds a parser; empty
+    raises."""
+    kind: int = 2
+    """Which of `EnvContent.kinds` every room gets: 0 triangle3, 1 plus, 2 block3
+    under the default content, in the palette's matching colour."""
+    impassable: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.anchors:
+            raise ValueError("Placed needs at least one anchor, as 'x,y'")
+        for text in self.anchors:
+            self.parse(text)
+
+    @staticmethod
+    def parse(text: str) -> tuple[int, int]:
+        parts = text.split(",")
+        if len(parts) != 2:
+            raise ValueError(f"Placed anchor {text!r} is not 'x,y'")
+        return (int(parts[0]), int(parts[1]))
+
+    @property
+    def cells(self) -> AnchorSet:
+        return tuple(self.parse(text) for text in self.anchors)
+
+    @property
+    def n(self) -> int:
+        return len(self.anchors)
+
+
+@dataclass(frozen=True)
 class Uniform:
     """`n` rooms drawn uniformly from the admissible set. No design criteria -
     a broad sample, where degeneracy between any two rooms does not matter."""
@@ -951,7 +1000,7 @@ class Uniform:
     seed: int = 20260813
 
 
-RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform, Selected]
+RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform, Selected, Placed]
 
 #: A placement: one anchor per landmark, in `EnvContent.kinds` order.
 AnchorSet = tuple[tuple[int, int], ...]
@@ -1217,6 +1266,23 @@ def resolve_rooms(
                     )
                 kept_rooms.append(Layout(tuple(room.landmarks[i] for i in idxs)))
             rooms = kept_rooms
+    elif isinstance(source, Placed):
+        if not 0 <= source.kind < content.n_landmarks:
+            raise ValueError(
+                f"Placed.kind {source.kind} is not one of the {content.n_landmarks} kinds"
+            )
+        stencil, color = content.stencils[source.kind], content.palette[source.kind]
+        floor = shape.walkable
+        rooms = []
+        for cell in source.cells:
+            landmark = Landmark(stencil, color, cell, impassable=source.impassable)
+            outside = [c for c in landmark.cells if c not in floor]
+            if outside:
+                raise ValueError(
+                    f"Placed anchor {cell}: {stencil} paints {outside}, which is not "
+                    f"floor in {shape.room}"
+                )
+            rooms.append(Layout((landmark,)))
     else:
         placements = admissible_placements(shape, content, room_rules)
         seed = source.seed
