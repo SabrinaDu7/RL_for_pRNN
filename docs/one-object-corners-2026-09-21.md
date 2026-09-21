@@ -71,3 +71,13 @@ Run name `mx-placed-n8-k1-s2-mse-h1024-plus`, wandb project `curious-george-mult
 Job id and outcome: appended below once submitted.
 
 - 2026-09-21: submitted as Mila job **10879573** from commit `1755d49` (queued PENDING on priority at submission).
+- 2026-09-21 11:36: **COMPLETED**, exit 0, 25 min 34 s on an L40S, the full budget (43,936
+  world-model and 175,744 policy gradient steps; 10 archived checkpoint pairs up to env step
+  83,886,080) - the same wall time the MSE1024 run took by its own timestamps. wandb:
+  `mx-placed-n8-k1-s2-mse-h1024-plus_curious_26-09-21-11-10-15` in `curious-george-multienv`.
+  The run's `provenance.json` records `config.env.source` as `Placed` with exactly the eight
+  anchors above, kind 1, impassable. Fetched to
+  `outputs/fetched/mx-placed-n8-k1-s2-mse-h1024-plus_curious_26-09-21-11-10-15/` (131 MB,
+  wandb directory excluded); the cluster copy is `$SCRATCH/pRNN/placed_10879573/`.
+- Not yet done: a checkpoint label for it in the questions repository
+  (`src/experiments/Q4/collect.py::CHECKPOINTS`), which is what Q9/Q10's collectors key on.
