@@ -69,3 +69,5 @@ sbatch slurm/placed.sh '3,3 12,3 12,6 9,7 8,12 5,10 7,4 3,7' 1 2 sdu/mixed-count
 
 Run name `mx-placed-n8-k1-s2-mse-h1024-plus`, wandb project `curious-george-multienv`.
 Job id and outcome: appended below once submitted.
+
+- 2026-09-21: submitted as Mila job **10879573** from commit `1755d49` (queued PENDING on priority at submission).
