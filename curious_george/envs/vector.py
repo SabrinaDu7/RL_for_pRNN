@@ -15,6 +15,19 @@ test; deleted 2026-09-06 (audit 2026-09-05, §3).
 import numpy as np
 import torch
 
+FORWARD_ACTION = 2
+"""MiniGrid's `forward`; the same index `models/prnn_adapter.py::FORWARD_IDX` names."""
+
+
+def blocked_forward_rewards(
+    next_rows: torch.Tensor, positions: torch.Tensor, actions: torch.Tensor, penalty: float
+) -> torch.Tensor:
+    """`-penalty` on every stream whose action was forward and whose position did not move
+    (a wall or an object ahead), 0 elsewhere. Pure device arithmetic: capture-safe."""
+    blocked = (next_rows[:, :2] == positions).all(dim=1) & (actions == FORWARD_ACTION)
+    return blocked.to(torch.float32) * (-penalty)
+
+
 
 class DeviceTableShellPool:
     """One batched static L-room state machine resident on the train device.
@@ -38,6 +51,7 @@ class DeviceTableShellPool:
         device: torch.device,
         layouts: list | None = None,
         layout_seed: int = 0,
+        bump_penalty: float = 0.0,
     ):
         """`layouts` holds one or more rooms the streams are drawn from.
 
@@ -129,6 +143,7 @@ class DeviceTableShellPool:
         # per-layout result.
         self.layout_episodes = np.zeros(self.n_layouts, dtype=np.int64)
         self._zero_rewards = torch.zeros(self.B, device=self.device)
+        self._bump_penalty = float(bump_penalty)
 
         # Static shell services used by setup/diagnostics.
         self.numHDs = eval_shell.numHDs
@@ -402,10 +417,15 @@ class DeviceTableShellPool:
             self.directions,
             actions,
         ]
+        rewards = (
+            blocked_forward_rewards(next_rows, self.positions, actions, self._bump_penalty)
+            if self._bump_penalty
+            else self._zero_rewards
+        )
         self.positions.copy_(next_rows[:, :2])
         self.directions.copy_(next_rows[:, 2])
         images, directions = self.observation_device()
-        return images, directions, self._zero_rewards
+        return images, directions, rewards
 
     def close(self) -> None:
         for shell in self._training_shells:

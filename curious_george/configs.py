@@ -316,6 +316,15 @@ class ArchPrnnCfg:
     """See `PredLoss`. MSE constructs the network EXACTLY as before this field
     existed (same kwargs, same RNG stream - the goldens gate it bitwise)."""
 
+    clamp_units: Path | None = None
+    """None runs the network as trained. A path names an .npz with `units` (hidden-unit
+    indices) and `values` (one float per unit): those units are overwritten with their
+    values after EVERY recurrent step - rollouts, curiosity, world-model gradient steps
+    and evaluations alike (`models/unit_clamp.py`, one forward hook on the cell). The
+    ablate-and-retrain arm of the 2026-09-24 exploration: resume a finished run with its
+    object-vector cells held at their means and keep training. Here rather than in a
+    training config because it changes what the network computes."""
+
     focal_gamma: float | None = None
     readout: PredReadout = PredReadout.LINEAR
     """Focal reweighting ((1-pt)^gamma * ce) for the CE TRAINING loss only -
@@ -546,6 +555,13 @@ class TrainPolicyCfg:
 
     curious: bool = True
     k_curious: float = 1.0
+    bump_penalty: float = 0.0
+    """Reward added on every step whose action is `forward` and whose position did not
+    change - the agent pushed into a wall or an object (`envs/vector.py::blocked_forward_rewards`,
+    device backend only). Enters the combined reward before `normalize_reward`, so its
+    effective weight is relative to the curiosity reward's running scale. 0 is the historical
+    reward; the 2026-09-24 exploration's "what would make the policy use the object code"
+    arm sets it."""
     normalize_reward: bool = False
     """Divide the combined reward by a running std before GAE. The curiosity
     reward is the world model's own loss, which the world model is minimising,
@@ -608,6 +624,8 @@ class TrainPolicyCfg:
         return self.total_grad_steps * self.processed_transitions_per_grad_step(total_env_steps)
 
     def __post_init__(self) -> None:
+        if self.bump_penalty < 0:
+            raise ValueError(f"bump_penalty is a magnitude (it is subtracted), got {self.bump_penalty}")
         if self.total_grad_steps < 1:
             raise ValueError(f"total_grad_steps must be >= 1, got {self.total_grad_steps}")
         if self.ppo_epochs < 1:

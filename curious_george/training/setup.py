@@ -137,7 +137,10 @@ def setup_envs(cfg) -> list:
             device=get_device(),
             layouts=layouts,
             layout_seed=cfg.run.seed,
+            bump_penalty=cfg.train_policy.bump_penalty,
         )
+    if cfg.train_policy.bump_penalty:
+        raise ValueError("bump_penalty is implemented for the device backend only (collect.backend batched)")
     return [setup_env(cfg, seed_offset=1000 * i) for i in range(num_envs)]
 
 
@@ -173,6 +176,11 @@ def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
             predictive_net=predictiveNet,
         )
         print(f"Existing pRNN model loaded from {cfg.run.prnn_ckpt}")
+
+    if cfg.arch_prnn.clamp_units is not None:
+        from curious_george.models.unit_clamp import install_unit_clamp
+
+        install_unit_clamp(predictiveNet, cfg.arch_prnn.clamp_units, get_device())
 
     return predictiveNet
 

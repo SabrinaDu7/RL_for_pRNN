@@ -43,6 +43,10 @@ BINDINGS = {
     # key carries the braces/subscript because the substitution below builds
     # '"$' + name + '"' and the script spells it "${EXTRA[@]}".
     "{EXTRA[@]}": "--train-policy.no-curious --train-policy.k-count 0.1",
+    # resume_clamp.sh's checkpoint, budget and clamp passthroughs. The budget is
+    # a grand total above the checkpoint's; the graphs are off, as a resume needs.
+    "CKPTFLAGS": "--run.prnn-ckpt /scratch/run/predictiveNet_state.pt --run.policy-ckpt /scratch/run/policy.pt",
+    "CLAMPFLAG": "--arch-prnn.clamp-units /scratch/clamps/ovc_mean.npz",
 }
 
 
@@ -73,7 +77,7 @@ def _invocation(script: Path) -> list[str]:
     return shlex.split(body)
 
 
-@pytest.mark.parametrize("name", ["multienv.sh", "parity.sh", "placed.sh"])
+@pytest.mark.parametrize("name", ["multienv.sh", "parity.sh", "placed.sh", "resume_clamp.sh"])
 def test_the_launcher_command_line_parses(name):
     """A launcher whose arguments tyro refuses is a job that dies after the
     allocation, the clone and the sync - and says nothing until then."""
