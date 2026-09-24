@@ -23,8 +23,10 @@ class _Cell(torch.nn.Module):
 
 def test_the_hook_holds_the_units_in_both_outputs_and_keeps_autograd():
     cell = _Cell()
-    units = torch.tensor([1, 3]); values = torch.tensor([0.25, 0.75])
-    cell.register_buffer("clamp_units", units); cell.register_buffer("clamp_values", values)
+    units = torch.tensor([1, 3])
+    values = torch.tensor([0.25, 0.75])
+    cell.register_buffer("clamp_units", units)
+    cell.register_buffer("clamp_values", values)
     cell.register_forward_hook(clamp_hook(cell))
     x = torch.randn(5, 6, requires_grad=True)
     hy, (state,) = cell(x)
@@ -68,7 +70,9 @@ def test_a_negative_bump_penalty_is_refused():
 
 
 def test_a_missing_clamp_file_falls_back_to_cg_clamp_dir(tmp_path, monkeypatch):
-    here = tmp_path / "here"; there = tmp_path / "there"; there.mkdir()
+    here = tmp_path / "here"
+    there = tmp_path / "there"
+    there.mkdir()
     np.savez(there / "set.npz", units=np.array([1]), values=np.array([0.5]))
     monkeypatch.delenv("CG_CLAMP_DIR", raising=False)
     with pytest.raises(FileNotFoundError):
