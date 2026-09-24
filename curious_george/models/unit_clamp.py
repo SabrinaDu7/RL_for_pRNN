@@ -21,6 +21,7 @@ records its kernels like any other. `torch.compile` of the layer (`train_prnn.co
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -30,8 +31,26 @@ CLAMP_UNITS = "clamp_units"
 CLAMP_VALUES = "clamp_values"
 
 
+def resolve_clamp_path(path: Path | str) -> Path:
+    """The .npz as named, or the same file name under `$CG_CLAMP_DIR`.
+
+    A run's provenance records the path the cluster job used; an analysis on another
+    machine (the questions repository, whose library is a pinned wheel without `data/`)
+    points `CG_CLAMP_DIR` at its copy of the clamp files instead of editing the provenance.
+    """
+    path = Path(path)
+    if path.exists():
+        return path
+    fallback_dir = os.environ.get("CG_CLAMP_DIR")
+    if fallback_dir and (Path(fallback_dir) / path.name).exists():
+        print(f"clamp file {path} not found here; using $CG_CLAMP_DIR/{path.name}")
+        return Path(fallback_dir) / path.name
+    raise FileNotFoundError(f"clamp file {path} not found (set CG_CLAMP_DIR to a directory holding {path.name})")
+
+
 def load_clamp(path: Path | str) -> tuple[np.ndarray, np.ndarray]:
     """`units` (int64 indices) and `values` (one float per unit) from an .npz."""
+    path = resolve_clamp_path(path)
     with np.load(path) as file:
         units = np.asarray(file["units"], dtype=np.int64)
         values = np.asarray(file["values"], dtype=np.float32)

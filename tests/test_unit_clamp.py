@@ -10,7 +10,7 @@ import torch
 from curious_george.configs import TrainPolicyCfg
 from curious_george.envs.vector import FORWARD_ACTION, blocked_forward_rewards
 from curious_george.models.prnn_adapter import FORWARD_IDX
-from curious_george.models.unit_clamp import clamp_hook, load_clamp
+from curious_george.models.unit_clamp import clamp_hook, load_clamp, resolve_clamp_path
 
 
 class _Cell(torch.nn.Module):
@@ -65,3 +65,14 @@ def test_a_negative_bump_penalty_is_refused():
     with pytest.raises(ValueError, match="magnitude"):
         TrainPolicyCfg(bump_penalty=-0.1)
     assert TrainPolicyCfg(bump_penalty=0.01).bump_penalty == 0.01
+
+
+def test_a_missing_clamp_file_falls_back_to_cg_clamp_dir(tmp_path, monkeypatch):
+    here = tmp_path / "here"; there = tmp_path / "there"; there.mkdir()
+    np.savez(there / "set.npz", units=np.array([1]), values=np.array([0.5]))
+    monkeypatch.delenv("CG_CLAMP_DIR", raising=False)
+    with pytest.raises(FileNotFoundError):
+        resolve_clamp_path(here / "set.npz")
+    monkeypatch.setenv("CG_CLAMP_DIR", str(there))
+    assert resolve_clamp_path(here / "set.npz") == there / "set.npz"
+    assert load_clamp(here / "set.npz")[0].tolist() == [1]
