@@ -57,3 +57,14 @@ reward is ~0.007 pixel-MSE, so these are ~0.3× and ~1.4× of it before normalis
 
 Smoke-tested locally before submission (resume + clamp + penalty, one rollout, exit 0).
 Outcomes appended below once the jobs finish.
+
+## Outcomes (2026-09-24 afternoon)
+
+All seven jobs COMPLETED, exit 0: seeds 3/4 in 26 min; the resume arms in 19.5–22.5 min
+(+16,777,216 frames each; the clamp hook with the graphs off costs ~3 min); the bump runs
+in 25 min. Fetched to `outputs/fetched/` (wandb directories excluded). First readings, from
+the questions repository's exploration log (`docs/claude_logs/sessions/2026-09-24-overnight-ovc-function.md`):
+the world model retrained with the object-vector cells clamped recovers its into-object
+prediction (0.0076 vs 0.0071 for the resumed control; 0.0164 under the acute clamp); seeds
+3 and 4 reproduce the near-object cancellation of object-turning; seed 3's actor does not
+read its object-vector class for it.
