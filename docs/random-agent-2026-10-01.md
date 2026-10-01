@@ -31,3 +31,10 @@ Run names `mx-impassable-n8-s<seed>-random-mse-h1024`, wandb project
 - Smoke-tested locally at a one-rollout budget before submission; outcome appended below.
 
 Outcomes appended below once the jobs finish.
+
+- Smoke test: the recipe with `--arch-policy.agent RANDOM` at a one-rollout budget ran to
+  exit 0 locally (the random agent's policy archive carries no weights, as `loop.py`
+  says). Both jobs started within a minute of submission (cn-l021, cn-l062), at ~95k env
+  steps/s, and archived their first checkpoint pair at 8,388,608 frames after 8 min. Run
+  directories: `mx-impassable-n8-s2-random-mse-h1024_random_26-10-01-01-42-43` and
+  `mx-impassable-n8-s3-random-mse-h1024_random_26-10-01-01-42-43`.
