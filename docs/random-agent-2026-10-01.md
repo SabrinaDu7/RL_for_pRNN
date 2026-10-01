@@ -38,3 +38,18 @@ Outcomes appended below once the jobs finish.
   steps/s, and archived their first checkpoint pair at 8,388,608 frames after 8 min. Run
   directories: `mx-impassable-n8-s2-random-mse-h1024_random_26-10-01-01-42-43` and
   `mx-impassable-n8-s3-random-mse-h1024_random_26-10-01-01-42-43`.
+
+## Outcome
+
+- Both jobs **COMPLETED**, exit 0, 25 min 41 s (seed 2) and 25 min 44 s (seed 3) on L40S
+  nodes, the full budget, ten archived checkpoint pairs each. Fetched to
+  `outputs/fetched/<run>/` (wandb excluded); the cluster copies are
+  `$SCRATCH/pRNN/multienv_11013546/` and `multienv_11013547/`. Registered in the questions
+  repository as `RAND1024` and `RAND1024S3`.
+- The questions repository's Q16 (results_Q16): object-vector cells emerge under the
+  walker — 45 and 56 against 116 / 99 / 83 for the curious seeds — on the same course at
+  two-fifths the rate, with the same tuning and the same object-specific obstacle role at a
+  fifth of the weight. The walker's models have more border place cells (321 / 299 against
+  243–260) and a four times lower wall error on the probe; the count of object cells follows
+  the object-to-wall balance of bumps (walker 0.41 object bumps per wall bump, curious 6.9),
+  not the object-bump rate (walker 7.0% of decisions, curious 3.1%).
