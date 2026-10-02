@@ -36,3 +36,6 @@ sbatch slurm/multienv.sh true 8 2 sdu/mixed-count-mse '' '' '' '' 0,1,2,3,5,6,7,
 
 Comparison against `MSE1024` over training: `pRNN loss`, `multiroom/mean_room_sRSA`,
 `multiroom/pooled_SWdist` (wandb, `curious-george-multienv`).
+
+- 2026-10-01: submitted as Mila job **11033768** from commit `4556da3` (smoke-tested locally
+  at a one-rollout budget first: norm installed, exit 0). Outcome appended below.
