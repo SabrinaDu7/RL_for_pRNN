@@ -88,16 +88,20 @@ def load_policy(model_dir: str | Path):
 def prediction_loss_kwargs(arch_prnn, env) -> dict:
     """Extra PredictiveNet kwargs for `arch_prnn.loss`, the ONE home.
 
-    MSE returns {} so the constructor call is byte-identical to the
-    pre-CE code path (goldens gate it). CE selects the upstream predCE loss,
-    hands it the committed tile vocabulary, and swaps the readout to
-    n_tiles x n_classes logits.
+    MSE with the LINEAR readout returns {} so the constructor call is
+    byte-identical to the pre-CE code path (goldens gate it); MSE with the MLP
+    readout (2026-10-01) selects the upstream decode stack for the pixel
+    regression, unsquashed, at the default output size. CE selects the
+    upstream predCE loss, hands it the committed tile vocabulary, and swaps
+    the readout to n_tiles x n_classes logits.
     """
-    from curious_george.configs import PredLoss
+    from curious_george.configs import PredLoss, PredReadout
 
     if arch_prnn.loss is PredLoss.MSE:
         if arch_prnn.focal_gamma is not None:
             raise ValueError("focal_gamma is a CE-loss reweighting; loss is MSE")
+        if arch_prnn.readout is PredReadout.MLP:
+            return {"readout": "mlp"}
         return {}
     from curious_george.envs.palette import TILE_VOCABULARY, vocab_tensor
 

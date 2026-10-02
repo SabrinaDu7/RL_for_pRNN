@@ -161,9 +161,13 @@ def test_render_round_trips_one_hot_logits():
     assert tuple(TILE_VOCABULARY) == TILE_CLASS_NAMES
 
 
-def test_mlp_readout_is_refused_under_mse():
-    with pytest.raises(ValueError, match="readout"):
-        ArchPrnnCfg(readout=PredReadout.MLP)
+def test_mlp_readout_under_mse_selects_the_decode_stack_and_linear_stays_pinned():
+    # Opened 2026-10-01 (docs/readout-norm-2026-10-01.md): MSE + MLP regresses
+    # pixels through the upstream decode stack, unsquashed; MSE + LINEAR must
+    # still produce the byte-identical constructor call the goldens pin.
+    kw = prediction_loss_kwargs(ArchPrnnCfg(loss=PredLoss.MSE, readout=PredReadout.MLP), _ObsSize(147))
+    assert kw == {"readout": "mlp"}
+    assert prediction_loss_kwargs(ArchPrnnCfg(loss=PredLoss.MSE), _ObsSize(147)) == {}
 
 
 def test_mlp_readout_threads_to_the_upstream_kwarg():

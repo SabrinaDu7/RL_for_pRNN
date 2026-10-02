@@ -91,14 +91,18 @@ class PredLoss(str, enum.Enum):
 
 
 class PredReadout(str, enum.Enum):
-    """How h becomes prediction logits under the CE loss.
+    """How h becomes the prediction.
 
-    LINEAR is the historical single map (`readout="logits"` upstream). MLP is
-    grid-predict's decode stack replicated upstream (ResidualMLP -> LayerNorm
-    -> Linear, `readout="mlp"`) - added 2026-08-31 after the frozen-h probe
-    showed an MLP extracts strictly more than the linear ceiling
-    (docs/readout-probe-2026-08-31.md). CE-only: the MSE net is the
-    historical architecture, pinned bitwise by the goldens."""
+    LINEAR is the historical single map: under CE `readout="logits"` upstream,
+    under MSE the pinned Linear -> Sigmoid pixel head - a GENERALISED linear
+    readout (one affine map through a fixed squash), which is what "linear"
+    has meant here. MLP is grid-predict's decode stack replicated upstream
+    (ResidualMLP -> LayerNorm -> Linear, `readout="mlp"`, no squash) - added
+    2026-08-31 for CE after the frozen-h probe showed an MLP extracts strictly
+    more than the linear ceiling (docs/readout-probe-2026-08-31.md), and opened
+    to MSE on 2026-10-01 (docs/readout-norm-2026-10-01.md): the pixel
+    regression then runs through the same stack, unsquashed. MSE + LINEAR is
+    the historical architecture, pinned bitwise by the goldens."""
 
     LINEAR = "linear"
     MLP = "mlp"
@@ -389,12 +393,6 @@ class ArchPrnnCfg:
             raise ValueError(
                 f"action_offset is which action shares a row with obs[t]; "
                 f"only 0 and 1 mean anything, got {self.action_offset}"
-            )
-        if self.readout is not PredReadout.LINEAR and self.loss is not PredLoss.CE:
-            raise ValueError(
-                f"readout={self.readout.value} decodes logits; it means "
-                f"nothing under {self.loss} (the MSE net is the pinned "
-                "historical architecture)"
             )
         if self.focal_gamma is not None:
             if self.loss is not PredLoss.CE:

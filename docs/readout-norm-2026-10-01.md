@@ -39,3 +39,23 @@ Comparison against `MSE1024` over training: `pRNN loss`, `multiroom/mean_room_sR
 
 - 2026-10-01: submitted as Mila job **11033768** from commit `4556da3` (smoke-tested locally
   at a one-rollout budget first: norm installed, exit 0). Outcome appended below.
+
+## The branch, and the second variant (MSE with the MLP readout)
+
+This work lives on `sdu/readout-norm`; `sdu/mixed-count-mse` was reset to `2a3180d` on
+2026-10-01 so the production branch carries none of it. On naming: the historical MSE
+head is `Linear -> Sigmoid`, a generalised linear readout (one affine map through a fixed
+squash); "linear readout" in earlier notes means that.
+
+`arch_prnn.readout = MLP` is now accepted under MSE (`configs.py`, `storage.py::
+prediction_loss_kwargs`): the upstream decode stack (ResidualMLP -> LayerNorm -> Linear,
+no squash) regresses the pixels directly. MSE + LINEAR is unchanged and still pinned by
+the goldens; `tests/test_ce_boundary.py` carries the new contract.
+
+```bash
+sbatch slurm/multienv.sh true 8 2 sdu/readout-norm '' '' '' '' 0,1,2,3,5,6,7,8 mse-h1024-mlpread '' \
+    --arch-prnn.loss MSE --arch-prnn.readout MLP --train-policy.normalize-reward --arch-prnn.hidden-size 1024 \
+    --eval.evals BEHAVIOUR SPATIAL_MULTIROOM TRAJECTORY_PLOT --eval.plot-every-steps 3333328
+```
+
+Compared against `MSE1024` and the readout-norm run on the same three metrics.
