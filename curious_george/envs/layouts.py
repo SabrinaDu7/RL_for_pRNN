@@ -1071,7 +1071,8 @@ def scatter_anchors(
 ) -> tuple[tuple[int, int], ...]:
     """`n` distinct admissible cells for an extra one-cell landmark in `room`, drawn
     without replacement by `seed`, sorted."""
-    xs = [c[0] for c in floor]; ys = [c[1] for c in floor]
+    xs = [c[0] for c in floor]
+    ys = [c[1] for c in floor]
     lo_x, hi_x, lo_y, hi_y = min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
     taken = room.cells
 

@@ -50,6 +50,9 @@ BINDINGS = {
     # resume_clamp.sh's SOURCE_EXTRA passthrough: the novel-object continuation of
     # 2026-10-01, one extra landmark per room (`Selected.extra_anchors`).
     "SOURCE_EXTRA": "--env.source.extra-anchors 9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13",
+    # scattered.sh: copies per room and the held-out cells kept out of the draw.
+    "NPL": "16",
+    "EXCLUDEFLAG": "--env.source.exclude 9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13",
 }
 
 
@@ -80,7 +83,7 @@ def _invocation(script: Path) -> list[str]:
     return shlex.split(body)
 
 
-@pytest.mark.parametrize("name", ["multienv.sh", "parity.sh", "placed.sh", "resume_clamp.sh"])
+@pytest.mark.parametrize("name", ["multienv.sh", "parity.sh", "placed.sh", "resume_clamp.sh", "scattered.sh"])
 def test_the_launcher_command_line_parses(name):
     """A launcher whose arguments tyro refuses is a job that dies after the
     allocation, the clone and the sync - and says nothing until then."""
