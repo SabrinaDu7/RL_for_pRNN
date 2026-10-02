@@ -99,3 +99,19 @@ Run names `mx-impassable-n8-s<seed>-resume-swapx`. Jobs and outcomes appended be
   **11039174**; seed 4 (from `MSE1024S4`) → **11039175**; from commit `57fdedd`, two-hour
   walltime. The swapped room renders as intended (checked locally: the plus's anchor and
   corners are yellow obstacles, its old arm cells floor).
+
+### Outcomes (2026-10-02 13:45)
+
+- Jobs 11039173–11039175 COMPLETED in ~95 min each, all ten archive pairs (92.3M to
+  167.8M frames); fetched to `outputs/fetched/mx-impassable-n8-s{2,3,4}-resume-swapx_*`.
+  The world-model loss jumped from 0.0095 to ~0.015 at the swap and ended at 0.0093–0.0114,
+  above the dot resume's 0.0086: the X stays harder to predict (two saturated colour
+  channels).
+- Q20 (questions repository): on first encounter the swap changes nothing, with the
+  world model's error at the X 2.6× the plus's. After 8.4M frames of training on it the
+  agent goes to the spot (ring visits 1.3× → 2.2× uniform, late distance 5.7 → 3.7 squares
+  against 6.8 uniform, the other objects below uniform; peak at the second archive), then
+  the approach decays as the error at the X is learned away (ratio 1.1 after one archive,
+  below 1 from the third). With the X moved to another spot and the old spot emptied the
+  agent goes to the empty spot, not the X: the policy learns the place of the error, not
+  the object. Q19's reading, with the cleaner design.
