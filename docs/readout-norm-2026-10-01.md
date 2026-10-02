@@ -64,3 +64,21 @@ Compared against `MSE1024` and the readout-norm run on the same three metrics.
   `1318cb1` (smoke-tested locally at a one-rollout budget, exit 0). The two pre-existing
   failures in `tests/test_references_resolve.py` (a questions-repository session log and
   a throwaway figure named by older notes; `curious_george.__path__`) predate this branch.
+
+## Two more variants, same branch (commit `7d1ad5e`)
+
+- `train_prnn.readout_lr_scale` — the readout weights' RMSprop group runs at lr / sqrt(hidden)
+  = 9.4e-5 while the readout bias runs at 3e-3; this multiplies the weights' lr after
+  construction. Run: `--train-prnn.readout-lr-scale 32` (the weights at 3e-3), label
+  `mse-h1024-lr32read`, Mila job **11034075**.
+- `arch_prnn.saturated_pixel_weight` — `models/pixel_weights.py` replaces the upstream
+  `predMSE` with a weighted MSE for the TRAINING loss only: target values ≥ 0.9 (a
+  landmark's colour channel, 1.8% of values) weighted `w`, floor and wall at 1,
+  normalised by the mean weight; the curiosity reward (the adapter's device pass) is the
+  plain per-step error and does not move. Run: `--arch-prnn.saturated-pixel-weight 10`,
+  label `mse-h1024-pixw10`, Mila job **11034076**.
+
+Both smoke-tested locally (one rollout, exit 0). First result, the readout norm
+(job 11033768): final `pRNN loss` 0.0089 against `MSE1024`'s 0.0123; mean-room sRSA
+0.602 against 0.624; pooled SWdist 0.085 against 0.071 — the loss improves, both spatial
+metrics give a little. The rest is appended once the five-run comparison lands.
