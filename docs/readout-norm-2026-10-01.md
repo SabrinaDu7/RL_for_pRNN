@@ -59,3 +59,8 @@ sbatch slurm/multienv.sh true 8 2 sdu/readout-norm '' '' '' '' 0,1,2,3,5,6,7,8 m
 ```
 
 Compared against `MSE1024` and the readout-norm run on the same three metrics.
+
+- 2026-10-01: MSE + MLP submitted as Mila job **11033877** from `sdu/readout-norm` at
+  `1318cb1` (smoke-tested locally at a one-rollout budget, exit 0). The two pre-existing
+  failures in `tests/test_references_resolve.py` (a questions-repository session log and
+  a throwaway figure named by older notes; `curious_george.__path__`) predate this branch.
