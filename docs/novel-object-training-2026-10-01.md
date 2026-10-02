@@ -39,3 +39,20 @@ sbatch slurm/scattered.sh 16 '9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13' <seed> sdu/
 ```
 
 Outcomes appended below once the jobs finish.
+
+### 2026-10-02: the position truly random
+
+The 16-placement version shuffles the dot among 16 fixed cells per room, which is not the
+design asked for. `Scattered.n_placements = 0` (now the default) takes EVERY admissible
+cell in every room: 477 layouts for the eight rooms with Q18's spots held out, the dot's
+position random over the whole room at every episode boundary. The spatial evaluation
+scores `rooms_max` rooms whatever the layout count, so the cost is the observation banks
+at start-up and nothing else.
+
+```bash
+sbatch slurm/scattered.sh 0 '9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13' <seed> sdu/mixed-count-mse mse-h1024 \
+    --arch-prnn.loss MSE --train-policy.normalize-reward --arch-prnn.hidden-size 1024 \
+    --eval.evals BEHAVIOUR SPATIAL_MULTIROOM TRAJECTORY_PLOT --eval.plot-every-steps 3333328
+```
+
+The 16-placement runs (jobs 11034007, 11034008) were left to finish as the coarse version.

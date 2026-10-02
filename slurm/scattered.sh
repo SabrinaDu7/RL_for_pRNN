@@ -7,7 +7,8 @@
 #
 #   sbatch slurm/scattered.sh <n_placements> <exclude> [seed] [branch] [label] [extra flags...]
 #
-#     n_placements : copies per room (16 -> 128 layouts)
+#     n_placements : copies per room; 0 = every admissible cell (the position random over the
+#                    whole room every episode), 16 -> 128 layouts
 #     exclude      : ONE argument, "x,y" per room, the held-out test spot kept out of the
 #                    draw (Q18's: '9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13'); "" = none
 #     seed         : run.seed (default 2); the placements are drawn by the source's own

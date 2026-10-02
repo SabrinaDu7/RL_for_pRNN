@@ -268,3 +268,19 @@ def test_scattered_repeats_each_room_with_the_dot_somewhere_new_and_never_at_the
     assert [r.landmarks for r in again] == [r.landmarks for r in rooms]
     other = _resolve(Scattered(positions=EIGHT, n_placements=16, seed=1, exclude=DOT_ANCHORS))
     assert [r.landmarks for r in other] != [r.landmarks for r in rooms]
+
+
+def test_scattered_with_zero_placements_takes_every_admissible_cell():
+    from curious_george.envs.layouts import Scattered
+
+    rooms = _resolve(Scattered(positions=(0, 1), n_placements=0, exclude=DOT_ANCHORS[:2]))
+    sixteen = _resolve(Scattered(positions=(0, 1), n_placements=16, exclude=DOT_ANCHORS[:2]))
+    assert len(rooms) > len(sixteen)
+    anchors = {r.landmarks[-1].anchor for r in rooms}
+    assert {r.landmarks[-1].anchor for r in sixteen} <= anchors
+    base = _resolve(Selected(positions=(0, 1), impassable=True))
+    for room, text in zip(base, DOT_ANCHORS[:2]):  # within one room every copy has the dot somewhere different
+        copies = [r for r in rooms if r.landmarks[:-1] == room.landmarks]
+        theirs = {r.landmarks[-1].anchor for r in copies}
+        assert len(theirs) == len(copies) > 16
+        assert tuple(int(v) for v in text.split(",")) not in theirs  # the exclusion is per room

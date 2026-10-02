@@ -1040,7 +1040,9 @@ class Scattered:
 
     positions: tuple[int, ...] = (0, 1, 2, 3, 5, 6, 7, 8)
     impassable: bool = True
-    n_placements: int = 16
+    n_placements: int = 0
+    """Copies per room: 0 = EVERY admissible cell (the dot's position random over the
+    whole room every episode, the 2026-10-02 design); n > 0 = n cells drawn by `seed`."""
     seed: int = 0
     extra_shape: str = "dot"
     extra_color: str = "green"
@@ -1053,8 +1055,8 @@ class Scattered:
         bad = [p for p in self.positions if not 0 <= p < len(ROOMS_SELECTED)]
         if not self.positions or bad or len(set(self.positions)) != len(self.positions):
             raise ValueError(f"Scattered.positions must be distinct positions in 0..{len(ROOMS_SELECTED) - 1}, got {self.positions}")
-        if self.n_placements < 1:
-            raise ValueError("Scattered.n_placements must be at least 1")
+        if self.n_placements < 0:
+            raise ValueError("Scattered.n_placements must be 0 (every admissible cell) or positive")
         if self.exclude and len(self.exclude) != len(self.positions):
             raise ValueError(f"exclude has {len(self.exclude)} entries for {len(self.positions)} rooms - they align by position")
         for text in self.exclude:
@@ -1062,6 +1064,8 @@ class Scattered:
 
     @property
     def n(self) -> int:
+        """Rooms, when the count is fixed; 0 means "every admissible cell", known only
+        once the rooms are resolved."""
         return len(self.positions) * self.n_placements
 
 
@@ -1070,7 +1074,7 @@ def scatter_anchors(
     exclude: tuple[int, int] | None, min_wall_distance: int, min_cell_gap: int,
 ) -> tuple[tuple[int, int], ...]:
     """`n` distinct admissible cells for an extra one-cell landmark in `room`, drawn
-    without replacement by `seed`, sorted."""
+    without replacement by `seed`, sorted; `n` = 0 returns every admissible cell."""
     xs = [c[0] for c in floor]
     ys = [c[1] for c in floor]
     lo_x, hi_x, lo_y, hi_y = min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
@@ -1086,6 +1090,8 @@ def scatter_anchors(
 
     candidates = sorted(c for c in floor if lo_x < c[0] < hi_x and lo_y < c[1] < hi_y
                         and clear_of_walls(c) and clear_of_landmarks(c) and c != exclude)
+    if n == 0:
+        return tuple(candidates)
     if len(candidates) < n:
         raise ValueError(f"only {len(candidates)} admissible cells for {n} placements")
     rng = np.random.default_rng(seed)
