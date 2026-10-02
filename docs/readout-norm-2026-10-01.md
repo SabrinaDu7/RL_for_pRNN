@@ -99,10 +99,13 @@ pixels, `sat` = the saturated landmark colour channels, 1.8% of values):
 | MLP readout (mlpread) | 0.0109 | 0.737 | 0.128 | 0.00768 | 0.325 | 0.69 |
 | readout lr x32 (lr32read) | 0.0094 | 0.256 | 0.011 | 0.00720 | 0.289 | 0.74 |
 | pixel weight 10 (pixw10) | 0.0194* | 0.747 | 0.334 | 0.01463 | 0.140 | 0.90 |
+| 2048 + readout norm (h2048-lnread) | 0.0104 | 0.543 | 0.087 | 0.00615 | 0.305 | 0.71 |
 
 \* the weighted loss, not comparable. Reading: width (2048) improves every column at
 once; the readout norm's gains are inside the seed spread; the MLP readout buys sRSA with
 worse prediction and SWdist; the fast readout collapses sRSA; the pixel weight is the
 only change that makes the landmark channels crisp (0.90 against 0.68) and it pays with
-twice the background error and five times the SWdist. Pending: 2048 + readout norm,
-pixel weight 3, and seeds 3/4 of the 2048 and readout-norm recipes.
+twice the background error and five times the SWdist. The readout norm at 2048 units costs sRSA (0.54 against 0.68) and SWdist (0.087 against
+0.027) for no prediction gain (0.00615 against 0.00599), so the norm's pattern holds at
+both widths: neutral prediction, spatial metrics slightly worse. Pending: pixel weight 3,
+and seeds 3/4 of the 2048 and readout-norm recipes.
