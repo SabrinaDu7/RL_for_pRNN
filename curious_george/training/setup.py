@@ -175,6 +175,18 @@ def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
         # carries the norm's parameters and the Linear's under the wrapped keys.
         install_readout_norm(predictiveNet)
 
+    if cfg.train_prnn.readout_lr_scale is not None:
+        groups = [g for g in predictiveNet.optimizer.param_groups if g.get("name") == "OutputWeights"]
+        if len(groups) != 1:
+            raise RuntimeError("expected one 'OutputWeights' optimizer group to rescale")
+        groups[0]["lr"] = groups[0]["lr"] * cfg.train_prnn.readout_lr_scale
+        print(f"readout lr scaled x{cfg.train_prnn.readout_lr_scale}: OutputWeights lr {groups[0]['lr']:.3g}")
+
+    if cfg.arch_prnn.saturated_pixel_weight is not None:
+        from curious_george.models.pixel_weights import install_pixel_weights
+
+        install_pixel_weights(predictiveNet, cfg.arch_prnn.saturated_pixel_weight)
+
     if cfg.run.prnn_ckpt is not None:
         load_pN(
             model_ckpt_filepath=str(cfg.run.prnn_ckpt),

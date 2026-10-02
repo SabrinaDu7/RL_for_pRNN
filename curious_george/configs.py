@@ -329,6 +329,11 @@ class ArchPrnnCfg:
     object-vector cells held at their means and keep training. Here rather than in a
     training config because it changes what the network computes."""
     readout_norm: bool = False
+    saturated_pixel_weight: float | None = None
+    """Weight the MSE TRAINING loss on target values >= 0.9 (a landmark's colour
+    channel, 1.8% of values) by this, floor and wall at 1, normalised so the loss
+    scale is unchanged (`models/pixel_weights.py`). The curiosity reward is the
+    plain per-step error and does not move. None = plain MSE. 2026-10-01."""
     """A LayerNorm on the hidden state before the pixel readout and nowhere else
     (`models/readout_norm.py`): the recurrent dynamics and the state the policy
     reads are unchanged. Added 2026-10-01 after the readout was found to
@@ -484,6 +489,11 @@ class TrainPrnnCfg:
 
     lr: float = 3e-3
     weight_decay: float = 3e-3
+    readout_lr_scale: float | None = None
+    """Multiply the pixel readout's weight group's learning rate (upstream:
+    lr / sqrt(hidden), 9.4e-5 at 1024 units) by this after construction; None =
+    unchanged. 2026-10-01: the readout under-shoots saturated pixels even with
+    the observation as its input, and its weights learn 32x slower than its bias."""
     bptt_trunc: int = 10**8
 
     batched_curiosity: bool = False
