@@ -56,3 +56,41 @@ sbatch slurm/scattered.sh 0 '9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13' <seed> sdu/m
 ```
 
 The 16-placement runs (jobs 11034007, 11034008) were left to finish as the coarse version.
+
+## Outcomes (2026-10-02 02:10)
+
+- **Resumes** (11033972–11033974): a resume runs with the CUDA graphs and the layer
+  compile off and trains at ~15k env steps/s against a fresh run's ~100k, so the three hit
+  `resume_clamp.sh`'s 90-minute limit at ~96% of the second budget (TIMEOUT); the exit
+  trap saved 9 of the 10 archived checkpoint pairs each (92.3M to 159.4M frames). Fetched
+  to `outputs/fetched/mx-impassable-n8-s{2,3,4}-resume-dot_curious_26-10-01-23-45-2*`.
+  Q19: the dot's squares end at 1.76× their dot-free visits (seeds 1.66–1.92; first
+  encounter 1.06), the late distance to the dot lower with it than without in every
+  seed; the agent's near-dot time itself stays at uniform while its dot-free visits to
+  the same squares halve — the dot retains the agent rather than draws it.
+- **Scattered, 16 placements** (11034007, 11034008): COMPLETED in 25:47 / 25:xx. **Scattered,
+  every cell** (11034398, 11034399; 477 layouts): COMPLETED in ~25 min each, the spatial
+  evaluation scoring `rooms_max` rooms. Q19_exp3: no pull toward a dot at the held-out
+  spot (ratios 1.28 / 1.08 for the all-cell runs, distance differences −0.05 / +0.14).
+
+## 3. Swap the green plus for a yellow X (2026-10-02)
+
+The novel-object-recognition design proper: a familiar object taken out and a new one put
+in its place. `Selected.swap_landmark` replaces landmark 1 of every committed room (the
+green plus, in all eight) with `swap_shape` in `swap_color` - an `x` in `yellow`, both
+already in the fork's stencil table and the landmark palette - at the same anchor and the
+same affordance; the X's five cells sit on the floor and clear of the other two objects
+in all eight rooms (checked by `resolve_rooms`, pinned by
+`tests/test_selected_rooms.py::test_swap_landmark_replaces_the_plus_with_an_x_at_the_same_anchor`).
+The three curious runs resume from their final checkpoints as in section 1, the same
+second budget; the walltime is raised to two hours on the command line so the resumes
+(no graphs, no compile, ~6x slower than a fresh run) reach the tenth archive this time.
+
+```bash
+export WM_DONE=40960 SOURCE_EXTRA="--env.source.swap-landmark 1 --env.source.swap-shape x --env.source.swap-color yellow"
+SEED=<s> sbatch --time=02:00:00 slurm/resume_clamp.sh $SCRATCH/pRNN/<job>/outputs/<run> none swapx 40960 sdu/mixed-count-mse \
+    --arch-prnn.loss MSE --train-policy.normalize-reward --arch-prnn.hidden-size 1024 \
+    --eval.evals BEHAVIOUR SPATIAL_MULTIROOM TRAJECTORY_PLOT --eval.plot-every-steps 3333328
+```
+
+Run names `mx-impassable-n8-s<seed>-resume-swapx`. Jobs and outcomes appended below.

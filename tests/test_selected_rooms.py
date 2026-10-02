@@ -239,6 +239,26 @@ def test_extra_anchors_must_align_with_positions_and_sit_on_free_floor():
         _resolve(Selected(positions=(0,), extra_anchors=(f"{taken[0]},{taken[1]}",)))
 
 
+def test_swap_landmark_replaces_the_plus_with_an_x_at_the_same_anchor():
+    plain = _resolve(Selected(positions=EIGHT, impassable=True))
+    swapped = _resolve(Selected(positions=EIGHT, impassable=True, swap_landmark=1))
+    assert len(swapped) == len(plain) == 8
+    for a, b in zip(plain, swapped):
+        assert (b.landmarks[0], b.landmarks[2]) == (a.landmarks[0], a.landmarks[2])
+        old, new = a.landmarks[1], b.landmarks[1]
+        assert (old.shape, old.color) == ("plus", "green")
+        assert (new.shape, new.color, new.anchor, new.impassable) == ("x", "yellow", old.anchor, True)
+        assert len(new.cells) == 5 and set(new.cells) & set(old.cells) == {old.anchor}
+        assert not set(new.cells) & (set(a.landmarks[0].cells) | set(a.landmarks[2].cells))
+
+
+def test_swap_landmark_indexes_the_committed_room_and_precedes_keep():
+    with pytest.raises(ValueError, match="swap_landmark"):
+        Selected(positions=EIGHT, swap_landmark=3)
+    kept = _resolve(Selected(positions=(0,), swap_landmark=1, keep_landmarks=("1",)))[0]
+    assert len(kept.landmarks) == 1 and kept.landmarks[0].shape == "x"
+
+
 def test_the_dot_stencil_is_registered_for_configs():
     assert Landmark("dot", "red", (5, 5)).cells == ((5, 5),)
 

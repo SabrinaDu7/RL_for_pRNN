@@ -936,6 +936,22 @@ class Selected:
     extra_shape: str = "dot"
     extra_color: str = "green"
 
+    swap_landmark: int | None = None
+    """REPLACE one of each room's committed landmarks, by index into the committed
+    room (0 the blue triangle, 1 the green plus, 2 the red block), with a
+    `swap_shape` in `swap_color` at the SAME anchor - the novel-object-recognition
+    design of 2026-10-02 (a familiar object taken out, a new one put in its place;
+    the questions repository's Q20). None swaps nothing. Applied before
+    `keep_landmarks`, so both index the committed room; every cell the new stencil
+    paints must be floor and clear of the room's other landmarks, which
+    `resolve_rooms` checks.
+
+        --env.source.swap-landmark 1 --env.source.swap-shape x --env.source.swap-color yellow
+    """
+
+    swap_shape: str = "x"
+    swap_color: str = "yellow"
+
     keep_landmarks: tuple[str, ...] | None = None
     """Per-room OBJECT SUBSET, aligned with `positions` (2026-09-01, the
     mixed-count design). One entry per room: the kept landmark indices as
@@ -964,6 +980,13 @@ class Selected:
                 )
             for text in self.extra_anchors:
                 Placed.parse(text)
+        if self.swap_landmark is not None:
+            n_lm = min(len(ROOMS_SELECTED[p].landmarks) for p in self.positions)
+            if not 0 <= self.swap_landmark < n_lm:
+                raise ValueError(
+                    f"swap_landmark {self.swap_landmark} is not an index into the "
+                    f"committed rooms' {n_lm} landmarks"
+                )
 
     @property
     def n(self) -> int:
@@ -1357,6 +1380,23 @@ def resolve_rooms(
         # affordance is the source's own field. See `Selected`.
         chosen = tuple(ROOMS_SELECTED[p] for p in source.positions)
         rooms = with_affordance(chosen, impassable=source.impassable)
+        if source.swap_landmark is not None:
+            floor = shape.walkable
+            swapped_rooms = []
+            for room in rooms:
+                i = source.swap_landmark
+                old = room.landmarks[i]
+                new = Landmark(source.swap_shape, source.swap_color, old.anchor, impassable=source.impassable)
+                others = [c for j, lm in enumerate(room.landmarks) if j != i for c in lm.cells]
+                outside = [c for c in new.cells if c not in floor]
+                overlap = [c for c in new.cells if c in others]
+                if outside or overlap:
+                    raise ValueError(
+                        f"Selected swap at {old.anchor}: {source.swap_shape} paints "
+                        f"{outside} off the floor and {overlap} on the room's other landmarks"
+                    )
+                swapped_rooms.append(Layout(room.landmarks[:i] + (new,) + room.landmarks[i + 1:]))
+            rooms = swapped_rooms
         if source.keep_landmarks is not None:
             if len(source.keep_landmarks) != len(rooms):
                 raise ValueError(

@@ -29,6 +29,8 @@
 # after the positions, e.g. the novel-object continuation of 2026-10-01:
 #   SOURCE_EXTRA="--env.source.extra-anchors 9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13"
 # (one "x,y" per room, aligned with the positions; see `Selected.extra_anchors`).
+# Or the swap of 2026-10-02 (the green plus replaced by a yellow X in place):
+#   SOURCE_EXTRA="--env.source.swap-landmark 1 --env.source.swap-shape x --env.source.swap-color yellow"
 #
 # The CUDA graphs are OFF for both learners (a resumed optimizer state refuses them,
 # configs.py::__post_init__) and the layer compile is OFF (the clamp hook sits inside
