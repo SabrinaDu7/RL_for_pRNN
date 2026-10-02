@@ -94,3 +94,8 @@ SEED=<s> sbatch --time=02:00:00 slurm/resume_clamp.sh $SCRATCH/pRNN/<job>/output
 ```
 
 Run names `mx-impassable-n8-s<seed>-resume-swapx`. Jobs and outcomes appended below.
+
+- 2026-10-02 10:xx: seed 2 (from `MSE1024`) → job **11039173**; seed 3 (from `MSE1024S3`) →
+  **11039174**; seed 4 (from `MSE1024S4`) → **11039175**; from commit `57fdedd`, two-hour
+  walltime. The swapped room renders as intended (checked locally: the plus's anchor and
+  corners are yellow obstacles, its old arm cells floor).
