@@ -82,3 +82,27 @@ Both smoke-tested locally (one rollout, exit 0). First result, the readout norm
 (job 11033768): final `pRNN loss` 0.0089 against `MSE1024`'s 0.0123; mean-room sRSA
 0.602 against 0.624; pooled SWdist 0.085 against 0.071 — the loss improves, both spatial
 metrics give a little. The rest is appended once the five-run comparison lands.
+
+## Results so far (2026-10-02 00:30)
+
+Training metrics (wandb, tail mean of the last 5% of logged points; the spatial metrics
+are logged five times per run, so "tail" is the last point) and the fixed-probe
+prediction quality (Q15's random-walk probe, noise off, final checkpoint; `mse` over all
+pixels, `sat` = the saturated landmark colour channels, 1.8% of values):
+
+| run | train loss | sRSA (high) | SWdist (low) | probe mse | sat abs err | sat pred median |
+| --- | --- | --- | --- | --- | --- | --- |
+| MSE1024 (s2) | 0.0092 | 0.624 | 0.071 | 0.00697 | 0.331 | 0.68 |
+| MSE1024 s3 / s4 | 0.0091 / 0.0091 | 0.676 / 0.608 | 0.115 / 0.075 | 0.00735 / – | 0.345 / – | 0.67 / – |
+| MSE2048 (s2) | 0.0076 | 0.683 | 0.027 | 0.00599 | 0.296 | 0.73 |
+| readout norm (lnread) | 0.0091 | 0.602 | 0.085 | 0.00665 | 0.311 | 0.71 |
+| MLP readout (mlpread) | 0.0109 | 0.737 | 0.128 | 0.00768 | 0.325 | 0.69 |
+| readout lr x32 (lr32read) | 0.0094 | 0.256 | 0.011 | 0.00720 | 0.289 | 0.74 |
+| pixel weight 10 (pixw10) | 0.0194* | 0.747 | 0.334 | 0.01463 | 0.140 | 0.90 |
+
+\* the weighted loss, not comparable. Reading: width (2048) improves every column at
+once; the readout norm's gains are inside the seed spread; the MLP readout buys sRSA with
+worse prediction and SWdist; the fast readout collapses sRSA; the pixel weight is the
+only change that makes the landmark channels crisp (0.90 against 0.68) and it pays with
+twice the background error and five times the SWdist. Pending: 2048 + readout norm,
+pixel weight 3, and seeds 3/4 of the 2048 and readout-norm recipes.
