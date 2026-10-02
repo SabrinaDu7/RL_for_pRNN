@@ -324,6 +324,11 @@ class ArchPrnnCfg:
     ablate-and-retrain arm of the 2026-09-24 exploration: resume a finished run with its
     object-vector cells held at their means and keep training. Here rather than in a
     training config because it changes what the network computes."""
+    readout_norm: bool = False
+    """A LayerNorm on the hidden state before the pixel readout and nowhere else
+    (`models/readout_norm.py`): the recurrent dynamics and the state the policy
+    reads are unchanged. Added 2026-10-01 after the readout was found to
+    under-shoot saturated pixels even with the observation as its input."""
 
     focal_gamma: float | None = None
     readout: PredReadout = PredReadout.LINEAR

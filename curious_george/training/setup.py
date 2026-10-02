@@ -168,6 +168,13 @@ def setup_world_model(cfg, env, wandb_log: bool) -> PredictiveNet:
         **prediction_loss_kwargs(cfg.arch_prnn, env),
     )
 
+    if cfg.arch_prnn.readout_norm:
+        from curious_george.models.readout_norm import install_readout_norm
+
+        # Before the checkpoint load: a checkpoint saved by a normalised network
+        # carries the norm's parameters and the Linear's under the wrapped keys.
+        install_readout_norm(predictiveNet)
+
     if cfg.run.prnn_ckpt is not None:
         load_pN(
             model_ckpt_filepath=str(cfg.run.prnn_ckpt),
