@@ -47,6 +47,9 @@ BINDINGS = {
     # a grand total above the checkpoint's; the graphs are off, as a resume needs.
     "CKPTFLAGS": "--run.prnn-ckpt /scratch/run/predictiveNet_state.pt --run.policy-ckpt /scratch/run/policy.pt",
     "CLAMPFLAG": "--arch-prnn.clamp-units /scratch/clamps/ovc_mean.npz",
+    # resume_clamp.sh's SOURCE_EXTRA passthrough: the novel-object continuation of
+    # 2026-10-01, one extra landmark per room (`Selected.extra_anchors`).
+    "SOURCE_EXTRA": "--env.source.extra-anchors 9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13",
 }
 
 

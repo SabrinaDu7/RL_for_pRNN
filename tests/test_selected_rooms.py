@@ -203,3 +203,68 @@ def test_positions_select_by_position_not_source_index():
         Selected(positions=(0, 0))
     with pytest.raises(ValueError, match="positions"):
         Selected(positions=(99,))
+
+
+# --- the extra landmark per room (2026-10-01) -------------------------------------------
+
+DOT_ANCHORS = ("9,13", "13,2", "2,10", "9,10", "9,10", "2,9", "9,9", "2,13")
+EIGHT = (0, 1, 2, 3, 5, 6, 7, 8)
+
+
+def _resolve(source):
+    return resolve_rooms(shape=EnvShape(), content=EnvContent(), source=source,
+                         room_rules=RoomRules(), set_rules=RoomSetRules(), indices=None)
+
+
+def test_extra_anchors_append_one_dot_per_room_and_change_nothing_else():
+    plain = _resolve(Selected(positions=EIGHT, impassable=True))
+    plus = _resolve(Selected(positions=EIGHT, impassable=True, extra_anchors=DOT_ANCHORS))
+    assert len(plus) == len(plain) == 8
+    for a, b, text in zip(plain, plus, DOT_ANCHORS):
+        assert b.landmarks[:-1] == a.landmarks
+        dot = b.landmarks[-1]
+        assert dot.shape == "dot" and dot.color == "green" and dot.impassable
+        assert dot.anchor == tuple(int(v) for v in text.split(",")) and dot.cells == (dot.anchor,)
+        assert dot.anchor not in a.cells
+
+
+def test_extra_anchors_must_align_with_positions_and_sit_on_free_floor():
+    with pytest.raises(ValueError, match="align"):
+        Selected(positions=EIGHT, extra_anchors=("9,13",))
+    with pytest.raises(ValueError, match="floor|landmarks"):
+        _resolve(Selected(positions=(0,), extra_anchors=("0,0",)))
+    first = _resolve(Selected(positions=(0,)))[0]
+    taken = first.landmarks[0].anchor
+    with pytest.raises(ValueError, match="landmarks"):
+        _resolve(Selected(positions=(0,), extra_anchors=(f"{taken[0]},{taken[1]}",)))
+
+
+def test_the_dot_stencil_is_registered_for_configs():
+    assert Landmark("dot", "red", (5, 5)).cells == ((5, 5),)
+
+
+# --- the scattered novel object (2026-10-01) --------------------------------------------
+
+def test_scattered_repeats_each_room_with_the_dot_somewhere_new_and_never_at_the_excluded_cell():
+    from curious_george.envs.layouts import Scattered
+
+    source = Scattered(positions=EIGHT, n_placements=16, seed=0, exclude=DOT_ANCHORS)
+    rooms = _resolve(source)
+    base = _resolve(Selected(positions=EIGHT, impassable=True))
+    assert len(rooms) == source.n == 128
+    floor = EnvShape().walkable
+    for i, room in enumerate(base):
+        copies = rooms[i * 16:(i + 1) * 16]
+        dots = [c.landmarks[-1] for c in copies]
+        assert all(c.landmarks[:-1] == room.landmarks for c in copies)
+        assert len({d.anchor for d in dots}) == 16
+        held_out = tuple(int(v) for v in DOT_ANCHORS[i].split(","))
+        assert held_out not in {d.anchor for d in dots}
+        for d in dots:
+            assert d.shape == "dot" and d.impassable and d.anchor in floor and d.anchor not in room.cells
+            x, y = d.anchor
+            assert all((x + dx, y + dy) in floor for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+    again = _resolve(Scattered(positions=EIGHT, n_placements=16, seed=0, exclude=DOT_ANCHORS))
+    assert [r.landmarks for r in again] == [r.landmarks for r in rooms]
+    other = _resolve(Scattered(positions=EIGHT, n_placements=16, seed=1, exclude=DOT_ANCHORS))
+    assert [r.landmarks for r in other] != [r.landmarks for r in rooms]

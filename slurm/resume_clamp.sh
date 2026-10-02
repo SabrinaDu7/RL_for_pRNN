@@ -25,6 +25,11 @@
 #                  --eval.evals BEHAVIOUR SPATIAL_MULTIROOM TRAJECTORY_PLOT \
 #                  --eval.plot-every-steps 3333328
 #
+# SOURCE_EXTRA (environment variable, default empty): source-level flags appended
+# after the positions, e.g. the novel-object continuation of 2026-10-01:
+#   SOURCE_EXTRA="--env.source.extra-anchors 9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13"
+# (one "x,y" per room, aligned with the positions; see `Selected.extra_anchors`).
+#
 # The CUDA graphs are OFF for both learners (a resumed optimizer state refuses them,
 # configs.py::__post_init__) and the layer compile is OFF (the clamp hook sits inside
 # what it would trace). Every run logs to wandb project `curious-george-multienv`.
@@ -42,7 +47,7 @@ set -eo pipefail
 RUN_DIR="${1:?run_dir: absolute directory with predictiveNet_state.pt and policy.pt}"
 CLAMP="${2:?clamp: an .npz of units/values, or none}"; LABEL="${3:?label}"
 WM_EXTRA="${4:-8192}"; BRANCH="${5:-sdu/mixed-count-mse}"
-SEED=2   # the resumed run's; the RNG stream is new either way
+SEED="${SEED:-2}"   # the resumed run's by default; the RNG stream is new either way
 shift $(( $# < 5 ? $# : 5 ))
 EXTRA=("$@")
 [ "$CLAMP" = "none" ] && CLAMP=""
@@ -51,7 +56,7 @@ WM_DONE="${WM_DONE:-40960}"   # world-model steps the checkpoint has behind it (
 WM_TOTAL=$(( WM_DONE + WM_EXTRA )); POL_TOTAL=$(( WM_TOTAL * 4 ))
 BUDGET="--train-prnn.total-grad-steps $WM_TOTAL --train-policy.total-grad-steps $POL_TOTAL"
 CKPTFLAGS="--run.prnn-ckpt $RUN_DIR/predictiveNet_state.pt --run.policy-ckpt $RUN_DIR/policy.pt"
-NAME="mx-impassable-n8-s2-resume-${LABEL}"
+NAME="mx-impassable-n8-s${SEED}-resume-${LABEL}"
 
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')  Node: $(hostname)"
 echo "$NAME  (from $RUN_DIR, clamp=${CLAMP:-none}, +$WM_EXTRA wm steps, branch=$BRANCH)"
@@ -88,7 +93,7 @@ uv run python main_train.py multienv-fast \
     --run.seed "$SEED" --run.exp-name "$NAME" --run.wandb-project curious-george-multienv \
     $CKPTFLAGS --train-prnn.no-cuda-graph --train-policy.no-cuda-graph --train-prnn.compile OFF \
     $BUDGET $CLAMPFLAG "${EXTRA[@]}" \
-    env.source:selected --env.source.impassable --env.source.positions 0 1 2 3 5 6 7 8 \
+    env.source:selected --env.source.impassable --env.source.positions 0 1 2 3 5 6 7 8 $SOURCE_EXTRA \
     > "$DEST/train.log" 2>&1 || TRAIN_RC=$?
 grep -vE '^Processing|^\s*$' "$DEST/train.log" | tail -30
 [ -n "${TRAIN_RC:-}" ] && { echo "TRAINING FAILED rc=$TRAIN_RC"; tail -40 "$DEST/train.log"; exit $TRAIN_RC; }

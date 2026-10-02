@@ -45,7 +45,16 @@ from typing import Union
 from itertools import permutations
 
 import numpy as np
+from minigrid.envs import Lroom
 from minigrid.envs.Lroom import Landmark
+
+# A one-cell, centre-anchored landmark - the "dot" of the questions repository's Q18
+# (2026-10-01) and of the continued-training runs that followed it. The fork's stencil
+# table has no one-cell shape; registering it here, at import, is what lets a config name
+# it (`Landmark.__post_init__` validates shapes against that table). Idempotent, and it
+# touches nothing an existing run uses.
+Lroom.STENCILS.setdefault("dot", ((0, 0),))
+Lroom.STENCIL_CENTROID_OFFSET.setdefault("dot", (0.0, 0.0))
 
 # All three are used in every layout, so "distinct shapes" is automatic and the
 # set is the design, not a sample space. `triangle3` replaced `x` on 2026-08-30
@@ -915,6 +924,18 @@ class Selected:
 
     impassable: bool = True
 
+    extra_anchors: tuple[str, ...] = ()
+    """One EXTRA landmark per room, at the cell named ("x,y", MiniGrid coordinates),
+    aligned with `positions`; empty = none (the historical rooms). The novel-object
+    design of 2026-10-01 (the questions repository's Q18 placed a one-cell "dot" at the
+    spot in each room farthest from its objects; Q19 trains on with it there). The
+    landmark is `extra_shape` in `extra_color`, at this source's affordance; every cell
+    it paints must be floor and clear of the room's own landmarks, which `resolve_rooms`
+    checks. `RoomRules` are not applied, as for `Placed`."""
+
+    extra_shape: str = "dot"
+    extra_color: str = "green"
+
     keep_landmarks: tuple[str, ...] | None = None
     """Per-room OBJECT SUBSET, aligned with `positions` (2026-09-01, the
     mixed-count design). One entry per room: the kept landmark indices as
@@ -935,6 +956,14 @@ class Selected:
                 f"Selected.positions must be one or more distinct positions in "
                 f"0..{len(ROOMS_SELECTED) - 1}, got {self.positions}"
             )
+        if self.extra_anchors:
+            if len(self.extra_anchors) != len(self.positions):
+                raise ValueError(
+                    f"extra_anchors has {len(self.extra_anchors)} entries for "
+                    f"{len(self.positions)} rooms - they align by position"
+                )
+            for text in self.extra_anchors:
+                Placed.parse(text)
 
     @property
     def n(self) -> int:
@@ -992,6 +1021,78 @@ class Placed:
 
 
 @dataclass(frozen=True)
+class Scattered:
+    """`Selected`'s rooms, each repeated `n_placements` times with one extra landmark at a
+    different admissible cell per copy - the novel object that is somewhere new in every
+    episode (2026-10-01). The device pool assigns a stream a layout at every episode
+    boundary, so with 8 x n_placements layouts the object's position is random across rooms
+    and episodes at the granularity of the placements drawn here.
+
+        env.source:scattered --env.source.positions 0 1 2 3 5 6 7 8 --env.source.n-placements 16 \
+            --env.source.exclude 9,13 13,2 2,10 9,10 9,10 2,9 9,9 2,13
+
+    Placements per room: floor cells with Chebyshev clearance `min_wall_distance` from
+    every non-floor cell and `min_cell_gap` from the room's own landmark cells, minus the
+    `exclude` cell for that room (aligned with `positions`; the held-out test spot of the
+    questions repository's Q18/Q19), drawn without replacement by `seed`. Deterministic:
+    the provenance records everything that fixes the set.
+    """
+
+    positions: tuple[int, ...] = (0, 1, 2, 3, 5, 6, 7, 8)
+    impassable: bool = True
+    n_placements: int = 16
+    seed: int = 0
+    extra_shape: str = "dot"
+    extra_color: str = "green"
+    exclude: tuple[str, ...] = ()
+    """One "x,y" per room to keep out of the draw (empty = none)."""
+    min_wall_distance: int = 2
+    min_cell_gap: int = 2
+
+    def __post_init__(self) -> None:
+        bad = [p for p in self.positions if not 0 <= p < len(ROOMS_SELECTED)]
+        if not self.positions or bad or len(set(self.positions)) != len(self.positions):
+            raise ValueError(f"Scattered.positions must be distinct positions in 0..{len(ROOMS_SELECTED) - 1}, got {self.positions}")
+        if self.n_placements < 1:
+            raise ValueError("Scattered.n_placements must be at least 1")
+        if self.exclude and len(self.exclude) != len(self.positions):
+            raise ValueError(f"exclude has {len(self.exclude)} entries for {len(self.positions)} rooms - they align by position")
+        for text in self.exclude:
+            Placed.parse(text)
+
+    @property
+    def n(self) -> int:
+        return len(self.positions) * self.n_placements
+
+
+def scatter_anchors(
+    room: Layout, floor: frozenset[tuple[int, int]], *, n: int, seed: int,
+    exclude: tuple[int, int] | None, min_wall_distance: int, min_cell_gap: int,
+) -> tuple[tuple[int, int], ...]:
+    """`n` distinct admissible cells for an extra one-cell landmark in `room`, drawn
+    without replacement by `seed`, sorted."""
+    xs = [c[0] for c in floor]; ys = [c[1] for c in floor]
+    lo_x, hi_x, lo_y, hi_y = min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
+    taken = room.cells
+
+    def clear_of_walls(c):
+        return all((c[0] + dx, c[1] + dy) in floor
+                   for dx in range(-min_wall_distance + 1, min_wall_distance)
+                   for dy in range(-min_wall_distance + 1, min_wall_distance))
+
+    def clear_of_landmarks(c):
+        return all(_chebyshev(c, t) >= min_cell_gap for t in taken)
+
+    candidates = sorted(c for c in floor if lo_x < c[0] < hi_x and lo_y < c[1] < hi_y
+                        and clear_of_walls(c) and clear_of_landmarks(c) and c != exclude)
+    if len(candidates) < n:
+        raise ValueError(f"only {len(candidates)} admissible cells for {n} placements")
+    rng = np.random.default_rng(seed)
+    picked = rng.choice(len(candidates), size=n, replace=False)
+    return tuple(candidates[i] for i in sorted(picked))
+
+
+@dataclass(frozen=True)
 class Uniform:
     """`n` rooms drawn uniformly from the admissible set. No design criteria -
     a broad sample, where degeneracy between any two rooms does not matter."""
@@ -1000,7 +1101,7 @@ class Uniform:
     seed: int = 20260813
 
 
-RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform, Selected, Placed]
+RoomSource = Union[EnvDefault, Frozen, Committed, Curated, Uniform, Selected, Placed, Scattered]
 
 #: A placement: one anchor per landmark, in `EnvContent.kinds` order.
 AnchorSet = tuple[tuple[int, int], ...]
@@ -1266,6 +1367,33 @@ def resolve_rooms(
                     )
                 kept_rooms.append(Layout(tuple(room.landmarks[i] for i in idxs)))
             rooms = kept_rooms
+        if source.extra_anchors:
+            floor = shape.walkable
+            plus_rooms = []
+            for room, text in zip(rooms, source.extra_anchors):
+                cell = Placed.parse(text)
+                extra = Landmark(source.extra_shape, source.extra_color, cell, impassable=source.impassable)
+                outside = [c for c in extra.cells if c not in floor]
+                overlap = [c for c in extra.cells if c in room.cells]
+                if outside or overlap:
+                    raise ValueError(
+                        f"Selected extra landmark at {cell}: {source.extra_shape} paints "
+                        f"{outside} off the floor and {overlap} on the room's own landmarks"
+                    )
+                plus_rooms.append(Layout(room.landmarks + (extra,)))
+            rooms = plus_rooms
+    elif isinstance(source, Scattered):
+        chosen = tuple(ROOMS_SELECTED[p] for p in source.positions)
+        base = with_affordance(chosen, impassable=source.impassable)
+        floor = shape.walkable
+        rooms = []
+        for i, room in enumerate(base):
+            held_out = Placed.parse(source.exclude[i]) if source.exclude else None
+            cells = scatter_anchors(room, floor, n=source.n_placements, seed=source.seed * 1000 + i, exclude=held_out,
+                                    min_wall_distance=source.min_wall_distance, min_cell_gap=source.min_cell_gap)
+            for cell in cells:
+                extra = Landmark(source.extra_shape, source.extra_color, cell, impassable=source.impassable)
+                rooms.append(Layout(room.landmarks + (extra,)))
     elif isinstance(source, Placed):
         if not 0 <= source.kind < content.n_landmarks:
             raise ValueError(
