@@ -102,6 +102,7 @@ pixels, `sat` = the saturated landmark colour channels, 1.8% of values):
 | 2048 + readout norm (h2048-lnread) | 0.0104 | 0.543 | 0.087 | 0.00615 | 0.305 | 0.71 |
 | MSE2048 s3 / s4 | 0.0077 / 0.0077 | 0.612 / 0.627 | 0.065 / 0.027 | 0.00574 / 0.00623 | 0.288 / 0.285 | 0.73 / 0.74 |
 | readout norm s3 / s4 | 0.0089 / 0.0089 | 0.642 / 0.588 | 0.096 / 0.284 | 0.00676 / 0.00852 | 0.311 / 0.352 | 0.71 / 0.66 |
+| pixel weight 3 (pixw3) | 0.0140* | 0.716 | 0.123 | 0.01252 | 0.258 | 0.78 |
 
 \* the weighted loss, not comparable. Reading: width (2048) improves every column at
 once; the readout norm's gains are inside the seed spread; the MLP readout buys sRSA with
@@ -112,5 +113,7 @@ twice the background error and five times the SWdist. The readout norm at 2048 u
 both widths: neutral prediction, spatial metrics slightly worse. With three seeds a side (2026-10-02 00:50): 2048 units beats 1024 on the probe in every
 seed (-17% on average), keeps sRSA level (0.64 against 0.64) and halves SWdist (0.040
 against 0.087); the readout norm gains nothing on the probe across seeds and is worse on
-both spatial metrics. Width is the one change that meets the criterion. Pending: pixel
-weight 3, and 4096 units (job submitted 00:50).
+both spatial metrics. Width is the one change that meets the criterion. The pixel weight trades background for landmarks monotonically with the weight (3: landmark
+error 0.26, background 0.075, probe MSE +80%; 10: 0.14, 0.084, +110%), raises sRSA at both
+weights and worsens SWdist; no weight gives a better overall prediction. Pending: 4096
+units (job 11034904).
