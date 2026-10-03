@@ -115,3 +115,12 @@ Run names `mx-impassable-n8-s<seed>-resume-swapx`. Jobs and outcomes appended be
   below 1 from the third). With the X moved to another spot and the old spot emptied the
   agent goes to the empty spot, not the X: the policy learns the place of the error, not
   the object. Q19's reading, with the cleaner design.
+
+### 2026-10-02 23:30: the onset at one-million-frame resolution
+
+Seed 2 resumed once more from `MSE1024`'s final checkpoint with the swap, for 8,192
+world-model steps (16.8M frames) with `--run.archive-every-steps 1048576
+--run.save-every-steps 1048576`: sixteen archives over the window in which Q20's approach
+is built (it is already near its peak at the first 8.4M-frame archive). Mila job
+**11048400**, run `mx-impassable-n8-s2-resume-swapx-fine_curious_26-10-02-23-32-25`, label
+`SWAPXFINE` in the questions repository (Q21_exp6).
