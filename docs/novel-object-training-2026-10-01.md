@@ -124,3 +124,18 @@ world-model steps (16.8M frames) with `--run.archive-every-steps 1048576
 is built (it is already near its peak at the first 8.4M-frame archive). Mila job
 **11048400**, run `mx-impassable-n8-s2-resume-swapx-fine_curious_26-10-02-23-32-25`, label
 `SWAPXFINE` in the questions repository (Q21_exp6).
+
+### 2026-10-03 00:15: the onset at 131k-frame resolution, and what the ablations found
+
+The 1M-frame course showed the approach already near its peak at its first archive, so
+seed 2 was resumed once more for 1,024 world-model steps (2.1M frames) with
+`--run.archive-every-steps 131072 --run.save-every-steps 131072`: Mila job **11048870**,
+run `mx-impassable-n8-s2-resume-swapx-onset_curious_26-10-03-00-14-56`, label
+`SWAPXONSET`. The approach is built within the first million frames (ring 1.3× → 3.7×
+uniform; late distance 5.7 → 2.6 squares) and peaks at 2M (4.1×, 2.4 squares) while the
+error at the X only eases from 25 to 19 (×1e-3). Q21 (the questions repository): zeroing
+the object-vector cells in the policy's input never changes the approach; zeroing the
+place cells away from the X removes it (at 17M frames in, three seeds); the place cells at
+the X are the arrival signal (zeroing them increases the approach); at the onset and the
+true peak the approach survives every classified lesion and settles onto the place code
+as the surprise is learned away.
