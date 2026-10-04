@@ -68,6 +68,11 @@ The 16-placement runs (jobs 11034007, 11034008) were left to finish as the coars
   encounter 1.06), the late distance to the dot lower with it than without in every
   seed; the agent's near-dot time itself stays at uniform while its dot-free visits to
   the same squares halve — the dot retains the agent rather than draws it.
+  **Revised 2026-10-02 (Q19_exp4):** that is the argmax reading. Under the policy as
+  trained (sampled actions) the dot's squares collect 1.16× uniform after the second budget
+  against 0.60× on first encounter, nearly as much with the dot removed (0.99× against
+  0.55×), and a network resumed without a dot goes there less (0.38×): a learned place,
+  the dot in view adding about 16 percent.
 - **Scattered, 16 placements** (11034007, 11034008): COMPLETED in 25:47 / 25:xx. **Scattered,
   every cell** (11034398, 11034399; 477 layouts): COMPLETED in ~25 min each, the spatial
   evaluation scoring `rooms_max` rooms. Q19_exp3: no pull toward a dot at the held-out
