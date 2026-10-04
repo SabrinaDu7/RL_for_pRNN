@@ -436,6 +436,13 @@ class ArchPolicyCfg:
     actor-critic that takes no gradient steps is a different control from a
     random walker."""
 
+    freeze_policy: bool = False
+    """Never update the POLICY; the world model keeps training (unlike
+    `freeze_params`, which stops both). The frozen-policy control of a resume:
+    the agent keeps acting with the resumed policy while the world model learns
+    from what it sees. A policy `lr` of 0 would not do this on a resume - the
+    loaded optimizer state restores the saved learning rate."""
+
 
 # ---------------------------------------------------------------------------
 # Training. Two learners, two budgets, two rates.

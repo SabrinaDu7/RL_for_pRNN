@@ -198,6 +198,7 @@ def run_training(cfg, run_ctx: RunContext, comps: TrainingComponents) -> None:
     # logged gradient-step axes read the SAME two facts.
     policy_trains = (
         not cfg.arch_policy.freeze_params
+        and not cfg.arch_policy.freeze_policy
         and cfg.arch_policy.agent is not AgentType.RANDOM
     )
     prnn_trains = cfg.train_prnn.train and not cfg.arch_policy.freeze_params
