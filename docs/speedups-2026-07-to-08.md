@@ -59,6 +59,7 @@ All paths are under `curious_george/` unless they start with `docs/` or `throwaw
 - **Tried and not kept:** `max-autotune` does not stack with the graphs (`speed-30min:679`); a
   prefix-scan GAE was reverted to keep the golden test bitwise (a3b2b36).
 - **torch:** `torch>=2.7.1`, locked at 2.8.0 in `uv.lock`; every timing above was made under it.
+- **pRNN:** LevensteinLab/pRNN at 163cb57 (branch `sdu/rl-integration`), pinned by commit in `pyproject.toml`, the version every timing above ran against. Install with `uv sync --locked`.
 - **Stale line:** `README.md:204` says the in-run spatial eval is skipped under CUDA graphs. The skip
   was removed by e3c7c15.
 

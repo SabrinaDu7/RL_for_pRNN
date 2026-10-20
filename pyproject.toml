@@ -108,7 +108,9 @@ reportPossiblyUnboundVariable = "none"
 
 [tool.uv.sources]
 minigrid = { git = "https://github.com/SabrinaDu7/minigrid.git" }
-prnn = { git = "ssh://git@github.com/LevensteinLab/pRNN.git", branch = "sdu/rl-integration" }
+# prnn: LevensteinLab/pRNN, branch sdu/rl-integration, pinned by REV (2026-10-20) at the commit uv.lock
+# already resolved, so `uv lock --upgrade` cannot move it (the branch tip has moved on since).
+prnn = { git = "ssh://git@github.com/LevensteinLab/pRNN.git", rev = "163cb578e56fe64a1e0c447604ffa39f3ef1d3bb" }
 
 [project.urls]
 Homepage = "https://github.com/SabrinaDu7/RL_for_pRNN.git"
